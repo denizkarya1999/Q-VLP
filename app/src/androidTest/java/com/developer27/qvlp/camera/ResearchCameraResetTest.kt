@@ -34,6 +34,31 @@ class ResearchCameraResetTest {
         assertEquals(FocusWhiteBalanceCapabilities.WB_LOCK, profile.controls.whiteBalanceMode)
     }
 
+    @Test fun pixelDefaultsUseFixedControlsForBothInitialSetupAndReset() {
+        val caps = capabilities().copy(preferFixedControlDefaults = true)
+        for (profile in listOf(caps.defaults(), ResearchCameraReset.defaults(caps))) {
+            assertEquals(Size(1280, 960), profile.stream.size)
+            assertEquals(30, profile.fps)
+            assertEquals(100_000L, profile.exposureNs)
+            assertEquals(50, profile.iso)
+            assertEquals(FocusMode.MANUAL, profile.controls.focusMode)
+            assertEquals(0.5f, profile.controls.focusDistance, 0f)
+            assertEquals(CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT, profile.controls.whiteBalanceMode)
+        }
+    }
+
+    @Test fun fixedControlDefaultsRespectTheFocusRangeAndSupportedModes() {
+        val caps = capabilities().copy(preferFixedControlDefaults = true,
+            controls = controls.copy(maxFocusDistance = 0.25f))
+        assertEquals(0.25f, ResearchCameraReset.defaults(caps).controls.focusDistance, 0f)
+        val fallback = caps.copy(controls = controls.copy(manualFocus = false,
+            whiteBalanceModes = listOf(CaptureRequest.CONTROL_AWB_MODE_AUTO)))
+        val profile = ResearchCameraReset.defaults(fallback)
+        assertEquals(FocusMode.LOCK, profile.controls.focusMode)
+        assertEquals(FocusWhiteBalanceCapabilities.WB_LOCK, profile.controls.whiteBalanceMode)
+        assertEquals(0f, profile.controls.focusDistance, 0f)
+    }
+
     @Test fun prefersTheNativeAspectRatioOverTheNominal1280By960Size() {
         val caps = capabilities().copy(sensorAspectRatio = 16.0 / 9.0,
             streams = listOf(stream(1280, 960), stream(1280, 720)))

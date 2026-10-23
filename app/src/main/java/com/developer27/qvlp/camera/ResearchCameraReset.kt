@@ -39,15 +39,17 @@ internal object ResearchCameraReset {
             ?: error("No full-sensor-aspect-ratio resolution supports at least 30 fps.")
         val fps = stream.frameRates.filter { supportsResearchCadence(stream, it) }.min()
         val controls = capabilities.controls
-        val focus = listOf(FocusMode.LOCK, FocusMode.MANUAL, FocusMode.FIXED)
-            .firstOrNull { it in controls.focusModes }
+        val preferred = controls.defaults(capabilities.preferFixedControlDefaults)
+        val fixedFocusModes = listOf(FocusMode.LOCK, FocusMode.MANUAL, FocusMode.FIXED)
+        val focus = (listOf(preferred.focusMode) + fixedFocusModes)
+            .firstOrNull { it in controls.focusModes && it in fixedFocusModes }
             ?: error("This camera cannot lock or fix focus.")
-        val wb = if (controls.whiteBalanceLock) FocusWhiteBalanceCapabilities.WB_LOCK else
-            controls.whiteBalanceOptions.firstOrNull { isFixedWhiteBalance(it.mode) }?.mode
-                ?: error("This camera cannot lock white balance or use a fixed preset.")
+        val wb = preferred.whiteBalanceMode.takeIf { isFixedWhiteBalance(it) }
+            ?: controls.whiteBalanceOptions.firstOrNull { isFixedWhiteBalance(it.mode) }?.mode
+            ?: error("This camera cannot lock white balance or use a fixed preset.")
         return CameraProfile(
             minOf(ResearchCapturePolicy.MAX_EXPOSURE_NS, capabilities.maximumExposureNs(stream, fps)),
-            capabilities.isoRange.lower, stream, fps, FocusWhiteBalanceProfile(focus, 0f, wb)
+            capabilities.isoRange.lower, stream, fps, FocusWhiteBalanceProfile(focus, preferred.focusDistance, wb)
         )
     }
 

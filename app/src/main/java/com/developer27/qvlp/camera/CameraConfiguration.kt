@@ -1,6 +1,7 @@
 package com.developer27.qvlp.camera
 
 import android.content.SharedPreferences
+import android.os.Build
 import android.graphics.SurfaceTexture
 import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCharacteristics
@@ -37,7 +38,8 @@ internal data class CameraCapabilities(
     val isoRange: Range<Int>,
     val streams: List<StreamOption>,
     val sensorAspectRatio: Double,
-    val controls: FocusWhiteBalanceCapabilities
+    val controls: FocusWhiteBalanceCapabilities,
+    val preferFixedControlDefaults: Boolean = false
 ) {
     fun maximumExposureNs(stream: StreamOption, fps: Int): Long =
         minOf(exposureRangeNs.upper, stream.frameDurationNs(fps))
@@ -57,7 +59,7 @@ internal data class CameraCapabilities(
         return CameraProfile(
             CaptureSettings.DEFAULT_EXPOSURE_NS.coerceIn(
                 exposureRangeNs.lower, maximumExposureNs(stream, fps)
-            ), isoRange.lower, stream, fps, controls.defaults()
+            ), isoRange.lower, stream, fps, controls.defaults(preferFixedControlDefaults)
         )
     }
 
@@ -109,7 +111,8 @@ internal data class CameraCapabilities(
             val sensor = characteristics[CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE]
             val aspect = sensor?.let { it.width().toDouble() / it.height() } ?: 4.0 / 3.0
             return CameraCapabilities(cameraId, exposure, iso, streams, aspect,
-                FocusWhiteBalanceCapabilities.read(characteristics))
+                FocusWhiteBalanceCapabilities.read(characteristics),
+                CameraDefaultTuning.prefersFixedControls(Build.MANUFACTURER, Build.MODEL))
         }
 
 

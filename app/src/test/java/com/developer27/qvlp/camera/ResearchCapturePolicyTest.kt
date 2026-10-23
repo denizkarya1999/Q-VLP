@@ -39,6 +39,44 @@ class ResearchCapturePolicyTest {
         assertEquals(ResearchCapturePolicy.Issue.CONFIRMING, check.observe(valid.copy(iso = 51)))
     }
 
+    @Test fun acceptsPixel8aNominalThirtyFpsOnlyAfterStableReadings() {
+        val check = ResearchCapturePolicy.Confirmation()
+        val pixel = valid.copy(exposureNs = 98_504L, frameDurationNs = 33_340_371L)
+        assertTrue(ResearchCapturePolicy.usesFrameTimingTolerance(pixel.frameDurationNs!!))
+        assertEquals(ResearchCapturePolicy.Issue.CONFIRMING, check.observe(pixel))
+        assertNull(check.observe(pixel))
+        // Accepting nominal timing must not round or overwrite actual measurements.
+        assertEquals(33_340_371L, pixel.frameDurationNs)
+        assertEquals(98_504L, pixel.exposureNs)
+    }
+
+    @Test fun timingToleranceIsBoundedAndDoesNotAcceptSlowerModes() {
+        val check = ResearchCapturePolicy.Confirmation()
+        assertEquals(33_350_000L, ResearchCapturePolicy.MAX_CONFIRMED_FRAME_DURATION_NS)
+        val boundary = valid.copy(frameDurationNs = 33_350_000L)
+        check.observe(boundary)
+        assertNull(check.observe(boundary))
+        for (duration in listOf(33_350_001L, 33_366_700L, 34_482_759L, 41_666_667L, 66_666_667L)) {
+            repeat(3) {
+                assertEquals(ResearchCapturePolicy.Issue.REPORTED_FRAME_RATE,
+                    check.observe(valid.copy(frameDurationNs = duration)))
+            }
+            assertFalse(ResearchCapturePolicy.usesFrameTimingTolerance(duration))
+        }
+        assertFalse(ResearchCapturePolicy.usesFrameTimingTolerance(33_333_334L))
+        assertFalse(ResearchCapturePolicy.usesFrameTimingTolerance(16_666_667L))
+    }
+
+    @Test fun nominalTimingStillRejectsExposureAndGeometryViolations() {
+        val check = ResearchCapturePolicy.Confirmation()
+        val pixel = valid.copy(frameDurationNs = 33_340_371L)
+        assertEquals(ResearchCapturePolicy.Issue.REPORTED_EXPOSURE, check.observe(pixel.copy(exposureNs = 100_001L)))
+        assertEquals(ResearchCapturePolicy.Issue.REPORTED_GEOMETRY, check.observe(pixel.copy(geometryMatches = false)))
+        assertEquals(ResearchCapturePolicy.Issue.MISSING_MEASUREMENTS, check.observe(pixel.copy(iso = null)))
+        assertEquals(ResearchCapturePolicy.Issue.CONFIRMING, check.observe(pixel))
+        assertNull(check.observe(pixel))
+    }
+
     @Test fun missingMetadataDoesNotBecomeReady() {
         val check = ResearchCapturePolicy.Confirmation()
         for (reading in listOf(valid.copy(exposureNs = null), valid.copy(iso = null), valid.copy(frameDurationNs = null))) {
@@ -50,7 +88,7 @@ class ResearchCapturePolicyTest {
         val check = ResearchCapturePolicy.Confirmation()
         check.observe(valid); check.observe(valid)
         assertEquals(ResearchCapturePolicy.Issue.REPORTED_EXPOSURE, check.observe(valid.copy(exposureNs = 120_000L)))
-        assertEquals(ResearchCapturePolicy.Issue.REPORTED_FRAME_RATE, check.observe(valid.copy(frameDurationNs = 33_333_335L)))
+        assertEquals(ResearchCapturePolicy.Issue.REPORTED_FRAME_RATE, check.observe(valid.copy(frameDurationNs = ResearchCapturePolicy.MAX_CONFIRMED_FRAME_DURATION_NS + 1)))
         assertEquals(ResearchCapturePolicy.Issue.REPORTED_GEOMETRY, check.observe(valid.copy(geometryMatches = false)))
         assertEquals(ResearchCapturePolicy.Issue.CONFIRMING, check.observe(valid))
         assertNull(check.observe(valid))

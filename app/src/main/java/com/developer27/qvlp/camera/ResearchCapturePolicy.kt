@@ -6,6 +6,13 @@ internal object ResearchCapturePolicy {
     const val MIN_FPS = 30
     // Ceil(1 second / 30): allow only integer-nanosecond rounding.
     const val MAX_FRAME_DURATION_NS = 33_333_334L
+    // A nominal 30 fps sensor mode may quantize timing to whole sensor lines.
+    // Pixel 8a reports 33,340,371 ns (29.9937 fps). Bound rounding to 0.05%
+    // of the 30 fps period; do not change requested rates or recorded metadata.
+    const val MAX_CONFIRMED_FRAME_DURATION_NS = MAX_FRAME_DURATION_NS + MAX_FRAME_DURATION_NS / 2_000
+
+    fun usesFrameTimingTolerance(frameDurationNs: Long): Boolean =
+        frameDurationNs > MAX_FRAME_DURATION_NS && frameDurationNs <= MAX_CONFIRMED_FRAME_DURATION_NS
 
     enum class Issue(val message: String) {
         REAR_CAMERA("Select a rear camera. Factory Reset in Settings selects a compatible rear camera."),
@@ -19,7 +26,7 @@ internal object ResearchCapturePolicy {
         CONFIRMING("Waiting for the camera to confirm stable research settings."),
         MISSING_MEASUREMENTS("The camera has not reported exposure, ISO and frame duration; research settings cannot be confirmed."),
         REPORTED_EXPOSURE("The camera reports an exposure above 100 µs. Shorten exposure in Settings."),
-        REPORTED_FRAME_RATE("The camera reports a frame duration slower than 30 fps. Increase the target frame rate or choose another resolution."),
+        REPORTED_FRAME_RATE("The camera reports a frame rate below nominal 30 fps, beyond the allowed 0.05% timing rounding. Increase the target frame rate or choose another resolution."),
         REPORTED_GEOMETRY("Waiting for the camera to confirm the requested 1× sensor crop.")
     }
 
@@ -56,7 +63,7 @@ internal object ResearchCapturePolicy {
                 reading.exposureNs == null || reading.exposureNs <= 0 || reading.iso == null || reading.iso <= 0 ||
                     reading.frameDurationNs == null || reading.frameDurationNs <= 0 -> Issue.MISSING_MEASUREMENTS
                 reading.exposureNs > MAX_EXPOSURE_NS -> Issue.REPORTED_EXPOSURE
-                reading.frameDurationNs > MAX_FRAME_DURATION_NS -> Issue.REPORTED_FRAME_RATE
+                reading.frameDurationNs > MAX_CONFIRMED_FRAME_DURATION_NS -> Issue.REPORTED_FRAME_RATE
                 !reading.geometryMatches -> Issue.REPORTED_GEOMETRY
                 else -> null
             }

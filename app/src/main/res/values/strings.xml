@@ -38,9 +38,10 @@
     <string name="shorten_exposure">First shorten exposure to %1$s µs or less for this frame rate.</string>
     <string name="fps_adjusted">Frame rate changed to %1$d fps for the selected resolution.</string>
     <string name="reset_camera">Factory Reset</string>
-    <string name="reset_camera_summary">Restore research camera settings: rear camera, 1× zoom, fixed resolution, locked focus and white balance, exposure ≤100 µs and at least 30 fps. Saved sessions, positions and capture length are kept.</string>
+    <string name="reset_camera_summary">Restore research camera settings: rear camera, 1× zoom, fixed resolution, locked or fixed focus and white balance, exposure ≤100 µs and nominal 30 fps or faster. Saved sessions, positions and capture length are kept.</string>
     <string name="camera_defaults_restored">Research camera settings restored: %1$s · %2$d fps. Return to the camera to confirm the settings.</string>
     <string name="factory_reset_unavailable">Research settings unavailable</string>
+    <string name="capture_nominal_cadence">Nominal 30 fps · Sensor reports %1$.3f fps. Minor timing rounding is within the 0.05%% allowance.</string>
     <string name="camera_starting">Opening camera…</string>
     <string name="capture_requested">Requested: %1$s µs · ISO %2$d\n%3$s · %4$d fps</string>
     <string name="capture_reported">Reported: %1$s µs · ISO %2$s · %3$s fps</string>

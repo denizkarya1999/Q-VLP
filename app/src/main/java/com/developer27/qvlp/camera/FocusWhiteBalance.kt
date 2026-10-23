@@ -54,13 +54,17 @@ internal data class FocusWhiteBalanceCapabilities(
         if (isEmpty()) add(WhiteBalanceOption(WB_DEVICE, R.string.device_controlled))
     }
 
-    fun defaults(): FocusWhiteBalanceProfile {
+    fun defaults(preferFixedControls: Boolean = false): FocusWhiteBalanceProfile {
+        val focus = if (preferFixedControls && FocusMode.MANUAL in focusModes) FocusMode.MANUAL else focusModes.first()
+        val distance = if (preferFixedControls && focus == FocusMode.MANUAL)
+            CameraDefaultTuning.FIXED_FOCUS_DIOPTERS.coerceIn(0f, maxFocusDistance) else 0f
         val wb = when {
+            preferFixedControls && CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT in whiteBalanceModes -> CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT
             whiteBalanceLock -> WB_LOCK
             CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT in whiteBalanceModes -> CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT
             else -> whiteBalanceOptions.first().mode
         }
-        return FocusWhiteBalanceProfile(focusModes.first(), 0f, wb)
+        return FocusWhiteBalanceProfile(focus, distance, wb)
     }
 
     companion object {

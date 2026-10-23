@@ -708,12 +708,15 @@ class CameraHelper(
                 val reportedExposure = result[CaptureResult.SENSOR_EXPOSURE_TIME]
                     ?.let(CaptureSettings::exposureMicros) ?: "—"
                 val reportedIso = result[CaptureResult.SENSOR_SENSITIVITY]?.toString() ?: "—"
-                val cadence = measuredFps?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "—"
+                val cadence = measuredFps?.let { String.format(Locale.getDefault(), "%.3f", it) } ?: "—"
                 val block = recordingBlockReason()
                 val issue = researchConfigurationIssue() ?: reportedResearchIssue
+                val timingNote = result[CaptureResult.SENSOR_FRAME_DURATION]
+                    ?.takeIf { block == null && ResearchCapturePolicy.usesFrameTimingTolerance(it) }
+                    ?.let { "\n" + activity.getString(R.string.capture_nominal_cadence, 1_000_000_000.0 / it) }.orEmpty()
                 val text = requestedText(profile) + "\n" + activity.getString(
                     R.string.capture_reported, reportedExposure, reportedIso, cadence
-                ) + "\n" + controls.status() + (block?.let { "\n$it" } ?: "")
+                ) + "\n" + controls.status() + timingNote + (block?.let { "\n$it" } ?: "")
                 val error = controls.error != null || (issue != null && issue != ResearchCapturePolicy.Issue.CONFIRMING)
                 activity.runOnUiThread {
                     if (session === cameraCaptureSession) activity.showCameraState(block == null, text, error)
