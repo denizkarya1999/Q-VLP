@@ -192,6 +192,48 @@ class PublicSessionStorageTest {
         }
     }
 
+    @Test fun finishedPositionsAndRepeatsAutoSaveInOneSessionEvenAfterAnEarlierPause() {
+        assumeTrue(PublicSessionStorage.configured(context))
+        val root = PublicSessionStorage.requireDestination(context)
+        val source = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
+        File(source, "session.json").writeText("{\"test\":true}")
+        val prefs = context.getSharedPreferences("public_session_storage", Context.MODE_PRIVATE)
+        val previousPause = prefs.all["paused"] as? Boolean
+        prefs.edit().putBoolean("paused", true).commit()
+        fun finish(position: Int, name: String, bytes: ByteArray) {
+            val attempt = File(source, name).apply { mkdirs() }
+            File(attempt, "frame_00000.yuv").writeBytes(bytes)
+            File(attempt, "burst.json").writeText("{\"state\":\"complete\"}")
+            val snapshot = PublicSessionStorage.snapshot(source)
+            assertTrue(PublicSessionStorage.needsSave(context, snapshot))
+            SessionFiles.io.submit { SessionPublisher.captureReady(context, source, position) }
+                .get(5, java.util.concurrent.TimeUnit.SECONDS)
+            val deadline = android.os.SystemClock.uptimeMillis() + 15_000
+            while (PublicSessionStorage.needsSave(context, snapshot) && android.os.SystemClock.uptimeMillis() < deadline)
+                Thread.sleep(50)
+            assertFalse("Position should save without a manual Save action", PublicSessionStorage.needsSave(context, snapshot))
+            val publicSession = requireNotNull(find(root, source.name))
+            val publicAttempt = requireNotNull(find(publicSession, name))
+            assertArrayEquals(bytes, context.contentResolver.openInputStream(
+                requireNotNull(find(publicAttempt, "frame_00000.yuv")))!!.use { it.readBytes() })
+        }
+        try {
+            finish(999998, "position_999998_first", byteArrayOf(1, 2, 3))
+            assertFalse(prefs.contains("paused"))
+            finish(999999, "position_999999_next", byteArrayOf(4, 5, 6))
+            finish(999999, "position_999999_repeat", byteArrayOf(7, 8, 9))
+            val session = requireNotNull(find(root, source.name))
+            for (name in listOf("position_999998_first", "position_999999_next", "position_999999_repeat"))
+                assertNotNull("Every position and repeat must remain in the same session", find(session, name))
+        } finally {
+            if (previousPause == null) prefs.edit().remove("paused").commit()
+            else prefs.edit().putBoolean("paused", previousPause).commit()
+            find(root, source.name)?.let { DocumentsContract.deleteDocument(context.contentResolver, it) }
+            File(context.filesDir, "public_session_receipts/${source.name}.json").delete()
+            source.deleteRecursively()
+        }
+    }
+
     private fun find(parent: Uri, name: String): Uri? {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(parent, DocumentsContract.getDocumentId(parent))
         return context.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,

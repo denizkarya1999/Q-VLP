@@ -16,7 +16,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
     private val chooseFolder = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) SessionPublisher.selectFolder(activity.applicationContext, uri) { result -> ui {
             result.exceptionOrNull()?.let { message(it.message ?: "Cannot use this folder.") }
-                ?: message("Sessions will save to Pictures/Q-VLP. You can keep using the camera.")
+                ?: message("Auto-save is ready. Each finished position saves to its session folder.")
         } }
     }
     private val saveFile = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -56,29 +56,21 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
 
     fun resumeSaving() = SessionPublisher.request(activity.applicationContext)
 
-    fun storage() {
+    fun storage(retry: Boolean = false) {
         val configured = PublicSessionStorage.configured(activity)
-        val paused = SessionPublisher.isPaused(activity)
         val error = PublicSessionStorage.error(activity)
-        AlertDialog.Builder(activity).setTitle("Session Storage")
-            .setMessage("Sessions save to Internal storage → Pictures → Q-VLP in the background. You can keep recording or open Settings while they copy. The app keeps a recovery copy.\n\n" +
-                (if (configured) "Save now retries unfinished saves. Use More → Verify all files to check or restore copies that were removed or changed outside the app."
-                else "Choose Pictures or its Q-VLP folder, then tap Use this folder and Allow. Existing sessions will be copied there too.") +
-                (if (error == null) "" else "\n\nSave needs attention: $error\nOriginal files remain safe in the app."))
-            .setPositiveButton(if (!configured) "Choose folder" else if (paused) "Resume saving" else "Save now") { _, _ ->
-                if (configured) SessionPublisher.request(activity.applicationContext, manual = true)
-                else chooseFolder.launch(PublicSessionStorage.initialUri)
+        AlertDialog.Builder(activity).setTitle("Auto-save")
+            .setMessage("Each finished position saves automatically to its session folder in Internal storage → Pictures → Q-VLP. Repeat keeps a separate attempt in the same session.\n\n" +
+                (if (configured) "You can move to the next position while saving finishes."
+                else "Choose Pictures or its Q-VLP folder once, then tap Use this folder and Allow.") +
+                (if (error == null) "" else "\n\nSave needs attention: $error\nYour recordings are safe in the app."))
+            .apply {
+                if (!configured) setPositiveButton("Choose folder") { _, _ -> chooseFolder.launch(PublicSessionStorage.initialUri) }
+                else if (error != null || retry) {
+                    setPositiveButton("Retry") { _, _ -> SessionPublisher.request(activity.applicationContext) }
+                    setNeutralButton("Choose folder") { _, _ -> chooseFolder.launch(PublicSessionStorage.initialUri) }
+                }
             }
-            .apply { if (configured) setNeutralButton("More") { _, _ ->
-                AlertDialog.Builder(activity).setTitle("Storage Options")
-                    .setItems(arrayOf("Verify all files", "Choose folder", "Pause saving")) { _, index ->
-                        when (index) {
-                            0 -> SessionPublisher.request(activity.applicationContext, verify = true, manual = true)
-                            1 -> chooseFolder.launch(PublicSessionStorage.initialUri)
-                            2 -> SessionPublisher.pause(activity.applicationContext)
-                        }
-                    }.setNegativeButton("Close", null).show()
-            } }
             .setNegativeButton("Close", null).show()
     }
 
@@ -91,7 +83,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
                 val sessions = result.getOrElse { message("Cannot list sessions: ${it.message}"); return@ui }
                 val dialog = AlertDialog.Builder(activity).setTitle("Saved Sessions")
                     .setNegativeButton("Close", null)
-                    .setNeutralButton("Storage") { _, _ -> storage() }
+                    .setNeutralButton("Save location") { _, _ -> storage() }
                     .setPositiveButton("New Session") { _, _ ->
                         SessionFiles.newSession(activity.applicationContext)
                         sessionChanged()
@@ -106,7 +98,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
 
     private fun actions(session: SavedSession) {
         AlertDialog.Builder(activity).setTitle("Session")
-            .setMessage("${session.label}\n\nBrowse raw session folders in Internal storage → Pictures → Q-VLP, or use Share / Save ZIP for a compressed copy. Open Storage to set up or retry automatic saving." +
+            .setMessage("${session.label}\n\nAuto-save folder: Pictures/Q-VLP/${session.id}/\nEach position and repeat has its own folder. Share / Save ZIP creates an optional compressed copy." +
                 if (session.warnings.isBlank()) "" else "\n\n${session.warnings}")
             .setPositiveButton("Share") { _, _ -> export(session, share = true) }
             .setNeutralButton("Save ZIP") { _, _ -> export(session, share = false) }

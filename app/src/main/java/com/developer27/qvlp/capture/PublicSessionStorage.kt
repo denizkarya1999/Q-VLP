@@ -64,14 +64,14 @@ internal object PublicSessionStorage {
     }
 
     fun requireDestination(context: Context, control: CopyControl = CopyControl()): Uri {
-        check(configured(context)) { "Choose $PATH in Sessions → Storage before recording." }
+        check(configured(context)) { "Choose $PATH in Sessions → Save location before recording." }
         return destination(context, requireNotNull(selected(context)), control)
     }
 
     private fun destination(context: Context, tree: Uri, control: CopyControl = CopyControl()): Uri {
         val document = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val root = Document(context, document, control)
-        check(root.isDirectory()) { "The selected folder is unavailable. Choose it again in Sessions → Storage." }
+        check(root.isDirectory()) { "The selected folder is unavailable. Choose it again in Sessions → Save location." }
         return if (DocumentsContract.getTreeDocumentId(tree) == "primary:$PATH") document
             else root.directory("Q-VLP").uri
     }
@@ -151,10 +151,10 @@ internal object PublicSessionStorage {
     }
 
     fun status(context: Context, session: File): String {
-        if (!configured(context)) return "Choose $PATH in Storage"
-        if (preferences(context).contains("error_${session.name}")) return "Public save needs attention · Open Storage"
+        if (!configured(context)) return "Set up auto-save in Save location"
+        if (preferences(context).contains("error_${session.name}")) return "Auto-save needs attention · Open Save location"
         return if (!needsSave(context, snapshot(session))) "Saved to $PATH"
-            else "Waiting to save to $PATH · Open Storage to retry"
+            else "Auto-save pending · $PATH"
     }
 
     private fun publishable(file: File) = !file.name.endsWith(".part") && !file.name.endsWith(".bak") && !file.name.endsWith(".new")

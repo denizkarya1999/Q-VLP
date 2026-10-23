@@ -94,7 +94,7 @@ class MainActivity : AppCompatActivity() {
             updateControls()
         }
         sessions.restore(savedInstanceState)
-        viewBinding.storageStatus.setOnClickListener { sessions.storage() }
+        viewBinding.storageStatus.setOnClickListener { sessions.storage(retry = storageState.needsAttention) }
         stopObservingStorage = SessionPublisher.observe { state ->
             storageState = state
             showStorageStatus()
@@ -308,7 +308,7 @@ class MainActivity : AppCompatActivity() {
         val description = getString(R.string.capture_summary, summary.positionId, savedDescription, fps)
         resultDetails = description + "\n\n" + (if (summary.warnings.isEmpty()) getString(R.string.capture_no_warnings)
             else summary.warnings.joinToString("\n\n"))
-        resultDetails += "\n\nSession folder: Pictures/Q-VLP/${summary.sessionId}. Check the folder-saving status before copying files. A recovery copy is saved in the app."
+        resultDetails += "\n\nSession folder: Pictures/Q-VLP/${summary.sessionId}. This position saves there automatically. A recovery copy is kept in the app."
         viewBinding.burstStatus.text = savedDescription + "\n" + when {
             summary.interrupted -> getString(R.string.capture_interrupted_short)
             summary.warnings.isNotEmpty() -> getString(R.string.capture_warning_short, summary.warnings.size)
@@ -345,7 +345,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun showStorageStatus() {
         viewBinding.storageStatus.text = if (captureBusy && storageState.running)
-            "Folder saving will continue after this capture." else storageState.message
+            "Auto-save continues after this capture." else storageState.message
+        val actionable = storageState.needsAttention && !captureBusy && !fileBusy
+        viewBinding.storageStatus.isClickable = actionable
+        viewBinding.storageStatus.isFocusable = actionable
     }
 
     private fun updateControls() {

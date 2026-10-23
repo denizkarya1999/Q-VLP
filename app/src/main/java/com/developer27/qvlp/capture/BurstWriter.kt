@@ -258,7 +258,7 @@ internal class BurstWriter private constructor(
                 warnings.add("Could not finish session metadata: ${e.message}. Saved frame files remain available.")
             }
             if (SessionFiles.activeCapture == location.directory) SessionFiles.activeCapture = null
-            SessionPublisher.captureReady(context, requireNotNull(location.directory.parentFile))
+            SessionPublisher.captureReady(context, requireNotNull(location.directory.parentFile), position.id)
             completed(BurstSummary(location.sessionId, position.id, saved.size, length, fps, warnings.toList(), reason != null))
         }
     }
@@ -295,7 +295,7 @@ internal class BurstWriter private constructor(
                         YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height), reserveFrames), 32L * 1024 * 1024)
                     // Both the recoverable private copy and public copy occupy internal storage.
                     check(StatFs(context.filesDir.absolutePath).availableBytes >= Math.multiplyExact(required, 2L)) { "Not enough free storage for the selected capture length. Choose fewer frames or a shorter duration." }
-                    check(PublicSessionStorage.configured(context)) { "Choose Pictures/Q-VLP in Sessions → Storage before recording." }
+                    check(PublicSessionStorage.configured(context)) { "Choose Pictures/Q-VLP in Sessions → Save location before recording." }
                     val writer = BurstWriter(context.applicationContext, SessionFiles.createBurst(context, position, mounting), profile, length,
                         position, cameraInfo, progress, completed)
                     SessionFiles.writeJson(File(writer.location.directory, "burst.json"), writer.manifest("preparing"))
