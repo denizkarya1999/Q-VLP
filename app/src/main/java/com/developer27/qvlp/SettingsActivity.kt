@@ -98,6 +98,12 @@ class SettingsActivity : AppCompatActivity() {
                     .setPositiveButton(android.R.string.ok, null).show()
                 true
             }
+            findPreference<Preference>("mounted_camera_check")?.setOnPreferenceClickListener {
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.mounted_camera_check).setMessage(R.string.mounted_camera_check_help)
+                    .setPositiveButton(android.R.string.ok, null).show()
+                true
+            }
             findPreference<Preference>("mounting_setup")?.setOnPreferenceClickListener {
                 startActivity(android.content.Intent(requireContext(), SettingsActivity::class.java)
                     .putExtra(EXTRA_CAMERA_ID, requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))

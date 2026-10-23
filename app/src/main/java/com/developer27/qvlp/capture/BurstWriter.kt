@@ -264,13 +264,9 @@ internal class BurstWriter private constructor(
     }
 
     private fun writeCsv() {
-        val header = mutableListOf("session_id", "position_id", "rx_x_m", "rx_y_m", "frame_id", "timestamp_ns",
-            "exposure_time_s", "iso", "fps", "sensor_width_px", "sensor_height_px", "row_time_us")
-        for (led in 1..4) listOf("detected", "img_x_px", "img_y_px", "freq_est_hz", "stripe_period_rows",
-            "blob_area_px", "peak_level", "touches_border").forEach { header.add("led${led}_$it") }
         val partial = File(location.directory, "frames.csv.part")
         partial.bufferedWriter(Charsets.UTF_8).use { csv ->
-            csv.appendLine(header.joinToString(","))
+            csv.appendLine(SessionCsv.header)
             saved.values.forEach { f ->
                 val exposure = if (f.isNull("exposure_time_ns")) null else java.math.BigDecimal.valueOf(f.getLong("exposure_time_ns"), 9).toPlainString()
                 val fields = mutableListOf<Any?>(location.sessionId, position.id, position.x, position.y,

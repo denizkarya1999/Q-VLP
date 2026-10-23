@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.view.KeyEvent
 import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
@@ -27,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.preference.PreferenceManager
 import com.developer27.qvlp.camera.CameraHelper
+import com.developer27.qvlp.capture.CaptureTrigger
 import com.developer27.qvlp.capture.CaptureLength
 import com.developer27.qvlp.capture.CaptureLengthMode
 import com.developer27.qvlp.capture.CaptureLengthPreferences
@@ -47,6 +49,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var positions: PositionPicker
     private lateinit var sessions: SessionBrowser
     private lateinit var cameraPermissionLauncher: ActivityResultLauncher<String>
+    private val captureTrigger = CaptureTrigger()
+    private var resumed = false
+    private var triggerBusy = false
     private var captureBusy = false
     private var fileBusy = false
     private var cameraReady = false
@@ -134,12 +139,7 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton(android.R.string.ok, null)
                 .setNeutralButton(R.string.settings) { _, _ -> openSettings() }.show()
         }
-        viewBinding.startCaptureButton.setOnClickListener {
-            if (captureBusy) cancelFrameCapture() else {
-                val position = ResearchSettings.position(preferences)
-                if (position.x == null || position.y == null) positions.show() else beginCountdown(position)
-            }
-        }
+        viewBinding.startCaptureButton.setOnClickListener { triggerCapture() }
         viewBinding.repeatCaptureButton.setOnClickListener {
             lastPosition?.let { PositionCatalog.select(preferences, it); beginCountdown(it) }
         }
@@ -165,6 +165,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         if (!captureBusy && resultDetails == null) showCapturePlan()
         cameraHelper.fitPreview()
         cameraHelper.startBackgroundThread()
@@ -182,6 +183,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        resumed = false
+        captureTrigger.reset()
         cameraReady = false
         if (captureBusy) cancelFrameCapture("Capture interrupted while the app was not active.", restorePreview = false)
         cameraHelper.closeCamera()
@@ -199,6 +202,34 @@ class MainActivity : AppCompatActivity() {
         outState.putString("result_details", resultDetails)
         outState.putString("result_text", viewBinding.burstStatus.text.toString())
         super.onSaveInstanceState(outState)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) captureTrigger.reset()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val supported = event.keyCode in setOf(KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN,
+            KeyEvent.KEYCODE_CAMERA) || (event.keyCode == KeyEvent.KEYCODE_ENTER && event.device?.isVirtual == false &&
+                event.flags and KeyEvent.FLAG_SOFT_KEYBOARD == 0)
+        if (!supported || !resumed || !hasWindowFocus()) return super.dispatchKeyEvent(event)
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> if (captureTrigger.press(event.deviceId, event.keyCode, event.repeatCount)) triggerCapture()
+            KeyEvent.ACTION_UP -> captureTrigger.release(event.deviceId, event.keyCode)
+        }
+        return true
+    }
+
+    private fun triggerCapture() {
+        if (fileBusy || triggerBusy) return
+        if (captureBusy) { cancelFrameCapture(); return }
+        if (!cameraReady) {
+            Toast.makeText(this, R.string.camera_wait_button, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val position = ResearchSettings.position(preferences)
+        if (position.x == null || position.y == null) positions.show() else beginCountdown(position)
     }
 
     private fun openSettings() {
@@ -273,6 +304,7 @@ class MainActivity : AppCompatActivity() {
                     completed = { summary -> runOnUiThread { if (!isDestroyed) finishFrameCapture(summary) } },
                     failed = { error -> runOnUiThread {
                         if (!isDestroyed) {
+                            triggerBusy = false
                             captureBusy = false
                             requestedOrientation = orientationBeforeCapture
                             viewBinding.burstStatus.text = error
@@ -293,12 +325,14 @@ class MainActivity : AppCompatActivity() {
             viewBinding.burstStatus.setText(R.string.countdown_cancelled)
             updateControls()
         } else {
+            triggerBusy = true
             viewBinding.burstStatus.setText(R.string.saving_partial_capture)
             cameraHelper.cancelBurst(reason, restorePreview)
         }
     }
 
     private fun finishFrameCapture(summary: BurstSummary) {
+        triggerBusy = false
         captureBusy = false
         requestedOrientation = orientationBeforeCapture
         val fps = summary.fps?.let { String.format(java.util.Locale.getDefault(), "%.2f", it) } ?: "—"

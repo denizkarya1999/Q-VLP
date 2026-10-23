@@ -28,6 +28,7 @@ internal object SessionPublisher {
     private var draining = false
     private var selectingFolder = false
     private var scanQueued = false
+    private var snapshotsPrepared = false
     private var state = State()
 
     fun observe(observer: (State) -> Unit): () -> Unit {
@@ -55,7 +56,12 @@ internal object SessionPublisher {
     /** Called on the capture I/O queue only after the attempt and metadata are closed. */
     fun captureReady(context: Context, session: File, positionId: Int) {
         enableAutoSave(context)
-        runCatching { enqueue(context, PublicSessionStorage.snapshot(session), positionId) }.onFailure {
+        runCatching {
+            prepareSnapshots(context)
+            SessionCsv.update(session)
+            enqueue(context, PublicSessionStorage.snapshot(session), positionId)
+        }.onFailure {
+            PublicSessionStorage.recordError(context, session.name, it)
             update(State(message = "Could not prepare auto-save · Tap to retry", needsAttention = true))
         }
     }
@@ -74,9 +80,13 @@ internal object SessionPublisher {
         }
         SessionFiles.io.execute {
             try {
+                prepareSnapshots(app)
                 SessionFiles.directories(app).forEach { session ->
-                    val snapshot = PublicSessionStorage.snapshot(session)
-                    if (PublicSessionStorage.needsSave(app, snapshot)) enqueue(app, snapshot)
+                    runCatching {
+                        SessionCsv.update(session)
+                        val snapshot = PublicSessionStorage.snapshot(session)
+                        if (PublicSessionStorage.needsSave(app, snapshot)) enqueue(app, snapshot)
+                    }.onFailure { PublicSessionStorage.recordError(app, session.name, it) }
                 }
                 synchronized(lock) {
                     if (!draining && !selectingFolder) {
@@ -96,26 +106,38 @@ internal object SessionPublisher {
         val app = context.applicationContext
         synchronized(lock) {
             selectingFolder = true
+            pending.values.forEach { it.snapshot.discard() }
             pending.clear()
             control?.cancel()
         }
         worker.execute {
             val result = runCatching { PublicSessionStorage.select(app, uri) }
             synchronized(lock) { selectingFolder = false }
-            request(app)
+            SessionFiles.io.execute { request(app) }
             main.post { completed(result) }
+        }
+    }
+
+    /** Only accessed on the capture I/O queue, before its first snapshot is enqueued. */
+    private fun prepareSnapshots(context: Context) {
+        if (!snapshotsPrepared) {
+            PublicSessionStorage.clearAbandonedSnapshots(context)
+            snapshotsPrepared = true
         }
     }
 
     private fun enqueue(context: Context, snapshot: SessionSnapshot, positionId: Int? = null) {
         val app = context.applicationContext as Application
+        val frozen = PublicSessionStorage.freeze(app, snapshot)
         synchronized(lock) {
-            if (selectingFolder) return // The folder-selection callback scans unfinished saves again.
+            if (selectingFolder) { frozen.discard(); return } // Folder selection scans again.
             val id = snapshot.root.file.name
             val active = current
             if (active != null && active.snapshot.root.file.name == id && active.snapshot.signature == snapshot.signature &&
-                control?.signal?.isCanceled != true) return
-            pending[id] = Job(app, snapshot, positionId ?: pending[id]?.positionId)
+                control?.signal?.isCanceled != true) { frozen.discard(); return }
+            val previous = pending[id]
+            pending[id] = Job(app, frozen, positionId ?: previous?.positionId)
+            previous?.snapshot?.discard()
             if (draining) return
             draining = true
             worker.execute(::drain)
@@ -155,6 +177,7 @@ internal object SessionPublisher {
             } catch (error: Exception) {
                 failure = error
             } finally {
+                job.snapshot.discard()
                 synchronized(lock) {
                     current = null
                     control = null

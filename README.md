@@ -62,6 +62,18 @@ The app first finishes recording in its private recovery store, then publishes a
 
 `frames.csv` retains the document's exact per-frame column names. Unknown values and unprocessed LED columns are empty. Per-frame FPS is `1e9 / elapsed_timestamp_ns` between consecutive saved frames (the first cell is empty); burst FPS uses `(saved_frames - 1) / elapsed_seconds`. Capture settings, original crop/strides, missing IDs and warnings are in `burst.json`. The journal is updated after each saved frame; interrupted attempts may lack a finalized CSV, but their files and journal remain exportable. Mount changes create a new session. Row time is only reused for its recorded camera, resolution and zoom; changing zoom marks it unknown until the matching calibration is entered or restored.
 
+### Session CSV and repeated positions
+
+Every session has a top-level `frames.csv` with exactly the 44 specified columns, one header and no extra attempt column. It combines the **latest completed attempt per position**, ordered by the imported survey (or position ID for manual positions). Original per-attempt CSV, JSON and YUV files remain unchanged. A cancelled or interrupted Repeat never replaces a completed attempt; a position with only interrupted attempts has no rows in the combined CSV. A completed attempt may still have capture warnings, which remain in its `burst.json`; selection does not mean the attempt passed research quality checks.
+
+`session.json` contains `frame_export`: the policy, selected attempt folders and their counts, excluded attempts, and the combined CSV hash. This maps each session row to its original frame without changing the required CSV columns. The index is rebuilt atomically after capture and repaired on reopening/export, including for existing sessions. A malformed selected CSV leaves the previous index intact and reports an error. Publication freezes mutable session files and copies attempts before publishing the combined CSV and metadata, so a later capture cannot change an in-flight index. ZIP exports contain this same layout.
+
+### Hardware capture and mounted checks
+
+On the active camera screen, either volume key or a camera shutter key starts the same countdown as Start Capture. Press again to cancel the countdown or recording; holding a button never repeatedly starts/stops captures. After a result, the shutter repeats the selected position. The same permission, position and research-setting checks apply. Buttons do not trigger capture in Settings, dialogs or while the app is in the background. Android-paired Bluetooth HID shutters that send volume, camera or hardware Enter key events are supported; pairing remains in Android Settings. Other remote protocols are not implemented. Change notification volume outside the camera screen if needed for the completion beep.
+
+**Settings → Mounted Camera Check** explains lens centring/height, fixed orientation, focus and illumination checks under the real research LEDs. These optical checks require the actual setup and are not marked passed by a bench capture. Hardware key events can be tested by injection, but a physical Bluetooth remote still needs its own pairing/press check.
+
 ### Capture length
 
 The selected mode and each mode’s last value are remembered. The choice is frozen when Start Capture is tapped and shown on the capture screen; settings are unavailable during countdown and recording. The 3-second countdown is separate from capture duration. Frame mode stops after the selected number of exposures, and missing saved frames are reported rather than silently replaced. Duration mode keeps frames whose sensor timestamps fall within the selected interval starting at the first exposure; it does not convert seconds into a fixed frame count. Camera shutdown and saving may finish after that interval. A single repeating request avoids constructing a large request list, and extra in-flight frames outside the selection are discarded.
@@ -113,7 +125,7 @@ This is the **pre-CV capture workflow**, not full implementation of the applicat
 - Validate actual geometry, fixed settings and sustained capture rate on the mounted target phone. A successful build does not establish device compliance or the PDF's acceptance criteria.
 - Implement LED detection, stripe frequency identification, row-time calibration from an LED, quality filtering, preview overlays and position-level fingerprint aggregation. LED CSV columns remain empty and `fingerprints.csv` is not generated yet.
 
-The current export preserves each repeated attempt in its own folder. The final pipeline's session-level frame/fingerprint layout and repeat-selection policy must be integrated with CV. No LED counts or location estimates are presented as measured results in this version.
+The session-level `frames.csv` and repeat selection are implemented. CV still needs to supply LED measurements and generate `fingerprints.csv`. No LED counts or location estimates are presented as measured results in this version.
 
 Android references: [document import/export](https://developer.android.com/training/data-storage/shared/documents-files), [Camera2 capture controls](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest), [YUV planes](https://developer.android.com/reference/android/graphics/ImageFormat#YUV_420_888), and [temporary sharing permissions](https://developer.android.com/training/secure-file-sharing/share-file).
 

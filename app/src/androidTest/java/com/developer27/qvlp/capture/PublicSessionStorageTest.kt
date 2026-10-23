@@ -203,11 +203,18 @@ class PublicSessionStorageTest {
         fun finish(position: Int, name: String, bytes: ByteArray) {
             val attempt = File(source, name).apply { mkdirs() }
             File(attempt, "frame_00000.yuv").writeBytes(bytes)
-            File(attempt, "burst.json").writeText("{\"state\":\"complete\"}")
-            val snapshot = PublicSessionStorage.snapshot(source)
-            assertTrue(PublicSessionStorage.needsSave(context, snapshot))
+            File(attempt, "burst.json").writeText(org.json.JSONObject().put("state", "complete")
+                .put("position", org.json.JSONObject().put("position_id", position))
+                .put("frames_saved", 1).put("finished_at", java.time.Instant.now().toString()).toString())
+            val row = MutableList(SessionCsv.columns.size) { "" }.apply {
+                this[0] = source.name; this[1] = position.toString(); this[4] = "0"
+            }
+            File(attempt, "frames.csv").writeText(SessionCsv.header + "\n" + row.joinToString(",") + "\n")
+            val before = PublicSessionStorage.snapshot(source)
+            assertTrue(PublicSessionStorage.needsSave(context, before))
             SessionFiles.io.submit { SessionPublisher.captureReady(context, source, position) }
                 .get(5, java.util.concurrent.TimeUnit.SECONDS)
+            val snapshot = PublicSessionStorage.snapshot(source)
             val deadline = android.os.SystemClock.uptimeMillis() + 15_000
             while (PublicSessionStorage.needsSave(context, snapshot) && android.os.SystemClock.uptimeMillis() < deadline)
                 Thread.sleep(50)
@@ -228,6 +235,39 @@ class PublicSessionStorageTest {
         } finally {
             if (previousPause == null) prefs.edit().remove("paused").commit()
             else prefs.edit().putBoolean("paused", previousPause).commit()
+            find(root, source.name)?.let { DocumentsContract.deleteDocument(context.contentResolver, it) }
+            File(context.filesDir, "public_session_receipts/${source.name}.json").delete()
+            source.deleteRecursively()
+        }
+    }
+
+    @Test fun publicationFreezesMutableIndexAndPublishesAttemptsBeforeIt() {
+        assumeTrue(PublicSessionStorage.configured(context))
+        val root = PublicSessionStorage.requireDestination(context)
+        val source = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
+        File(source, "session.json").writeText("generation one")
+        File(source, "frames.csv").writeText("first index")
+        val attempt = File(source, "position_first").apply { mkdirs() }
+        File(attempt, "frame.yuv").writeBytes(byteArrayOf(1, 2, 3))
+        val frozen = PublicSessionStorage.freeze(context, PublicSessionStorage.snapshot(source))
+        try {
+            File(source, "session.json").writeText("generation two")
+            File(source, "frames.csv").writeText("second index")
+            PublicSessionStorage.syncSession(context, frozen) { done, _ ->
+                if (done == 1) {
+                    val target = requireNotNull(find(root, source.name))
+                    assertNotNull(find(requireNotNull(find(target, attempt.name)), "frame.yuv"))
+                    assertNull("Index must follow its frames", find(target, "frames.csv"))
+                }
+            }.getOrThrow()
+            val target = requireNotNull(find(root, source.name))
+            assertEquals("first index", context.contentResolver.openInputStream(requireNotNull(find(target, "frames.csv")))!!.bufferedReader().use { it.readText() })
+            assertEquals("generation one", context.contentResolver.openInputStream(requireNotNull(find(target, "session.json")))!!.bufferedReader().use { it.readText() })
+            assertTrue(PublicSessionStorage.needsSave(context, PublicSessionStorage.snapshot(source)))
+            PublicSessionStorage.syncSession(context, source).getOrThrow()
+            assertEquals("second index", context.contentResolver.openInputStream(requireNotNull(find(target, "frames.csv")))!!.bufferedReader().use { it.readText() })
+        } finally {
+            frozen.discard()
             find(root, source.name)?.let { DocumentsContract.deleteDocument(context.contentResolver, it) }
             File(context.filesDir, "public_session_receipts/${source.name}.json").delete()
             source.deleteRecursively()

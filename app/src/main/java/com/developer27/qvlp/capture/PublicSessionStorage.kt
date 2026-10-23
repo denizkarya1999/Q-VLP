@@ -23,7 +23,9 @@ internal class CopyControl(private val yieldToCapture: Boolean = false) {
 internal data class SessionFolder(val file: File, val files: List<File>, val children: List<SessionFolder>, val signature: String) {
     val allFiles: List<File> get() = files + children.flatMap { it.allFiles }
 }
-internal data class SessionSnapshot(val root: SessionFolder, val signature: String)
+internal data class SessionSnapshot(val root: SessionFolder, val signature: String, val frozenRoot: File? = null) {
+    fun discard() { frozenRoot?.deleteRecursively() }
+}
 
 /** The capture worker snapshots immutable attempts; a separate worker publishes public copies. */
 internal object PublicSessionStorage {
@@ -90,6 +92,27 @@ internal object PublicSessionStorage {
         }
         val root = read(session)
         return SessionSnapshot(root, signature(root.allFiles, session))
+    }
+
+    /** Freeze mutable session CSV/metadata while immutable attempt folders are copied in place. */
+    fun freeze(context: Context, snapshot: SessionSnapshot): SessionSnapshot {
+        val folder = File(context.cacheDir, "public_session_snapshots/${java.util.UUID.randomUUID()}")
+        check(folder.mkdirs()) { "Cannot prepare the session files for saving." }
+        try {
+            val files = snapshot.root.files.map { source -> source.copyTo(File(folder, source.name)) }
+            return snapshot.copy(root = snapshot.root.copy(files = files), frozenRoot = folder)
+        } catch (error: Exception) {
+            folder.deleteRecursively()
+            throw error
+        }
+    }
+
+    fun clearAbandonedSnapshots(context: Context) {
+        File(context.cacheDir, "public_session_snapshots").deleteRecursively()
+    }
+
+    fun recordError(context: Context, id: String, error: Throwable) {
+        preferences(context).edit().putString("error_$id", error.message ?: "Cannot prepare session files.").apply()
     }
 
     private fun receiptFile(context: Context, id: String) = File(context.filesDir, "public_session_receipts/$id.json")
@@ -167,6 +190,8 @@ internal object PublicSessionStorage {
     private fun mirror(root: File, source: SessionFolder, target: Document, records: JSONObject,
                        verify: Boolean, control: CopyControl, checkpoint: () -> Unit, advance: (Int) -> Unit) {
         control.check()
+        // Publish attempts before the session index that references them.
+        source.children.forEach { child -> mirror(root, child, target.directory(child.file.name), records, verify, control, checkpoint, advance) }
         val key = source.file.relativeTo(root).invariantSeparatorsPath.ifEmpty { "." }
         val previous = records.optJSONObject(key)
         if (verify || target.created || previous?.optString("signature") != source.signature || previous.optString("uri") != target.uri.toString()) {
@@ -174,7 +199,7 @@ internal object PublicSessionStorage {
             checkpoint()
             val existing = target.children().associateBy { it.name }
             source.files.sortedWith(compareBy<File> {
-                when (it.name) { "burst.json" -> 2; "frames.csv" -> 1; else -> 0 }
+                when (it.name) { "burst.json", "session.json" -> 2; "frames.csv" -> 1; else -> 0 }
             }.thenBy { it.name }).forEach { file ->
                 control.check()
                 target.publish(file, existing[file.name], existing[".${file.name}.qvlp-part"])
@@ -183,7 +208,6 @@ internal object PublicSessionStorage {
             records.put(key, JSONObject().put("signature", source.signature).put("uri", target.uri.toString()))
             checkpoint()
         } else advance(source.files.size)
-        source.children.forEach { child -> mirror(root, child, target.directory(child.file.name), records, verify, control, checkpoint, advance) }
     }
 
     private fun digest(input: InputStream, control: CopyControl? = null): String = input.buffered().use { stream ->

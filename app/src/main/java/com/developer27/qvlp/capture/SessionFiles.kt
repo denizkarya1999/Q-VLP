@@ -67,6 +67,9 @@ internal object SessionFiles {
 
                 session.json records mounting details and the device. Each position_* folder
                 is a separate capture attempt. Repeat preserves earlier attempts.
+                The session-level frames.csv selects the latest completed attempt per position.
+                Interrupted attempts never replace a completed attempt. session.json frame_export
+                lists selected and excluded attempt folders. All original files remain available.
                 burst.json records requested settings, actual per-frame metadata and warnings.
                 frames.csv uses sensor timestamps; exposure_time_s is in seconds and fps is
                 measured from consecutive saved-frame timestamps. The first fps cell is empty.
@@ -119,6 +122,7 @@ internal object SessionFiles {
         require(validId(id))
         val session = File(root(context), id)
         check(session.isDirectory) { "Session not found." }
+        SessionCsv.update(session)
         val exports = File(context.cacheDir, "session_exports").apply { mkdirs() }
         val file = File(exports, "${id}_${UUID.randomUUID()}.zip")
         val partial = File(exports, "${file.name}.part")

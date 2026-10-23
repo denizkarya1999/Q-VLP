@@ -98,7 +98,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
 
     private fun actions(session: SavedSession) {
         AlertDialog.Builder(activity).setTitle("Session")
-            .setMessage("${session.label}\n\nAuto-save folder: Pictures/Q-VLP/${session.id}/\nEach position and repeat has its own folder. Share / Save ZIP creates an optional compressed copy." +
+            .setMessage("${session.label}\n\nAuto-save folder: Pictures/Q-VLP/${session.id}/\nframes.csv combines the latest completed attempt for each position. Earlier and interrupted attempts stay in their original folders. Share / Save ZIP creates an optional compressed copy." +
                 if (session.warnings.isBlank()) "" else "\n\n${session.warnings}")
             .setPositiveButton("Share") { _, _ -> export(session, share = true) }
             .setNeutralButton("Save ZIP") { _, _ -> export(session, share = false) }
