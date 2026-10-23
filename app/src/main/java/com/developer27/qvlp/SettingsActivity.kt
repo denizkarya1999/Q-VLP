@@ -104,6 +104,19 @@ class SettingsActivity : AppCompatActivity() {
                     .setPositiveButton(android.R.string.ok, null).show()
                 true
             }
+            findPreference<Preference>("positions_csv_help")?.setOnPreferenceClickListener {
+                val example = getString(R.string.positions_csv_example)
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.positions_csv_help_title)
+                    .setMessage(getString(R.string.positions_csv_help, example))
+                    .setNeutralButton(R.string.copy_csv_example) { _, _ ->
+                        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("positions.csv", example))
+                        Toast.makeText(requireContext(), R.string.csv_example_copied, Toast.LENGTH_SHORT).show()
+                    }
+                    .setPositiveButton(android.R.string.ok, null).show()
+                true
+            }
             findPreference<Preference>("mounting_setup")?.setOnPreferenceClickListener {
                 startActivity(android.content.Intent(requireContext(), SettingsActivity::class.java)
                     .putExtra(EXTRA_CAMERA_ID, requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))

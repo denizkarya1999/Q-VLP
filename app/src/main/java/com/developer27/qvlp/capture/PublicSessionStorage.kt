@@ -66,14 +66,14 @@ internal object PublicSessionStorage {
     }
 
     fun requireDestination(context: Context, control: CopyControl = CopyControl()): Uri {
-        check(configured(context)) { "Choose $PATH in Sessions → Save location before recording." }
+        check(configured(context)) { "Choose $PATH in Sessions → More → Save location before recording." }
         return destination(context, requireNotNull(selected(context)), control)
     }
 
     private fun destination(context: Context, tree: Uri, control: CopyControl = CopyControl()): Uri {
         val document = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val root = Document(context, document, control)
-        check(root.isDirectory()) { "The selected folder is unavailable. Choose it again in Sessions → Save location." }
+        check(root.isDirectory()) { "The selected folder is unavailable. Choose it again in Sessions → More → Save location." }
         return if (DocumentsContract.getTreeDocumentId(tree) == "primary:$PATH") document
             else root.directory("Q-VLP").uri
     }
@@ -117,6 +117,34 @@ internal object PublicSessionStorage {
 
     private fun receiptFile(context: Context, id: String) = File(context.filesDir, "public_session_receipts/$id.json")
 
+    /** Find only: deletion must never create a missing destination or session folder. */
+    fun deleteSession(context: Context, id: String) {
+        require(SessionFiles.validId(id) && SessionFiles.isDeleting(context, id))
+        val tree = selected(context)
+        if (tree == null) {
+            check(!receiptFile(context, id).exists()) { "Choose $PATH in Save location to finish deleting this session." }
+            return // Never published and no public folder selected.
+        }
+        check(configured(context)) { "Choose $PATH in Save location to finish deleting this session." }
+        val rootUri = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        val control = CopyControl()
+        val root = Document(context, rootUri, control)
+        val destination = if (DocumentsContract.getTreeDocumentId(tree) == "primary:$PATH") root else {
+            val entry = root.children().firstOrNull { it.name == "Q-VLP" } ?: return
+            check(entry.directory) { "$PATH is not a folder." }
+            Document(context, entry.uri, control)
+        }
+        val session = destination.children().firstOrNull { it.name == id } ?: return
+        check(session.directory) { "The saved session is not a folder. Check $PATH before retrying." }
+        check(DocumentsContract.deleteDocument(context.contentResolver, session.uri)) { "Cannot delete the session from $PATH. Retry deletion." }
+    }
+
+    fun forgetSession(context: Context, id: String) {
+        require(SessionFiles.validId(id))
+        synchronized(receiptsLock) { android.util.AtomicFile(receiptFile(context, id)).delete() }
+        check(preferences(context).edit().remove("error_$id").commit()) { "Cannot finish session cleanup. Retry deletion." }
+    }
+
     fun needsSave(context: Context, snapshot: SessionSnapshot): Boolean {
         val receipt = synchronized(receiptsLock) { runCatching { SessionFiles.readJson(receiptFile(context, snapshot.root.file.name)) }.getOrNull() }
         return preferences(context).contains("error_${snapshot.root.file.name}") ||
@@ -125,7 +153,7 @@ internal object PublicSessionStorage {
 
     fun syncAll(context: Context, verify: Boolean = false): Result<Int> = runCatching {
         val failures = mutableListOf<String>()
-        val snapshots = SessionFiles.directories(context).map(::snapshot)
+        val snapshots = SessionFiles.directories(context).filterNot { SessionFiles.isDeleting(context, it.name) }.map(::snapshot)
         snapshots.filter { verify || needsSave(context, it) }.forEach { snapshot ->
             syncSession(context, snapshot, verify).exceptionOrNull()?.let { failures.add(it.message ?: "Save failed.") }
         }
@@ -140,6 +168,7 @@ internal object PublicSessionStorage {
                     control: CopyControl = CopyControl(), progress: (Int, Int) -> Unit = { _, _ -> }): Result<Unit> {
         val id = snapshot.root.file.name
         return runCatching {
+            if (SessionFiles.isDeleting(context, id)) throw CancellationException("Session is being deleted.")
             control.check()
             val root = Document(context, requireDestination(context, control), control)
             val target = root.directory(id)

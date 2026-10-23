@@ -8,10 +8,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import com.developer27.qvlp.R
+import com.developer27.qvlp.databinding.DialogSessionsTitleBinding
 import java.io.File
 
 internal class SessionBrowser(private val activity: AppCompatActivity, private val busy: (Boolean) -> Unit,
-                              private val sessionChanged: () -> Unit) {
+                              private val sessionChanged: (resetPosition: Boolean) -> Unit) {
     private var pendingZip: File? = null
     private val chooseFolder = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) SessionPublisher.selectFolder(activity.applicationContext, uri) { result -> ui {
@@ -63,7 +65,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
             .setMessage("Each finished position saves automatically to its session folder in Internal storage → Pictures → Q-VLP. Repeat keeps a separate attempt in the same session.\n\n" +
                 (if (configured) "You can move to the next position while saving finishes."
                 else "Choose Pictures or its Q-VLP folder once, then tap Use this folder and Allow.") +
-                (if (error == null) "" else "\n\nSave needs attention: $error\nYour recordings are safe in the app."))
+                (if (error == null) "" else "\n\nStorage needs attention: $error"))
             .apply {
                 if (!configured) setPositiveButton("Choose folder") { _, _ -> chooseFolder.launch(PublicSessionStorage.initialUri) }
                 else if (error != null || retry) {
@@ -81,28 +83,128 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
             ui {
                 busy(false)
                 val sessions = result.getOrElse { message("Cannot list sessions: ${it.message}"); return@ui }
-                val dialog = AlertDialog.Builder(activity).setTitle("Saved Sessions")
+                val selected = linkedSetOf<SavedSession>()
+                var selecting = false
+                val builder = AlertDialog.Builder(activity)
+                val title = DialogSessionsTitleBinding.inflate(android.view.LayoutInflater.from(builder.context))
+                androidx.core.view.ViewCompat.setAccessibilityHeading(title.sessionDialogTitle, true)
+                val labels = sessions.map { it.label }.toTypedArray()
+                val attributes = builder.context.obtainStyledAttributes(intArrayOf(android.R.attr.listChoiceIndicatorMultiple))
+                val checkMark = try { attributes.getDrawable(0)?.constantState } finally { attributes.recycle() }
+                val rows = object : android.widget.ArrayAdapter<String>(builder.context,
+                    android.R.layout.simple_list_item_multiple_choice, labels) {
+                    override fun getView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View =
+                        super.getView(position, convertView, parent).apply {
+                            (this as android.widget.CheckedTextView).checkMarkDrawable =
+                                if (selecting) checkMark?.newDrawable(resources)?.mutate() else null
+                        }
+                }
+                builder.setCustomTitle(title.root)
                     .setNegativeButton("Close", null)
-                    .setNeutralButton("Save location") { _, _ -> storage() }
-                    .setPositiveButton("New Session") { _, _ ->
-                        SessionFiles.newSession(activity.applicationContext)
-                        sessionChanged()
-                        message("The next capture will start a new session.")
+                    .setNeutralButton("More") { _, _ -> more() }
+                    .setPositiveButton(activity.getString(R.string.delete_session_count, 0), null)
+                if (sessions.isEmpty()) builder.setMessage("Start a capture to save your first session.")
+                else builder.setAdapter(rows, null)
+                val dialog = builder.create()
+                fun updateSelection() {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).apply {
+                        text = activity.getString(R.string.delete_session_count, selected.size)
+                        isEnabled = selected.isNotEmpty()
                     }
-                if (sessions.isEmpty()) dialog.setMessage("Start a capture to save your first session.")
-                else dialog.setItems(sessions.map { it.label }.toTypedArray()) { _, index -> actions(sessions[index]) }
+                }
+                dialog.setOnShowListener {
+                    updateSelection()
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        confirmDelete(selected.toList()) { dialog.dismiss() }
+                    }
+                    dialog.listView?.apply {
+                        setOnItemClickListener { _, _, index, _ ->
+                            val session = sessions[index]
+                            if (!selecting) details(session) else {
+                                if (isItemChecked(index)) selected.add(session) else selected.remove(session)
+                                updateSelection()
+                            }
+                        }
+                        setOnItemLongClickListener { _, _, index, _ ->
+                            if (!selecting) {
+                                selecting = true
+                                choiceMode = android.widget.ListView.CHOICE_MODE_MULTIPLE
+                                title.sessionSelectionHint.setText(R.string.session_selection_active)
+                                // Keep the adapter: replacing it during a hold resets ListView's gesture state.
+                                rows.notifyDataSetChanged()
+                            }
+                            setItemChecked(index, true)
+                            selected.add(sessions[index])
+                            updateSelection()
+                            true
+                        }
+                    }
+                }
                 dialog.show()
             }
         }
     }
 
-    private fun actions(session: SavedSession) {
-        AlertDialog.Builder(activity).setTitle("Session")
-            .setMessage("${session.label}\n\nAuto-save folder: Pictures/Q-VLP/${session.id}/\nframes.csv combines the latest completed attempt for each position. Earlier and interrupted attempts stay in their original folders. Share / Save ZIP creates an optional compressed copy." +
-                if (session.warnings.isBlank()) "" else "\n\n${session.warnings}")
-            .setPositiveButton("Share") { _, _ -> export(session, share = true) }
-            .setNeutralButton("Save ZIP") { _, _ -> export(session, share = false) }
+    private fun more() {
+        AlertDialog.Builder(activity).setTitle("Sessions")
+            .setItems(arrayOf("New Session", "Save location")) { _, index ->
+                if (index == 1) storage() else {
+                    SessionFiles.newSession(activity.applicationContext)
+                    sessionChanged(true)
+                    message("The next capture will start a new session.")
+                }
+            }.setNegativeButton("Close", null).show()
+    }
+
+    private fun details(session: SavedSession) {
+        AlertDialog.Builder(activity).setTitle("Session details")
+            .setMessage("${session.label}\n\nFolder: Pictures/Q-VLP/${session.id}/\n" +
+                if (session.deleting) "Deletion is pending. Close these details, select the session and tap Delete to retry."
+                else "frames.csv combines the latest completed attempt for each position. Earlier and interrupted attempts stay in their original folders. Share / Save ZIP creates an optional compressed copy." +
+                    if (session.warnings.isBlank()) "" else "\n\n${session.warnings}")
+            .apply {
+                if (!session.deleting) {
+                    setPositiveButton("Share") { _, _ -> export(session, share = true) }
+                    setNeutralButton("Save ZIP") { _, _ -> export(session, share = false) }
+                }
+            }
             .setNegativeButton("Close", null).show()
+    }
+
+    private fun confirmDelete(sessions: List<SavedSession>, confirmed: () -> Unit) {
+        if (sessions.isEmpty()) return
+        val names = sessions.joinToString("\n\n") { "${it.label.substringBefore('\n')}\n${it.id}" }
+        AlertDialog.Builder(activity).setTitle(if (sessions.size == 1) "Delete session?" else "Delete ${sessions.size} sessions?")
+            .setMessage("$names\n\nThis permanently removes all captures in the selected sessions from the app and Pictures/Q-VLP. ZIPs you saved or shared elsewhere are kept.\n\nThis cannot be undone.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ -> confirmed(); delete(sessions) }
+            .show()
+    }
+
+    private fun delete(sessions: List<SavedSession>) {
+        busy(true)
+        val preparing = sessions.map { it.id }.toMutableSet()
+        val results = mutableListOf<Result<Unit>>()
+        fun prepared(id: String) {
+            if (preparing.remove(id) && preparing.isEmpty()) busy(false)
+        }
+        message(if (sessions.size == 1) "Deleting session…" else "Deleting ${sessions.size} sessions…")
+        sessions.forEach { session ->
+            SessionPublisher.delete(activity.applicationContext, session.id, prepared = { active -> ui {
+                prepared(session.id)
+                if (active) sessionChanged(false)
+                if (pendingZip?.name?.startsWith("${session.id}_") == true) pendingZip = null
+            } }, completed = { result -> ui {
+                prepared(session.id)
+                results.add(result)
+                if (results.size == sessions.size) {
+                    val count = results.count { it.isSuccess }
+                    val error = results.firstOrNull { it.isFailure }?.exceptionOrNull()
+                    message(if (error != null) "$count of ${sessions.size} deleted. ${error.message} Open Sessions to retry."
+                        else if (count == 1) "Session deleted." else "$count sessions deleted.")
+                }
+            } })
+        }
     }
 
     private fun export(session: SavedSession, share: Boolean) {

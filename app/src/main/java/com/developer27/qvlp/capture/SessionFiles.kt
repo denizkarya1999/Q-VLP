@@ -16,14 +16,46 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 internal data class BurstLocation(val sessionId: String, val directory: File, val mounting: JSONObject)
-internal data class SavedSession(val id: String, val label: String, val warnings: String)
+internal data class SavedSession(val id: String, val label: String, val warnings: String, val deleting: Boolean = false)
 
 internal object SessionFiles {
     val io = Executors.newSingleThreadExecutor()
     @Volatile var activeCapture: File? = null
     private const val ACTIVE = "active_research_session"
     private fun root(context: Context) = File(context.filesDir, "sessions").apply { mkdirs() }
-    private fun validId(id: String) = id.matches(Regex("session_[0-9a-f-]+"))
+    fun validId(id: String) = id.matches(Regex("session_[0-9a-f-]+"))
+    private fun deletions(context: Context) = context.getSharedPreferences("session_deletions", Context.MODE_PRIVATE)
+    fun isDeleting(context: Context, id: String) = deletions(context).contains(id)
+    fun pendingDeletions(context: Context): Set<String> = deletions(context).all.keys.filter(::validId).toSet()
+
+    /** Persist intent before removing either copy. Called on io, after earlier capture/export work. */
+    fun beginDeletion(context: Context, id: String): Boolean {
+        require(validId(id)) { "Invalid session." }
+        val session = File(root(context), id)
+        check(session.isDirectory || isDeleting(context, id)) { "Session not found." }
+        check(activeCapture?.parentFile != session) { "Finish or cancel the recording before deleting its session." }
+        check(deletions(context).edit().putLong(id, System.currentTimeMillis()).commit()) { "Cannot remember the deletion." }
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val active = prefs.getString(ACTIVE, null) == id
+        if (active) check(prefs.edit().remove(ACTIVE).remove("last_capture_position").commit()) { "Cannot start a new session." }
+        return active
+    }
+
+    /** Public deletion must succeed first. Keep the marker until all cleanup has succeeded. */
+    fun deletePrivateFiles(context: Context, id: String) {
+        require(validId(id) && isDeleting(context, id))
+        val session = File(root(context), id)
+        check(!session.exists() || session.deleteRecursively()) { "Cannot remove all session files. Retry deletion." }
+        File(context.cacheDir, "session_exports").listFiles().orEmpty()
+            .filter { it.name.startsWith("${id}_") }.forEach {
+                check(it.delete()) { "Cannot remove the cached ZIP. Retry deletion." }
+            }
+    }
+
+    fun finishDeletion(context: Context, id: String) {
+        require(validId(id))
+        check(deletions(context).edit().remove(id).commit()) { "Cannot finish deleting the session. Retry deletion." }
+    }
 
     fun directories(context: Context): List<File> = root(context).listFiles().orEmpty()
         .filter { it.isDirectory && validId(it.name) }
@@ -36,7 +68,7 @@ internal object SessionFiles {
     fun createBurst(context: Context, position: Position, mounting: JSONObject): BurstLocation {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val prior = prefs.getString(ACTIVE, null)?.takeIf(::validId)
-        var session = prior?.let { File(root(context), it) }
+        var session = prior?.takeUnless { isDeleting(context, it) }?.let { File(root(context), it) }
         val previousMount = session?.let { runCatching { readJson(File(it, "session.json")).getJSONObject("mounting") }.getOrNull() }
         if (session == null || previousMount?.toString() != mounting.toString()) {
             session = File(root(context), "session_${UUID.randomUUID()}")
@@ -91,9 +123,12 @@ internal object SessionFiles {
         return BurstLocation(session.name, directory, mounting)
     }
 
-    fun list(context: Context): List<SavedSession> = directories(context)
+    fun list(context: Context): List<SavedSession> = (directories(context) +
+        pendingDeletions(context).map { File(root(context), it) }).distinct()
         .sortedByDescending { File(it, "session.json").lastModified() }
         .map { dir ->
+            if (isDeleting(context, dir.name)) return@map SavedSession(dir.name,
+                "Deletion pending · Select to retry\n${dir.name}", "", deleting = true)
             val info = runCatching { readJson(File(dir, "session.json")) }.getOrNull()
             val captures = dir.listFiles().orEmpty().filter { it.isDirectory }
             val count = captures.sumOf { it.listFiles()?.count { f -> f.extension == "yuv" } ?: 0 }
@@ -120,6 +155,7 @@ internal object SessionFiles {
 
     fun archive(context: Context, id: String): File {
         require(validId(id))
+        check(!isDeleting(context, id)) { "This session is being deleted." }
         val session = File(root(context), id)
         check(session.isDirectory) { "Session not found." }
         SessionCsv.update(session)

@@ -14,7 +14,10 @@ internal object SessionPublisher {
     data class State(val running: Boolean = false,
                      val message: String = "Auto-save · Pictures/Q-VLP",
                      val needsAttention: Boolean = false)
-    private data class Job(val context: Application, val snapshot: SessionSnapshot, val positionId: Int?)
+    private sealed interface Work
+    private data class Job(val context: Application, val snapshot: SessionSnapshot, val positionId: Int?) : Work
+    private data class Deletion(val context: Application, val id: String,
+        val callbacks: MutableList<(Result<Unit>) -> Unit> = mutableListOf()) : Work
     private val lock = Any()
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor { action -> Thread({
@@ -22,6 +25,8 @@ internal object SessionPublisher {
         action.run()
     }, "qvlp-public-saves") }
     private val pending = linkedMapOf<String, Job>()
+    private val deletions = linkedMapOf<String, Deletion>()
+    private var deleting: Deletion? = null
     private val observers = mutableSetOf<(State) -> Unit>()
     private var current: Job? = null
     private var control: CopyControl? = null
@@ -56,6 +61,7 @@ internal object SessionPublisher {
     /** Called on the capture I/O queue only after the attempt and metadata are closed. */
     fun captureReady(context: Context, session: File, positionId: Int) {
         enableAutoSave(context)
+        if (SessionFiles.isDeleting(context, session.name)) return
         runCatching {
             prepareSnapshots(context)
             SessionCsv.update(session)
@@ -70,18 +76,24 @@ internal object SessionPublisher {
     fun request(context: Context) {
         val app = context.applicationContext
         enableAutoSave(app)
-        if (!PublicSessionStorage.configured(app)) {
-            update(State(message = "Set up auto-save · Choose Pictures/Q-VLP", needsAttention = true))
-            return
-        }
         synchronized(lock) {
             if (scanQueued || selectingFolder) return
             scanQueued = true
         }
         SessionFiles.io.execute {
             try {
+                SessionFiles.pendingDeletions(app).forEach { id ->
+                    runCatching {
+                        SessionFiles.beginDeletion(app, id)
+                        enqueueDeletion(app, id)
+                    }.onFailure { PublicSessionStorage.recordError(app, id, it) }
+                }
+                if (!PublicSessionStorage.configured(app)) {
+                    update(State(message = "Set up auto-save · Choose Pictures/Q-VLP", needsAttention = true))
+                    return@execute
+                }
                 prepareSnapshots(app)
-                SessionFiles.directories(app).forEach { session ->
+                SessionFiles.directories(app).filterNot { SessionFiles.isDeleting(app, it.name) }.forEach { session ->
                     runCatching {
                         SessionCsv.update(session)
                         val snapshot = PublicSessionStorage.snapshot(session)
@@ -100,6 +112,57 @@ internal object SessionPublisher {
                 synchronized(lock) { scanQueued = false }
             }
         }
+    }
+
+    fun delete(context: Context, id: String, prepared: (Boolean) -> Unit, completed: (Result<Unit>) -> Unit) {
+        val app = context.applicationContext
+        SessionFiles.io.execute {
+            runCatching { SessionFiles.beginDeletion(app, id) }.fold(onSuccess = { active ->
+                main.post { prepared(active) }
+                enqueueDeletion(app, id, completed)
+            }, onFailure = { error -> main.post { completed(Result.failure(error)) } })
+        }
+    }
+
+    private fun enqueueDeletion(context: Context, id: String, completed: ((Result<Unit>) -> Unit)? = null) {
+        synchronized(lock) {
+            pending.remove(id)?.snapshot?.discard()
+            if (current?.snapshot?.root?.file?.name == id) control?.cancel()
+            val job = deleting?.takeIf { it.id == id } ?: deletions.getOrPut(id) {
+                Deletion(context.applicationContext as Application, id)
+            }
+            completed?.let { job.callbacks.add(it) }
+            startWorker()
+        }
+    }
+
+    /** Called with lock held. Deletions and publications share one worker, preventing resurrection. */
+    private fun startWorker() {
+        if (draining || selectingFolder) return
+        draining = true
+        worker.execute(::drain)
+    }
+
+    private fun removeSession(job: Deletion) {
+        update(State(true, "Deleting session…"))
+        val result = runCatching<Unit> {
+            PublicSessionStorage.deleteSession(job.context, job.id)
+            SessionFiles.deletePrivateFiles(job.context, job.id)
+            // Finalize on io so a recovery scan cannot observe a marker that disappears mid-scan.
+            SessionFiles.io.submit {
+                PublicSessionStorage.forgetSession(job.context, job.id)
+                SessionFiles.finishDeletion(job.context, job.id)
+            }.get()
+        }
+        result.exceptionOrNull()?.let { PublicSessionStorage.recordError(job.context, job.id, it) }
+        val callbacks = synchronized(lock) {
+            deleting = null
+            job.callbacks.toList()
+        }
+        update(if (result.isFailure) State(message = "Deletion needs attention · Tap to retry", needsAttention = true)
+            else if (PublicSessionStorage.error(job.context) != null) failedState()
+            else State(message = "Session deleted · Pictures/Q-VLP"))
+        main.post { callbacks.forEach { it(result) } }
     }
 
     fun selectFolder(context: Context, uri: Uri, completed: (Result<Unit>) -> Unit) {
@@ -128,41 +191,50 @@ internal object SessionPublisher {
 
     private fun enqueue(context: Context, snapshot: SessionSnapshot, positionId: Int? = null) {
         val app = context.applicationContext as Application
+        if (SessionFiles.isDeleting(app, snapshot.root.file.name)) return
         val frozen = PublicSessionStorage.freeze(app, snapshot)
         synchronized(lock) {
-            if (selectingFolder) { frozen.discard(); return } // Folder selection scans again.
             val id = snapshot.root.file.name
+            if (selectingFolder || SessionFiles.isDeleting(app, id)) { frozen.discard(); return }
             val active = current
             if (active != null && active.snapshot.root.file.name == id && active.snapshot.signature == snapshot.signature &&
                 control?.signal?.isCanceled != true) { frozen.discard(); return }
             val previous = pending[id]
             pending[id] = Job(app, frozen, positionId ?: previous?.positionId)
             previous?.snapshot?.discard()
-            if (draining) return
-            draining = true
-            worker.execute(::drain)
+            startWorker()
         }
     }
 
     private fun drain() {
         while (true) {
-            val job: Job
-            val cancellation: CopyControl
-            synchronized(lock) {
-                // Finished positions take priority over older recovery work.
+            val work: Work = synchronized(lock) {
+                val deletion = deletions.entries.firstOrNull()
                 val next = pending.entries.firstOrNull { it.value.positionId != null } ?: pending.entries.firstOrNull()
-                if (selectingFolder || next == null) {
+                if (selectingFolder || (deletion == null && next == null)) {
                     draining = false
                     current = null
                     control = null
                     return
                 }
-                job = next.value
-                pending.remove(next.key)
-                current = job
-                cancellation = CopyControl(yieldToCapture = true)
-                control = cancellation
+                if (deletion != null) {
+                    deletions.remove(deletion.key)
+                    deleting = deletion.value
+                    deletion.value
+                } else {
+                    val job = requireNotNull(next).value
+                    pending.remove(next.key)
+                    current = job
+                    control = CopyControl(yieldToCapture = true)
+                    job
+                }
             }
+            if (work is Deletion) {
+                removeSession(work)
+                continue
+            }
+            val job = work as Job
+            val cancellation = requireNotNull(control)
             var failure: Throwable? = null
             try {
                 var lastUpdate = 0L
@@ -181,7 +253,7 @@ internal object SessionPublisher {
                 synchronized(lock) {
                     current = null
                     control = null
-                    if (!selectingFolder && pending.isEmpty()) {
+                    if (!selectingFolder && pending.isEmpty() && deletions.isEmpty()) {
                         update(if (failure != null || PublicSessionStorage.error(job.context) != null) failedState()
                             else State(message = job.positionId?.let { "Position $it saved · Pictures/Q-VLP" }
                                 ?: "Saved to Pictures/Q-VLP"))

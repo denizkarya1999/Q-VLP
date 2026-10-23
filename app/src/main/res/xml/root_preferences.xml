@@ -85,11 +85,16 @@
             android:dialogTitle="@string/capture_duration_seconds" android:defaultValue="5"
             android:dialogLayout="@layout/dialog_camera_value" android:positiveButtonText="@string/save_setting"
             android:negativeButtonText="@android:string/cancel" android:layout="@layout/preference_list_layout" />
+        <Preference android:key="mounting_setup" android:title="@string/mounting_setup"
+            android:summary="@string/mounting_setup_summary" android:layout="@layout/preference_list_layout" />
     </PreferenceCategory>
-    <Preference android:key="mounting_setup" android:title="@string/mounting_setup"
-        android:summary="@string/mounting_setup_summary" android:layout="@layout/preference_list_layout" />
-    <Preference android:key="mounted_camera_check" android:title="@string/mounted_camera_check"
-        android:layout="@layout/preference_list_layout" />
-    <Preference android:key="capture_help" android:title="@string/how_to_capture"
-        android:layout="@layout/preference_list_layout" />
+    <PreferenceCategory android:title="@string/help_title"
+        android:layout="@layout/preference_category_layout">
+        <Preference android:key="capture_help" android:title="@string/how_to_capture"
+            android:summary="@string/recording_help_summary" android:layout="@layout/preference_list_layout" />
+        <Preference android:key="positions_csv_help" android:title="@string/positions_csv_help_title"
+            android:summary="@string/positions_csv_help_summary" android:layout="@layout/preference_list_layout" />
+        <Preference android:key="mounted_camera_check" android:title="@string/mounted_camera_check"
+            android:layout="@layout/preference_list_layout" />
+    </PreferenceCategory>
 </PreferenceScreen>

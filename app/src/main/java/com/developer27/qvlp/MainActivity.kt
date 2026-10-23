@@ -90,12 +90,14 @@ class MainActivity : AppCompatActivity() {
             Position(saved.getInt("position_id"), if (saved.isNull("rx_x_m")) null else saved.getDouble("rx_x_m"),
                 if (saved.isNull("rx_y_m")) null else saved.getDouble("rx_y_m"), saved.optString("source", "manual"))
         }.getOrNull()
-        sessions = SessionBrowser(this, ::setFileBusy) {
+        sessions = SessionBrowser(this, ::setFileBusy) { resetPosition ->
             clearResult()
             lastPosition = null
             preferences.edit().remove("last_capture_position").apply()
-            val first = PositionCatalog.read(preferences).firstOrNull() ?: Position(0, null, null)
-            PositionCatalog.select(preferences, first)
+            if (resetPosition) {
+                val first = PositionCatalog.read(preferences).firstOrNull() ?: Position(0, null, null)
+                PositionCatalog.select(preferences, first)
+            }
             updateControls()
         }
         sessions.restore(savedInstanceState)
