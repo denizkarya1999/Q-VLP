@@ -6,6 +6,8 @@
     <string name="project_description">Q-VLP Research Project</string>
     <string name="project_version"><b>Version:</b> 1.0</string>
     <string name="project_release_date"><b>Release Date:</b> TBD</string>
+    <string name="project_developers_label"><b>Developer(s):</b></string>
+    <string name="project_developers">Thuy-Anh Nguyen\nDeniz K. Acikbas</string>
     <string name="project_authors_label"><b>Authors:</b></string>
     <string name="project_authors">Thuy-Anh Nguyen\nShahed Alabdulrahman\nDeniz Karya Acikbas\nChristian Nwobu\nClark Friese\nEthan Liu</string>
     <string name="project_professor"><b>Professor:</b> Xiao Zhang</string>
