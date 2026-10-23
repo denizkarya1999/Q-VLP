@@ -15,12 +15,7 @@ class AboutQvlpActivity : AppCompatActivity() {
         binding = ActivityAboutQvlpBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // When the title container is clicked, open the URL in a browser.
-        binding.titleContainer.setOnClickListener {
-            val url = "https://www.zhangxiao.me/"
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            startActivity(intent)
-        }
+        binding.titleContainer.setOnClickListener { openProjectWebsite() }
 
         // Open the university website when its logo is tapped.
         binding.umLogo.setOnClickListener {

@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Q-VLP</string>
+    <string name="open_project_website">Open Q-VLP project website</string>
+    <string name="project_website_unavailable">No web browser is available to open the project website.</string>
     <string name="switch_camera">Switch Camera</string>
     <string name="about_qvlp">About Q-VLP</string>
     <string name="project_description">Q-VLP Research Project</string>

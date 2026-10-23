@@ -102,6 +102,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Set up the Switch Camera, About, and Settings buttons.
+        viewBinding.titleContainer.setOnClickListener { openProjectWebsite() }
         viewBinding.switchCameraButton.setOnClickListener { switchCamera() }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutQvlpActivity::class.java))
@@ -193,6 +194,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setConfigurationControlsEnabled(enabled: Boolean) {
+        viewBinding.titleContainer.isEnabled = enabled
         viewBinding.settingsButton.isEnabled = enabled
         viewBinding.switchCameraButton.isEnabled = enabled
         viewBinding.aboutButton.isEnabled = enabled
