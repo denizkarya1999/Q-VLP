@@ -55,8 +55,9 @@ class SettingsActivity : AppCompatActivity() {
                 capabilities = CameraCapabilities.read(id, manager.getCameraCharacteristics(id))
                 store = CameraSettingsStore(PreferenceManager.getDefaultSharedPreferences(requireContext()), id)
                 profile = store.load(capabilities)
-                status.summary = getString(R.string.manual_camera_summary)
+                status.isVisible = false
             } catch (error: Exception) {
+                status.isVisible = true
                 status.title = getString(R.string.camera_settings_unavailable)
                 status.summary = error.message ?: getString(R.string.camera_settings_unavailable)
                 listOf(exposure, iso, resolution, fps, reset).forEach { it.isEnabled = false }
