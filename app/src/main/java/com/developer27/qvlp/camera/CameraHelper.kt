@@ -688,15 +688,22 @@ class CameraHelper(
             builder.set(CaptureRequest.SCALER_ROTATE_AND_CROP, CaptureRequest.SCALER_ROTATE_AND_CROP_NONE)
     }
 
-    /** Letterbox the sensor-native preview; the saved pixels are never transformed. */
+    /** Size only the displayed preview. Capture resolution, crop and saved pixels are unchanged. */
     fun fitPreview() {
-        val size = previewSize ?: return
         val view = viewBinding.viewFinder
         if (view.width == 0 || view.height == 0) return
+        view.isOpaque = false // Reveal the black background around smaller preview sizes.
+        val scale = PreviewDisplaySize.read(sharedPreferences).fittedScale
+        val size = previewSize
+        if (scale == null || size == null) {
+            // RoTemplate filled the TextureView without an aspect-ratio transform.
+            view.setTransform(Matrix())
+            return
+        }
         val sourceRatio = size.width.toFloat() / size.height
         val viewRatio = view.width.toFloat() / view.height
-        val sx = if (viewRatio > sourceRatio) sourceRatio / viewRatio else 1f
-        val sy = if (viewRatio < sourceRatio) viewRatio / sourceRatio else 1f
+        val sx = scale * if (viewRatio > sourceRatio) sourceRatio / viewRatio else 1f
+        val sy = scale * if (viewRatio < sourceRatio) viewRatio / sourceRatio else 1f
         view.setTransform(Matrix().apply { setScale(sx, sy, view.width / 2f, view.height / 2f) })
     }
 

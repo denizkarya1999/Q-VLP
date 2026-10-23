@@ -32,6 +32,12 @@
             android:dialogTitle="@string/resolution"
             android:persistent="false" />
         <ListPreference
+            android:key="preview_display_size"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/preview_size"
+            android:dialogTitle="@string/preview_size"
+            android:defaultValue="original" />
+        <ListPreference
             android:key="frame_rate"
             android:layout="@layout/preference_list_layout"
             android:title="@string/frame_rate"

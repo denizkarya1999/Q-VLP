@@ -154,6 +154,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        cameraHelper.fitPreview()
         cameraHelper.startBackgroundThread()
         openCameraWhenReady()
         updateControls()

@@ -18,6 +18,7 @@ import com.developer27.qvlp.camera.CameraSettingsStore
 import com.developer27.qvlp.camera.CaptureSettings
 import com.developer27.qvlp.camera.FocusMode
 import com.developer27.qvlp.camera.FocusWhiteBalanceCapabilities
+import com.developer27.qvlp.camera.PreviewDisplaySize
 import com.developer27.qvlp.capture.ResearchSettings
 
 class SettingsActivity : AppCompatActivity() {
@@ -54,6 +55,7 @@ class SettingsActivity : AppCompatActivity() {
         private lateinit var focus: ListPreference
         private lateinit var focusDistance: EditTextPreference
         private lateinit var whiteBalance: ListPreference
+        private lateinit var previewDisplaySize: ListPreference
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             val mounting = requireActivity().intent.getBooleanExtra(EXTRA_MOUNTING, false)
@@ -72,6 +74,17 @@ class SettingsActivity : AppCompatActivity() {
                 if (::capabilities.isInitialized && ::profile.isInitialized)
                     ResearchSettings.refreshRowTime(this, capabilities.cameraId to profile.stream.key)
                 return
+            }
+            previewDisplaySize = requireNotNull(findPreference(PreviewDisplaySize.PREFERENCE_KEY))
+            previewDisplaySize.entries = PreviewDisplaySize.values().map { getString(it.label) }.toTypedArray()
+            previewDisplaySize.entryValues = PreviewDisplaySize.values().map { it.key }.toTypedArray()
+            previewDisplaySize.value = PreviewDisplaySize.read(
+                PreferenceManager.getDefaultSharedPreferences(requireContext())).key
+            previewDisplaySize.summaryProvider = Preference.SummaryProvider<ListPreference> {
+                getString(R.string.preview_size_summary, it.entry)
+            }
+            previewDisplaySize.setOnPreferenceChangeListener { _, value ->
+                PreviewDisplaySize.values().any { it.key == value }
             }
             findPreference<Preference>("capture_help")?.setOnPreferenceClickListener {
                 androidx.appcompat.app.AlertDialog.Builder(requireContext())
@@ -195,6 +208,7 @@ class SettingsActivity : AppCompatActivity() {
             }
             reset.setOnPreferenceClickListener {
                 save(capabilities.defaults())
+                previewDisplaySize.value = PreviewDisplaySize.ORIGINAL.key
                 message(getString(R.string.camera_defaults_restored))
                 true
             }
