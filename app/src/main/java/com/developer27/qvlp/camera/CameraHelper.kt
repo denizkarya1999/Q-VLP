@@ -49,6 +49,7 @@ class CameraHelper(
     @Volatile internal var activeProfile: CameraProfile? = null
         private set
     private var activeCaptureCallback: CameraCaptureSession.CaptureCallback? = null
+    @Volatile private var cameraControls: FocusWhiteBalanceController? = null
 
     // Sensor area for zoom
     var sensorArraySize: Rect? = null
@@ -141,6 +142,7 @@ class CameraHelper(
             val capabilities = CameraCapabilities.read(cameraId, characteristics)
             val profile = CameraSettingsStore(sharedPreferences, cameraId).load(capabilities)
             activeProfile = profile
+            cameraControls = FocusWhiteBalanceController(activity.applicationContext, capabilities.controls, profile.controls)
             previewSize = profile.stream.size
             showRequestedProfile(profile)
 
@@ -175,6 +177,7 @@ class CameraHelper(
         captureRequestBuilder = null
         activeProfile = null
         activeCaptureCallback = null
+        cameraControls = null
     }
 
     // ------------------------------------------------------------------------
@@ -237,14 +240,16 @@ class CameraHelper(
         try {
             val requestBuilder = captureRequestBuilder ?: return
             cameraCaptureSession?.setRepeatingRequest(
-                requestBuilder.build(),
+                synchronized(requestBuilder) { requestBuilder.build() },
                 activeCaptureCallback,
                 backgroundHandler
             )
         } catch (e: CameraAccessException) {
+            cameraControls?.fail(e.message ?: "Preview request failed.")
             showCameraError(e.message ?: "Preview request failed.")
         } catch (e: RuntimeException) {
             Log.e(TAG, "Unable to update camera preview", e)
+            cameraControls?.fail(activity.getString(R.string.camera_locks_unconfirmed))
             showCameraError("Camera rejected the requested settings. Try a lower resolution or frame rate in Settings.")
         }
     }
@@ -268,9 +273,9 @@ class CameraHelper(
             ?: throw IllegalStateException("No camera is available on this device.")
     }
 
-    /** Keep 3A available for focus/white balance, but disable automatic exposure. */
+    /** Apply the capture profile; locks may briefly meter before restoring manual AE. */
     fun applyCaptureSettings(submitRequest: Boolean = true) {
-        val profile = requireNotNull(activeProfile) { "A manual capture profile is required." }
+        val profile = activeProfile ?: return
         captureRequestBuilder?.apply {
             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
@@ -279,8 +284,8 @@ class CameraHelper(
             // AE target FPS does not control cadence when exposure is manual.
             set(CaptureRequest.SENSOR_FRAME_DURATION, profile.frameDurationNs)
             set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_OFF)
-            set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
             set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_FAST)
+            cameraControls?.apply(this)
         }
         applyZoom(submitRequest = false)
         if (submitRequest) updatePreview()
@@ -307,8 +312,34 @@ class CameraHelper(
         }
     }
 
-    /** Reports actual sensor metadata and cadence; it does not yet save per-frame metadata. */
-    internal fun newCaptureCallback(): CameraCaptureSession.CaptureCallback {
+    internal fun recordingBlockReason(): String? {
+        val controls = cameraControls ?: return activity.getString(R.string.camera_controls_wait)
+        return if (controls.ready) null else controls.error ?: activity.getString(R.string.camera_controls_wait)
+    }
+
+    /** Confirms controls and reports actual sensor metadata; per-frame saving is a later step. */
+    internal fun newCaptureCallback(onReady: ((String?) -> Unit)? = null): CameraCaptureSession.CaptureCallback {
+        val controls = requireNotNull(cameraControls) { "Camera controls are unavailable." }
+        controls.beginSession()
+        val expectedSession = cameraCaptureSession
+        var readinessDelivered = false
+        fun deliverReadiness(error: String?) {
+            if (!readinessDelivered) {
+                readinessDelivered = true
+                onReady?.invoke(error)
+            }
+        }
+        backgroundHandler?.postDelayed({
+            if (expectedSession != null && expectedSession === cameraCaptureSession &&
+                controls === cameraControls && !readinessDelivered) {
+                controls.fail(activity.getString(R.string.camera_locks_unconfirmed))
+                applyCaptureSettings()
+                deliverReadiness(controls.error)
+                activity.runOnUiThread {
+                    if (expectedSession === cameraCaptureSession) viewBinding.captureStatus.text = controls.status()
+                }
+            }
+        }, FocusWhiteBalanceController.SETTLE_TIMEOUT_MS + 1000L)
         activeProfile?.let(::showRequestedProfile)
         return object : CameraCaptureSession.CaptureCallback() {
             private var firstTimestamp = 0L
@@ -322,6 +353,27 @@ class CameraHelper(
             ) {
                 if (session !== cameraCaptureSession) return
                 val profile = activeProfile ?: return
+                if (controls !== cameraControls) return
+                val update = controls.onResult(result)
+                if (update.repeat) applyCaptureSettings()
+                if (update.triggerFocus) {
+                    val builder = captureRequestBuilder ?: return
+                    synchronized(builder) {
+                        try {
+                            // Keep concurrent preview updates from repeating the one-shot trigger.
+                            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
+                            session.capture(builder.build(), this, backgroundHandler)
+                        } catch (e: Exception) {
+                            controls.fail(activity.getString(R.string.focus_lock_failed))
+                            Log.e(TAG, "Focus trigger failed", e)
+                        } finally {
+                            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+                        }
+                    }
+                    if (controls.error != null) applyCaptureSettings()
+                }
+                if (controls.error != null || controls.ready) deliverReadiness(controls.error)
+                if (session !== cameraCaptureSession) return
                 val timestamp = result[CaptureResult.SENSOR_TIMESTAMP]
                 if (timestamp != null) {
                     if (firstTimestamp == 0L || timestamp <= previousTimestamp) {
@@ -348,7 +400,7 @@ class CameraHelper(
                 val cadence = measuredFps?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "—"
                 val text = requestedText(profile) + "\n" + activity.getString(
                     R.string.capture_reported, reportedExposure, reportedIso, cadence
-                )
+                ) + "\n" + controls.status()
                 activity.runOnUiThread {
                     if (session === cameraCaptureSession) viewBinding.captureStatus.text = text
                 }

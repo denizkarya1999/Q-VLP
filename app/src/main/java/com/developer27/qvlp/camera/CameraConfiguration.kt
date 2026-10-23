@@ -27,7 +27,8 @@ internal data class CameraProfile(
     val exposureNs: Long,
     val iso: Int,
     val stream: StreamOption,
-    val fps: Int
+    val fps: Int,
+    val controls: FocusWhiteBalanceProfile
 ) {
     val frameDurationNs: Long get() = stream.frameDurationNs(fps)
     val videoBitRate: Int get() = videoBitRate(stream.size, fps)
@@ -43,7 +44,8 @@ internal data class CameraCapabilities(
     val exposureRangeNs: Range<Long>,
     val isoRange: Range<Int>,
     val streams: List<StreamOption>,
-    val sensorAspectRatio: Double
+    val sensorAspectRatio: Double,
+    val controls: FocusWhiteBalanceCapabilities
 ) {
     fun maximumExposureNs(stream: StreamOption, fps: Int): Long =
         minOf(exposureRangeNs.upper, stream.frameDurationNs(fps))
@@ -63,7 +65,7 @@ internal data class CameraCapabilities(
         return CameraProfile(
             CaptureSettings.DEFAULT_EXPOSURE_NS.coerceIn(
                 exposureRangeNs.lower, maximumExposureNs(stream, fps)
-            ), isoRange.lower, stream, fps
+            ), isoRange.lower, stream, fps, controls.defaults()
         )
     }
 
@@ -116,7 +118,8 @@ internal data class CameraCapabilities(
             }
             val sensor = characteristics[CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE]
             val aspect = sensor?.let { it.width().toDouble() / it.height() } ?: 4.0 / 3.0
-            return CameraCapabilities(cameraId, exposure, iso, streams, aspect)
+            return CameraCapabilities(cameraId, exposure, iso, streams, aspect,
+                FocusWhiteBalanceCapabilities.read(characteristics))
         }
 
         private fun supportsEncoding(codecs: MediaCodecList, size: Size, fps: Int): Boolean =
@@ -151,7 +154,17 @@ internal class CameraSettingsStore(private val preferences: SharedPreferences, p
         val exposure = preferences.getLong(key("exposure_ns"), oldExposure ?: defaults.exposureNs)
             .coerceIn(capabilities.exposureRangeNs.lower, capabilities.maximumExposureNs(stream, fps))
         val iso = preferences.getInt(key("iso"), oldIso ?: defaults.iso).coerceIn(capabilities.isoRange.lower, capabilities.isoRange.upper)
-        return CameraProfile(exposure, iso, stream, fps).also { save(it) }
+        val focusMode = capabilities.controls.focusModes.firstOrNull {
+            it.name == preferences.getString(key("focus_mode"), null)
+        } ?: defaults.controls.focusMode
+        val distance = preferences.getFloat(key("focus_distance"), defaults.controls.focusDistance)
+            .takeIf { it.isFinite() }?.coerceIn(0f, capabilities.controls.maxFocusDistance)
+            ?: defaults.controls.focusDistance
+        val wbMode = preferences.getInt(key("white_balance_mode"), defaults.controls.whiteBalanceMode)
+            .takeIf { mode -> capabilities.controls.whiteBalanceOptions.any { it.mode == mode } }
+            ?: defaults.controls.whiteBalanceMode
+        return CameraProfile(exposure, iso, stream, fps,
+            FocusWhiteBalanceProfile(focusMode, distance, wbMode)).also { save(it) }
     }
 
     fun save(profile: CameraProfile) {
@@ -160,6 +173,9 @@ internal class CameraSettingsStore(private val preferences: SharedPreferences, p
             .putInt(key("iso"), profile.iso)
             .putString(key("resolution"), profile.stream.key)
             .putInt(key("fps"), profile.fps)
+            .putString(key("focus_mode"), profile.controls.focusMode.name)
+            .putFloat(key("focus_distance"), profile.controls.focusDistance)
+            .putInt(key("white_balance_mode"), profile.controls.whiteBalanceMode)
             .putBoolean("camera_settings_migrated", true)
             .remove("shutter_speed").remove("iso_value").remove("manual_iso_enabled")
             .apply()

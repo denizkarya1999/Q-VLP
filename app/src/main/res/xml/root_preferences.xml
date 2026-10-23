@@ -37,6 +37,27 @@
             android:title="@string/frame_rate"
             android:dialogTitle="@string/frame_rate"
             android:persistent="false" />
+        <ListPreference
+            android:key="focus_mode"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/focus_mode"
+            android:dialogTitle="@string/focus_mode"
+            android:persistent="false" />
+        <EditTextPreference
+            android:key="focus_distance"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/focus_distance"
+            android:dialogTitle="@string/focus_distance"
+            android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting"
+            android:negativeButtonText="@android:string/cancel"
+            android:persistent="false" />
+        <ListPreference
+            android:key="white_balance_mode"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/white_balance"
+            android:dialogTitle="@string/white_balance"
+            android:persistent="false" />
         <Preference
             android:key="reset_camera"
             android:layout="@layout/preference_list_layout"

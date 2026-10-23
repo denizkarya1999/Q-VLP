@@ -15,6 +15,8 @@ import com.developer27.qvlp.camera.CameraCapabilities
 import com.developer27.qvlp.camera.CameraProfile
 import com.developer27.qvlp.camera.CameraSettingsStore
 import com.developer27.qvlp.camera.CaptureSettings
+import com.developer27.qvlp.camera.FocusMode
+import com.developer27.qvlp.camera.FocusWhiteBalanceCapabilities
 
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +40,9 @@ class SettingsActivity : AppCompatActivity() {
         private lateinit var iso: EditTextPreference
         private lateinit var resolution: ListPreference
         private lateinit var fps: ListPreference
+        private lateinit var focus: ListPreference
+        private lateinit var focusDistance: EditTextPreference
+        private lateinit var whiteBalance: ListPreference
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.root_preferences, rootKey)
@@ -45,6 +50,9 @@ class SettingsActivity : AppCompatActivity() {
             iso = requireNotNull(findPreference("iso"))
             resolution = requireNotNull(findPreference("resolution"))
             fps = requireNotNull(findPreference("frame_rate"))
+            focus = requireNotNull(findPreference("focus_mode"))
+            focusDistance = requireNotNull(findPreference("focus_distance"))
+            whiteBalance = requireNotNull(findPreference("white_balance_mode"))
             val status = requireNotNull(findPreference<Preference>("camera_status"))
             val reset = requireNotNull(findPreference<Preference>("reset_camera"))
             try {
@@ -60,7 +68,8 @@ class SettingsActivity : AppCompatActivity() {
                 status.isVisible = true
                 status.title = getString(R.string.camera_settings_unavailable)
                 status.summary = error.message ?: getString(R.string.camera_settings_unavailable)
-                listOf(exposure, iso, resolution, fps, reset).forEach { it.isEnabled = false }
+                listOf(exposure, iso, resolution, fps, focus, focusDistance, whiteBalance, reset)
+                    .forEach { it.isEnabled = false }
                 return
             }
 
@@ -71,6 +80,32 @@ class SettingsActivity : AppCompatActivity() {
             iso.setOnBindEditTextListener {
                 it.inputType = InputType.TYPE_CLASS_NUMBER
                 it.selectAll()
+            }
+            focusDistance.setOnBindEditTextListener {
+                it.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                it.selectAll()
+            }
+            focus.setOnPreferenceChangeListener { _, value ->
+                capabilities.controls.focusModes.firstOrNull { it.name == value }?.let { mode ->
+                    save(profile.copy(controls = profile.controls.copy(focusMode = mode)))
+                }
+                false
+            }
+            focusDistance.setOnPreferenceChangeListener { _, value ->
+                val distance = (value as? String)?.trim()?.replace(',', '.')?.toFloatOrNull()
+                if (distance == null || !distance.isFinite() || distance !in 0f..capabilities.controls.maxFocusDistance) {
+                    message(focusRangeMessage())
+                } else if (profile.controls.focusMode == FocusMode.MANUAL && capabilities.controls.manualFocus) {
+                    save(profile.copy(controls = profile.controls.copy(focusDistance = distance)))
+                }
+                false
+            }
+            whiteBalance.setOnPreferenceChangeListener { _, value ->
+                val mode = (value as? String)?.toIntOrNull()
+                if (capabilities.controls.whiteBalanceOptions.any { it.mode == mode }) {
+                    save(profile.copy(controls = profile.controls.copy(whiteBalanceMode = requireNotNull(mode))))
+                }
+                false
             }
             exposure.setOnPreferenceChangeListener { _, value ->
                 val nanos = CaptureSettings.parseExposureMicros(value as? String)
@@ -156,6 +191,52 @@ class SettingsActivity : AppCompatActivity() {
             fps.entryValues = profile.stream.frameRates.map { it.toString() }.toTypedArray()
             fps.value = profile.fps.toString()
             fps.summary = getString(R.string.fps_summary, profile.fps)
+            refreshFocusAndWhiteBalance()
+        }
+
+        private fun focusRangeMessage(): String = getString(
+            if (capabilities.controls.focusCalibrated) R.string.focus_distance_range else R.string.focus_position_range,
+            capabilities.controls.maxFocusDistance.toBigDecimal().stripTrailingZeros().toPlainString()
+        )
+
+        private fun refreshFocusAndWhiteBalance() {
+            val controls = capabilities.controls
+            val selected = profile.controls
+            focus.entries = controls.focusModes.map { getString(it.label) }.toTypedArray()
+            focus.entryValues = controls.focusModes.map { it.name }.toTypedArray()
+            focus.value = selected.focusMode.name
+            focus.isEnabled = controls.focusModes.size > 1
+            focus.summary = when (selected.focusMode) {
+                FocusMode.LOCK -> getString(R.string.focus_lock_summary)
+                FocusMode.AUTO -> getString(R.string.focus_auto_summary)
+                FocusMode.MANUAL -> getString(R.string.focus_manual_summary)
+                FocusMode.FIXED -> getString(R.string.focus_fixed_summary)
+                FocusMode.DEVICE -> getString(R.string.focus_unavailable_summary)
+            }
+            if (!controls.focusLock && !controls.fixedFocus) {
+                focus.summary = "${focus.summary}\n${getString(R.string.focus_lock_unavailable)}"
+            }
+            focusDistance.isVisible = controls.manualFocus
+            focusDistance.isEnabled = selected.focusMode == FocusMode.MANUAL
+            focusDistance.title = getString(if (controls.focusCalibrated) R.string.focus_distance else R.string.focus_position)
+            focusDistance.dialogTitle = focusDistance.title
+            focusDistance.text = selected.focusDistance.toBigDecimal().stripTrailingZeros().toPlainString()
+            focusDistance.dialogMessage = focusRangeMessage()
+            focusDistance.summary = if (focusDistance.isEnabled)
+                "${focusDistance.text}\n${focusRangeMessage()}" else getString(R.string.focus_distance_disabled)
+            whiteBalance.entries = controls.whiteBalanceOptions.map { getString(it.label) }.toTypedArray()
+            whiteBalance.entryValues = controls.whiteBalanceOptions.map { it.mode.toString() }.toTypedArray()
+            whiteBalance.value = selected.whiteBalanceMode.toString()
+            whiteBalance.isEnabled = controls.whiteBalanceOptions.size > 1
+            whiteBalance.summary = when (selected.whiteBalanceMode) {
+                FocusWhiteBalanceCapabilities.WB_LOCK -> getString(R.string.wb_lock_summary)
+                FocusWhiteBalanceCapabilities.WB_DEVICE -> getString(R.string.wb_unavailable_summary)
+                android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO -> getString(R.string.wb_auto_summary)
+                else -> getString(R.string.wb_preset_summary, whiteBalance.entry)
+            }
+            if (!controls.whiteBalanceLock) {
+                whiteBalance.summary = "${whiteBalance.summary}\n${getString(R.string.wb_lock_unavailable)}"
+            }
         }
 
         private fun message(text: String) {

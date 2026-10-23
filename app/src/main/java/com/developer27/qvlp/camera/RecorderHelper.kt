@@ -52,6 +52,10 @@ class RecorderHelper(
             callback("No supported manual capture profile is available. Open Settings or switch cameras.")
             return
         }
+        cameraHelper.recordingBlockReason()?.let { reason ->
+            callback(reason)
+            return
+        }
 
         recordingRequested = true
         startCallback = callback
@@ -90,7 +94,6 @@ class RecorderHelper(
             cameraHelper.captureRequestBuilder =
                 cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                     addTarget(previewSurface)
-                    addTarget(recorderSurface)
                 }
             cameraHelper.applyCaptureSettings(submitRequest = false)
 
@@ -107,13 +110,31 @@ class RecorderHelper(
 
                         cameraHelper.cameraCaptureSession = session
                         try {
+                            // Confirm the retained locks using preview-only frames in this
+                            // session before sending any frames to the video encoder.
+                            lateinit var captureCallback: CameraCaptureSession.CaptureCallback
+                            captureCallback = cameraHelper.newCaptureCallback { error ->
+                                if (recordingRequested && cameraHelper.cameraCaptureSession === session) {
+                                    if (error != null) {
+                                        failStart(error)
+                                    } else {
+                                        try {
+                                            val builder = requireNotNull(cameraHelper.captureRequestBuilder)
+                                            builder.addTarget(recorderSurface)
+                                            session.setRepeatingRequest(builder.build(), captureCallback, cameraHelper.backgroundHandler)
+                                            mediaRecorder?.start()
+                                                ?: throw IllegalStateException("Recorder is unavailable.")
+                                            isRecording = true
+                                            notifyStartResult(null)
+                                        } catch (e: Exception) {
+                                            failStart("Failed to start recording: ${e.message ?: "unknown error"}", e)
+                                        }
+                                    }
+                                }
+                            }
                             val request = cameraHelper.captureRequestBuilder?.build()
                                 ?: throw IllegalStateException("Camera request is unavailable.")
-                            session.setRepeatingRequest(request, cameraHelper.newCaptureCallback(), cameraHelper.backgroundHandler)
-                            mediaRecorder?.start()
-                                ?: throw IllegalStateException("Recorder is unavailable.")
-                            isRecording = true
-                            notifyStartResult(null)
+                            session.setRepeatingRequest(request, captureCallback, cameraHelper.backgroundHandler)
                         } catch (e: Exception) {
                             failStart("Failed to start recording: ${e.message ?: "unknown error"}", e)
                         }
