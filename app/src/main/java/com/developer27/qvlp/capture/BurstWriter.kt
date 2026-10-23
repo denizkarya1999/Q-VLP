@@ -15,8 +15,8 @@ import java.util.UUID
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal data class BurstRequestTag(val controlsTag: Any?, val burstId: String, val frameId: Int)
-internal data class BurstSummary(val sessionId: String, val positionId: Int, val saved: Int,
+internal data class BurstRequestTag(val controlsTag: Any?, val burstId: String)
+internal data class BurstSummary(val sessionId: String, val positionId: Int, val saved: Int, val length: CaptureLength,
     val fps: Double?, val warnings: List<String>, val interrupted: Boolean)
 
 internal data class FrameMetadata(val id: Int, val timestamp: Long?, val exposureNs: Long?, val iso: Int?, val details: JSONObject) {
@@ -54,16 +54,18 @@ internal data class FrameMetadata(val id: Int, val timestamp: Long?, val exposur
 internal class BurstWriter private constructor(
     private val location: BurstLocation,
     private val profile: CameraProfile,
+    private val length: CaptureLength,
     private val position: Position,
     private val cameraInfo: JSONObject,
-    private val progress: (Int) -> Unit,
+    private val progress: (Int, Long) -> Unit,
     private val completed: (BurstSummary) -> Unit
 ) {
     val id = UUID.randomUUID().toString()
     private val accepting = AtomicBoolean(true)
     private val slots = Semaphore(maxOf(1, minOf(4,
         (32L * 1024 * 1024 / YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height)).toInt())))
-    // These collections are accessed only on SessionFiles.io.
+    private val excludedTimestamps = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+    // The remaining collections are accessed only on SessionFiles.io.
     private val images = mutableMapOf<Long, YuvFrame>()
     private val metadata = mutableMapOf<Long, FrameMetadata>()
     private val allMetadata = mutableMapOf<Int, FrameMetadata>()
@@ -79,11 +81,15 @@ internal class BurstWriter private constructor(
         put("started_at", createdAt)
         put("position", position.json())
         put("camera", cameraInfo)
-        put("requested", JSONObject().put("frames", FRAME_COUNT).put("countdown_seconds", 3)
+        put("requested", JSONObject().put("frames", length.frameCount ?: JSONObject.NULL)
+            .put("length_mode", length.mode.key).put("duration_seconds", length.durationSeconds ?: JSONObject.NULL)
+            .put("estimated_frames", length.estimatedFrames(profile.frameDurationNs))
+            .put("countdown_seconds", CaptureLength.COUNTDOWN_SECONDS)
             .put("exposure_time_ns", profile.exposureNs).put("iso", profile.iso)
             .put("width", profile.stream.size.width).put("height", profile.stream.size.height)
             .put("fps", profile.fps).put("focus_mode", profile.controls.focusMode.name)
             .put("focus_value", profile.controls.focusDistance).put("white_balance_mode", profile.controls.whiteBalanceMode))
+        put("frames_started", starts.size)
         put("frames_saved", saved.size)
         put("frames", JSONArray(saved.values.toList()))
         put("warnings", JSONArray(warnings.toList()))
@@ -91,6 +97,14 @@ internal class BurstWriter private constructor(
 
     fun onStarted(frameId: Int, timestamp: Long) {
         if (accepting.get()) SessionFiles.io.execute { starts[timestamp] = frameId }
+    }
+
+    /** Discard extra in-flight frames after a repeating capture reaches its limit. */
+    fun exclude(timestamp: Long) {
+        excludedTimestamps.add(timestamp)
+        if (accepting.get()) SessionFiles.io.execute {
+            if (images.remove(timestamp) != null) slots.release()
+        }
     }
 
     fun onMetadata(value: FrameMetadata) {
@@ -111,7 +125,7 @@ internal class BurstWriter private constructor(
     /** Must run on the same camera handler as the capture callbacks and finish(). */
     fun onImage(image: Image) {
         try {
-            if (!accepting.get()) return
+            if (!accepting.get() || image.timestamp in excludedTimestamps) return
             if (!slots.tryAcquire()) {
                 warning("Frame buffer full: one or more frames could not be saved. Lower resolution or frame rate.")
                 return
@@ -122,7 +136,9 @@ internal class BurstWriter private constructor(
                 return
             }
             SessionFiles.io.execute {
-                if (images.containsKey(frame.timestamp)) {
+                if (frame.timestamp in excludedTimestamps) {
+                    slots.release()
+                } else if (images.containsKey(frame.timestamp)) {
                     warnings.add("Duplicate image timestamp received.")
                     slots.release()
                 } else {
@@ -137,7 +153,7 @@ internal class BurstWriter private constructor(
 
     private fun writeFrame(frame: YuvFrame, meta: FrameMetadata) {
         try {
-            if (meta.id !in 0 until FRAME_COUNT || saved.containsKey(meta.id)) {
+            if (meta.id < 0 || (length.frameCount != null && meta.id >= requireNotNull(length.frameCount)) || saved.containsKey(meta.id)) {
                 warnings.add("Duplicate or unrecognized frame was excluded.")
                 return
             }
@@ -165,7 +181,8 @@ internal class BurstWriter private constructor(
             }
             // Journal each saved frame: a process interruption still leaves usable metadata.
             SessionFiles.writeJson(File(location.directory, "burst.json"), manifest("capturing"))
-            progress(saved.size)
+            val elapsedMs = starts.keys.minOrNull()?.let { (frame.timestamp - it).coerceAtLeast(0L) / 1_000_000L } ?: 0L
+            progress(saved.size, elapsedMs)
         } catch (e: Exception) {
             warnings.add("Storage error for frame ${meta.id}: ${e.message}")
         } finally {
@@ -190,8 +207,9 @@ internal class BurstWriter private constructor(
                 }
             }
             images.clear()
-            val missing = (0 until FRAME_COUNT).filterNot(saved::containsKey)
-            if (missing.isNotEmpty()) warnings.add("Missing frames: ${missing.size} of $FRAME_COUNT (${saved.size} saved).")
+            val expectedFrames = length.frameCount ?: starts.size
+            val missing = (0 until expectedFrames).filterNot(saved::containsKey)
+            if (missing.isNotEmpty()) warnings.add("Missing frames: ${missing.size} of $expectedFrames (${saved.size} saved).")
             val ordered = saved.values.sortedBy { it.getLong("timestamp_ns") }
             val elapsed = if (ordered.size >= 2) ordered.last().getLong("timestamp_ns") - ordered.first().getLong("timestamp_ns") else 0L
             val fps = if (elapsed > 0) (ordered.size - 1) * 1_000_000_000.0 / elapsed else null
@@ -224,13 +242,14 @@ internal class BurstWriter private constructor(
                 writeCsv()
                 val output = manifest(if (reason == null) "complete" else "interrupted")
                     .put("finished_at", Instant.now().toString()).put("measured_fps", fps ?: JSONObject.NULL)
+                    .put("saved_frame_span_s", if (ordered.size >= 2) elapsed / 1_000_000_000.0 else JSONObject.NULL)
                     .put("slow_frame_intervals", slowIntervals)
                     .put("missing_frame_ids", JSONArray(missing))
                 SessionFiles.writeJson(File(location.directory, "burst.json"), output)
             } catch (e: Exception) {
                 warnings.add("Could not finish session metadata: ${e.message}. Saved frame files remain available.")
             }
-            completed(BurstSummary(location.sessionId, position.id, saved.size, fps, warnings.toList(), reason != null))
+            completed(BurstSummary(location.sessionId, position.id, saved.size, length, fps, warnings.toList(), reason != null))
         }
     }
 
@@ -255,15 +274,17 @@ internal class BurstWriter private constructor(
     }
 
     companion object {
-        const val FRAME_COUNT = 30
-        fun prepare(context: Context, profile: CameraProfile, position: Position, mounting: JSONObject,
-                    cameraInfo: JSONObject, progress: (Int) -> Unit, completed: (BurstSummary) -> Unit,
+        fun prepare(context: Context, profile: CameraProfile, length: CaptureLength, position: Position, mounting: JSONObject,
+                    cameraInfo: JSONObject, progress: (Int, Long) -> Unit, completed: (BurstSummary) -> Unit,
                     prepared: (BurstWriter?, String?) -> Unit) {
             SessionFiles.io.execute {
                 try {
-                    val required = YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height) * FRAME_COUNT + 32L * 1024 * 1024
-                    check(StatFs(context.filesDir.absolutePath).availableBytes >= required) { "Not enough free storage for this 30-frame capture." }
-                    val writer = BurstWriter(SessionFiles.createBurst(context, position, mounting), profile,
+                    // Reserve for the fastest supported cadence in timed mode, including rounding.
+                    val reserveFrames = length.estimatedFrames(profile.stream.minFrameDurationNs)
+                    val required = Math.addExact(Math.multiplyExact(
+                        YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height), reserveFrames), 32L * 1024 * 1024)
+                    check(StatFs(context.filesDir.absolutePath).availableBytes >= required) { "Not enough free storage for the selected capture length. Choose fewer frames or a shorter duration." }
+                    val writer = BurstWriter(SessionFiles.createBurst(context, position, mounting), profile, length,
                         position, cameraInfo, progress, completed)
                     SessionFiles.writeJson(File(writer.location.directory, "burst.json"), writer.manifest("preparing"))
                     prepared(writer, null)

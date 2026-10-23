@@ -196,7 +196,6 @@
                     android:minHeight="48dp"
                     android:gravity="center"
                     android:padding="6dp"
-                    android:text="@string/capture_workflow"
                     android:textColor="@android:color/white"
                     android:textSize="14sp"
                     android:foreground="?android:attr/selectableItemBackground"
@@ -206,7 +205,6 @@
                     style="?android:attr/progressBarStyleHorizontal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="30"
                     android:visibility="gone"
                     android:progressTint="@color/yellow" />
                 <LinearLayout

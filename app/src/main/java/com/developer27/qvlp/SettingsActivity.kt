@@ -19,6 +19,7 @@ import com.developer27.qvlp.camera.CaptureSettings
 import com.developer27.qvlp.camera.FocusMode
 import com.developer27.qvlp.camera.FocusWhiteBalanceCapabilities
 import com.developer27.qvlp.camera.PreviewDisplaySize
+import com.developer27.qvlp.capture.CaptureLengthPreferences
 import com.developer27.qvlp.capture.ResearchSettings
 
 class SettingsActivity : AppCompatActivity() {
@@ -75,6 +76,7 @@ class SettingsActivity : AppCompatActivity() {
                     ResearchSettings.refreshRowTime(this, capabilities.cameraId to profile.stream.key)
                 return
             }
+            CaptureLengthPreferences.bind(this)
             previewDisplaySize = requireNotNull(findPreference(PreviewDisplaySize.PREFERENCE_KEY))
             previewDisplaySize.entries = PreviewDisplaySize.values().map { getString(it.label) }.toTypedArray()
             previewDisplaySize.entryValues = PreviewDisplaySize.values().map { it.key }.toTypedArray()

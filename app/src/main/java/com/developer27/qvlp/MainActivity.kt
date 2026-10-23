@@ -27,6 +27,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.preference.PreferenceManager
 import com.developer27.qvlp.camera.CameraHelper
+import com.developer27.qvlp.capture.CaptureLength
+import com.developer27.qvlp.capture.CaptureLengthMode
+import com.developer27.qvlp.capture.CaptureLengthPreferences
 import com.developer27.qvlp.capture.BurstSummary
 import com.developer27.qvlp.capture.Position
 import com.developer27.qvlp.capture.PositionCatalog
@@ -154,6 +157,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!captureBusy && resultDetails == null) showCapturePlan()
         cameraHelper.fitPreview()
         cameraHelper.startBackgroundThread()
         openCameraWhenReady()
@@ -223,15 +227,17 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, it, Toast.LENGTH_LONG).show()
             return
         }
+        val length = CaptureLengthPreferences.read(preferences)
         clearResult()
         captureBusy = true
         orientationBeforeCapture = requestedOrientation
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
         lastPosition = position
         preferences.edit().putString("last_capture_position", position.json().toString()).apply()
+        viewBinding.captureProgress.max = length.frameCount ?: (requireNotNull(length.durationSeconds) * 1000)
         viewBinding.captureProgress.progress = 0
         updateControls()
-        countdown = object : CountDownTimer(3000L, 1000L) {
+        countdown = object : CountDownTimer(CaptureLength.COUNTDOWN_SECONDS * 1000L, 1000L) {
             override fun onTick(remaining: Long) {
                 viewBinding.burstStatus.text = getString(R.string.capture_countdown, (remaining + 999L) / 1000L)
             }
@@ -239,11 +245,14 @@ class MainActivity : AppCompatActivity() {
                 countdown = null
                 viewBinding.burstStatus.setText(R.string.capture_starting)
                 val key = cameraHelper.activeProfile?.let { cameraHelper.getCameraId() to it.stream.key }
-                cameraHelper.startBurst(position, ResearchSettings.mounting(preferences, key),
-                    progress = { count -> runOnUiThread {
+                cameraHelper.startBurst(position, ResearchSettings.mounting(preferences, key), length,
+                    progress = { count, elapsedMs -> runOnUiThread {
                         if (!isDestroyed && captureBusy) {
-                            viewBinding.burstStatus.text = getString(R.string.capture_progress, count)
-                            viewBinding.captureProgress.progress = count
+                            viewBinding.burstStatus.text = if (length.mode == CaptureLengthMode.FRAMES)
+                                getString(R.string.capture_progress, count, length.value)
+                            else getString(R.string.capture_duration_progress, count, elapsedMs / 1000.0, length.value)
+                            viewBinding.captureProgress.progress = if (length.mode == CaptureLengthMode.FRAMES) count
+                                else elapsedMs.toInt().coerceAtMost(viewBinding.captureProgress.max)
                         }
                     } },
                     completed = { summary -> runOnUiThread { if (!isDestroyed) finishFrameCapture(summary) } },
@@ -278,10 +287,13 @@ class MainActivity : AppCompatActivity() {
         captureBusy = false
         requestedOrientation = orientationBeforeCapture
         val fps = summary.fps?.let { String.format(java.util.Locale.getDefault(), "%.2f", it) } ?: "—"
-        val description = getString(R.string.capture_summary, summary.positionId, summary.saved, fps)
+        val savedDescription = if (summary.length.mode == CaptureLengthMode.FRAMES)
+            getString(R.string.capture_saved, summary.saved, summary.length.value)
+        else getString(R.string.capture_duration_saved, summary.saved, summary.length.value)
+        val description = getString(R.string.capture_summary, summary.positionId, savedDescription, fps)
         resultDetails = description + "\n\n" + (if (summary.warnings.isEmpty()) getString(R.string.capture_no_warnings)
             else summary.warnings.joinToString("\n\n"))
-        viewBinding.burstStatus.text = getString(R.string.capture_saved, summary.saved) + "\n" + when {
+        viewBinding.burstStatus.text = savedDescription + "\n" + when {
             summary.interrupted -> getString(R.string.capture_interrupted_short)
             summary.warnings.isNotEmpty() -> getString(R.string.capture_warning_short, summary.warnings.size)
             else -> getString(R.string.capture_success_short)
@@ -305,7 +317,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearResult() {
         resultDetails = null
-        viewBinding.burstStatus.setText(R.string.capture_workflow)
+        showCapturePlan()
+    }
+
+    private fun showCapturePlan() {
+        val length = CaptureLengthPreferences.read(preferences)
+        val label = resources.getQuantityString(if (length.mode == CaptureLengthMode.FRAMES) R.plurals.capture_length_frames
+            else R.plurals.capture_length_seconds, length.value, length.value)
+        viewBinding.burstStatus.text = getString(R.string.capture_workflow, CaptureLength.COUNTDOWN_SECONDS, label)
     }
 
     private fun updateControls() {

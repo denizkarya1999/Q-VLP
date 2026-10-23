@@ -29,6 +29,8 @@ import androidx.annotation.RequiresPermission
 import com.developer27.qvlp.MainActivity
 import com.developer27.qvlp.R
 import com.developer27.qvlp.databinding.ActivityMainBinding
+import com.developer27.qvlp.capture.CaptureLength
+import com.developer27.qvlp.capture.CaptureWindow
 import com.developer27.qvlp.capture.BurstWriter
 import com.developer27.qvlp.capture.BurstRequestTag
 import com.developer27.qvlp.capture.BurstSummary
@@ -65,6 +67,7 @@ class CameraHelper(
     private var frameReader: ImageReader? = null
     private var ownedPreviewSurface: Surface? = null
     private var burstWriter: BurstWriter? = null
+    private var burstTimeout: Runnable? = null
     private var burstGeneration = 0
     @Volatile private var burstRequested = false
 
@@ -436,9 +439,9 @@ class CameraHelper(
         return true
     }
 
-    internal fun startBurst(position: Position, mounting: JSONObject, progress: (Int) -> Unit,
+    internal fun startBurst(position: Position, mounting: JSONObject, length: CaptureLength, progress: (Int, Long) -> Unit,
                             completed: (BurstSummary) -> Unit, failed: (String) -> Unit) {
-        if (dispatch { startBurst(position, mounting, progress, completed, failed) }) return
+        if (dispatch { startBurst(position, mounting, length, progress, completed, failed) }) return
         if (burstRequested) { failed("A capture is already running."); return }
         val device = cameraDevice
         val session = cameraCaptureSession
@@ -464,7 +467,7 @@ class CameraHelper(
             failed(e.message ?: "Camera information is unavailable.")
             return
         }
-        BurstWriter.prepare(activity.applicationContext, profile, position, mounting, cameraInfo,
+        BurstWriter.prepare(activity.applicationContext, profile, length, position, mounting, cameraInfo,
             progress, completed) { writer, error ->
             val posted = handler.post {
                 if (generation != burstGeneration || cameraDevice !== device || cameraCaptureSession !== session) {
@@ -487,28 +490,34 @@ class CameraHelper(
                 try {
                     val builder = requireNotNull(captureRequestBuilder)
                     val originalTag = builder.build().tag
-                    val requests = try {
+                    val request = try {
                         builder.addTarget(reader.surface)
-                        List(BurstWriter.FRAME_COUNT) { index ->
-                            builder.setTag(BurstRequestTag(originalTag, writer.id, index))
-                            builder.build()
-                        }
+                        builder.setTag(BurstRequestTag(originalTag, writer.id))
+                        builder.build()
                     } finally {
                         builder.removeTarget(reader.surface)
                         builder.setTag(originalTag)
                     }
                     val previewCallback = activeCaptureCallback
+                    val window = CaptureWindow(length)
+                    var stopped = false
                     session.stopRepeating()
-                    session.captureBurst(requests, object : CameraCaptureSession.CaptureCallback() {
-                        private fun frame(request: CaptureRequest): Int? =
-                            (request.tag as? BurstRequestTag)?.takeIf { it.burstId == writer.id }?.frameId
-
+                    // One request keeps long captures bounded; frame IDs come from actual starts.
+                    session.setRepeatingRequest(request, object : CameraCaptureSession.CaptureCallback() {
                         override fun onCaptureStarted(s: CameraCaptureSession, request: CaptureRequest, timestamp: Long, frameNumber: Long) {
-                            if (burstWriter === writer) frame(request)?.let { writer.onStarted(it, timestamp) }
+                            if (burstWriter !== writer) return
+                            val index = window.start(frameNumber, timestamp)
+                            if (index != null) writer.onStarted(index, timestamp) else writer.exclude(timestamp)
+                            if (window.complete && !stopped) {
+                                stopped = true
+                                try { s.stopRepeating() } catch (e: Exception) {
+                                    cancelBurst("Could not stop capture: ${e.message}")
+                                }
+                            }
                         }
                         override fun onCaptureCompleted(s: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
                             if (burstWriter !== writer) return
-                            frame(request)?.let { index ->
+                            window.frameId(result.frameNumber)?.let { index ->
                                 runCatching { FrameMetadata.read(index, result) }
                                     .onSuccess(writer::onMetadata)
                                     .onFailure { writer.warning("Metadata was unavailable for frame $index: ${it.message}") }
@@ -517,24 +526,30 @@ class CameraHelper(
                             cameraControls?.error?.let { writer.warning(it) }
                         }
                         override fun onCaptureFailed(s: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure) {
-                            if (burstWriter === writer) writer.warning("Camera capture failed for frame ${frame(request)} (reason ${failure.reason}).")
+                            if (burstWriter !== writer) return
+                            val index = window.frameId(failure.frameNumber)
+                            if (index != null || !stopped)
+                                writer.warning("Camera capture failed for frame ${index ?: "unknown"} (reason ${failure.reason}).")
                         }
                         override fun onCaptureBufferLost(s: CameraCaptureSession, request: CaptureRequest, target: Surface, frameNumber: Long) {
-                            if (burstWriter === writer && target == reader.surface)
-                                writer.warning("The camera dropped a YUV buffer for frame ${frame(request)}.")
+                            val index = window.frameId(frameNumber)
+                            if (burstWriter === writer && target == reader.surface && index != null)
+                                writer.warning("The camera dropped a YUV buffer for frame $index.")
                         }
                         override fun onCaptureSequenceCompleted(s: CameraCaptureSession, sequenceId: Int, frameNumber: Long) {
-                            // Image delivery can lag behind CaptureResult delivery. Drain before finalizing.
-                            handler.postDelayed({ finishBurst(writer, null) }, 2000L)
+                            if (burstWriter !== writer) return
+                            // Image delivery can lag behind results. Drain before finalizing.
+                            val reason = if (window.complete) null else "Camera capture ended before the selected length."
+                            handler.postDelayed({ finishBurst(writer, reason) }, 2000L)
                         }
                         override fun onCaptureSequenceAborted(s: CameraCaptureSession, sequenceId: Int) {
                             finishBurst(writer, "Camera capture sequence was interrupted.")
                         }
                     }, handler)
-                    val timeout = maxOf(12_000L, BurstWriter.FRAME_COUNT * 3000L / profile.fps + 5000L)
-                    handler.postDelayed({
+                    val timeout = length.timeoutMillis(profile.frameDurationNs)
+                    burstTimeout = Runnable {
                         if (burstWriter === writer) cancelBurst("Capture timed out before all frames arrived.")
-                    }, timeout)
+                    }.also { handler.postDelayed(it, timeout) }
                 } catch (e: Exception) {
                     finishBurst(writer, "Capture could not finish: ${e.message}")
                 }
@@ -548,6 +563,9 @@ class CameraHelper(
 
     private fun finishBurst(writer: BurstWriter, reason: String?, restorePreview: Boolean = true) {
         if (burstWriter !== writer) return
+        burstTimeout?.let { backgroundHandler?.removeCallbacks(it) }
+        burstTimeout = null
+        runCatching { cameraCaptureSession?.stopRepeating() }
         burstWriter = null
         burstRequested = false
         writer.finish(reason)

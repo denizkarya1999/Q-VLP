@@ -22,7 +22,7 @@ Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · Un
 
 1. Tap **Choose Position**. Import your surveyed `positions.csv`, or enter the floor mark ID and its measured X/Y coordinates. Coordinates are required before capture and are never estimated by the phone.
 2. Open **Settings → Mounting Setup** once to record lens height, offsets and notes. Enter row time only if it is known for this camera and resolution. Keep the camera lens over the surveyed mark.
-3. Align the ceiling LEDs in the preview and wait for **Camera ready**. Tap **Start Capture**, then step away. The app waits 3 seconds, requests 30 uncompressed frames, saves them, then beeps and vibrates. Device sound/vibration settings apply.
+3. Align the ceiling LEDs in the preview and wait for **Camera ready**. Tap **Start Capture**, then step away. Choose **Settings → Recording → Capture Length**: **Number of frames** (1–1000, default 30) or **Duration** (1–60 whole seconds, initially 5). The app waits 3 seconds, captures the selected length, saves the uncompressed frames, then beeps and vibrates. Device sound/vibration settings apply.
 4. Read the result on the same screen. Tap the result to open capture details and warnings. **Repeat** keeps the earlier attempt; **Next Position** follows the imported file order. Move the mount to that mark before starting again. Manual positions advance the ID and ask for new coordinates.
 5. Open **Sessions**. Select a session and choose **Share** or **Save to Files**. Save in Downloads to copy it to a computer over USB, or choose a mounted USB drive. **New Session** groups later captures separately; it does not delete previous data.
 
@@ -56,6 +56,12 @@ A successful import selects the first position and starts a new session on the n
 Files live in the app's private `files/sessions/` directory and survive app restarts. Export before uninstalling. Each session has `session.json`, a format guide and, when imported, `positions.csv`. Each attempt has its own `position_<id>_<unique-id>/` folder containing YUV frames, `frames.csv` and `burst.json`. Repeating does not overwrite earlier attempts.
 
 `frames.csv` retains the document's exact per-frame column names. Unknown values and unprocessed LED columns are empty. Per-frame FPS is `1e9 / elapsed_timestamp_ns` between consecutive saved frames (the first cell is empty); burst FPS uses `(saved_frames - 1) / elapsed_seconds`. Capture settings, original crop/strides, missing IDs and warnings are in `burst.json`. The journal is updated after each saved frame; interrupted attempts may lack a finalized CSV, but their files and journal remain exportable. Mount changes create a new session. Row time is only reused for its recorded camera, resolution and zoom; changing zoom marks it unknown until the matching calibration is entered or restored.
+
+### Capture length
+
+The selected mode and each mode’s last value are remembered. The choice is frozen when Start Capture is tapped and shown on the capture screen; settings are unavailable during countdown and recording. The 3-second countdown is separate from capture duration. Frame mode stops after the selected number of exposures, and missing saved frames are reported rather than silently replaced. Duration mode keeps frames whose sensor timestamps fall within the selected interval starting at the first exposure; it does not convert seconds into a fixed frame count. Camera shutdown and saving may finish after that interval. A single repeating request avoids constructing a large request list, and extra in-flight frames outside the selection are discarded.
+
+Progress, completion details, storage checks, missing-frame accounting and timeouts use the selected length. `burst.json` records `requested.length_mode`, `requested.frames` (null for duration), `requested.duration_seconds` (null for frame mode), `requested.estimated_frames`, `frames_started`, and the measured `saved_frame_span_s`. Estimates are never substituted for actual FPS or timestamps. Timed captures reserve storage using the stream’s fastest reported cadence; the existing CSV columns are unchanged. Cancel or leaving the app preserves saved frames and marks the attempt interrupted.
 
 ## Remaining requirements
 

@@ -70,6 +70,20 @@
             android:title="@string/reset_camera"
             android:summary="@string/reset_camera_summary" />
     </PreferenceCategory>
+    <PreferenceCategory android:title="@string/recording_settings"
+        android:layout="@layout/preference_category_layout">
+        <ListPreference android:key="capture_length_mode" android:title="@string/capture_length_mode"
+            android:dialogTitle="@string/capture_length_mode" android:defaultValue="frames"
+            android:layout="@layout/preference_list_layout" />
+        <EditTextPreference android:key="capture_frame_count" android:title="@string/capture_frame_count"
+            android:dialogTitle="@string/capture_frame_count" android:defaultValue="30"
+            android:dialogLayout="@layout/dialog_camera_value" android:positiveButtonText="@string/save_setting"
+            android:negativeButtonText="@android:string/cancel" android:layout="@layout/preference_list_layout" />
+        <EditTextPreference android:key="capture_duration_seconds" android:title="@string/capture_duration_seconds"
+            android:dialogTitle="@string/capture_duration_seconds" android:defaultValue="5"
+            android:dialogLayout="@layout/dialog_camera_value" android:positiveButtonText="@string/save_setting"
+            android:negativeButtonText="@android:string/cancel" android:layout="@layout/preference_list_layout" />
+    </PreferenceCategory>
     <Preference android:key="mounting_setup" android:title="@string/mounting_setup"
         android:summary="@string/mounting_setup_summary" android:layout="@layout/preference_list_layout" />
     <Preference android:key="capture_help" android:title="@string/how_to_capture"

@@ -106,13 +106,13 @@
     <string name="repeat_capture">Repeat</string>
     <string name="next_position">Next Position</string>
     <string name="position_button">Position %1$d · Change</string>
-    <string name="capture_workflow">Tap Start Capture, then step away.\n3-second countdown · 30 frames</string>
+    <string name="capture_workflow">Tap Start Capture, then step away.\n%1$d-second countdown · %2$s</string>
     <string name="capture_countdown">%1$d\nStep away from the phone</string>
     <string name="capture_starting">Preparing capture…</string>
-    <string name="capture_progress">Saving %1$d of 30 frames…</string>
+    <string name="capture_progress">Frames saved: %1$d / %2$d…</string>
     <string name="countdown_cancelled">Countdown cancelled.</string>
     <string name="saving_partial_capture">Finishing the partial capture…</string>
-    <string name="capture_summary">Position %1$d · %2$d / 30 frames saved\nMeasured frame rate: %3$s fps</string>
+    <string name="capture_summary">Position %1$d · %2$s\nMeasured frame rate: %3$s fps</string>
     <string name="capture_interrupted">Capture Interrupted</string>
     <string name="capture_finished">Capture Complete</string>
     <string name="capture_no_warnings">No capture warnings. Open Sessions to save or share these files. LED analysis has not run.</string>
@@ -138,14 +138,14 @@
     <string name="camera_wait_button">Preparing camera…</string>
     <string name="files_working">Working with files…</string>
     <string name="capture_details">View Capture Details</string>
-    <string name="capture_saved">%1$d of 30 frames saved</string>
+    <string name="capture_saved">Frames saved: %1$d / %2$d</string>
     <string name="capture_success_short">Ready for the next position.</string>
     <string name="capture_warning_short">%1$d warning(s) · Review before moving on.</string>
     <string name="capture_interrupted_short">Capture interrupted · Review and repeat.</string>
     <string name="review_warnings">Review Warnings</string>
     <string name="last_position">End of List</string>
     <string name="how_to_capture">How to Capture</string>
-    <string name="capture_help">1. Measure your floor positions. Import positions.csv from Choose Position, or enter a position and both coordinates.\n\n2. Set lens height, offsets and notes once in Mounting Setup. Add row time only when known for this camera and resolution. Keep the lens above the floor mark.\n\n3. Align the preview with the ceiling LEDs. Wait for Camera ready, tap Start Capture and step away. After 3 seconds, the app captures 30 frames, then beeps and vibrates.\n\n4. Review any warnings. Repeat keeps the previous attempt. Next Position follows the imported file order. Move the mount before starting again.\n\n5. Open Sessions to share the data or save a file for USB transfer.\n\nThis version saves camera frames and measurements. LED identification and location estimates come later.</string>
+    <string name="capture_help">1. Measure your floor positions. Import positions.csv from Choose Position, or enter a position and both coordinates.\n\n2. Set lens height, offsets and notes once in Mounting Setup. Add row time only when known for this camera and resolution. Keep the lens above the floor mark.\n\n3. Align the preview with the ceiling LEDs. Wait for Camera ready, tap Start Capture and step away. Choose a frame count or duration in Settings → Recording. After a 3-second countdown, the app captures the selected length, then beeps and vibrates.\n\n4. Review any warnings. Repeat keeps the previous attempt. Next Position follows the imported file order. Move the mount before starting again.\n\n5. Open Sessions to share the data or save a file for USB transfer.\n\nThis version saves camera frames and measurements. LED identification and location estimates come later.</string>
     <string name="tap_capture_details">Tap this result for details.</string>
     <string name="tap_capture_warnings">Tap this result to review warnings.</string>
     <string name="switch_camera">Switch Camera</string>
@@ -157,4 +157,22 @@
     <string name="other_camera_unsupported">The other camera does not support the manual settings needed for frame capture. Your current camera is still selected.</string>
     <string name="camera_switch_failed">Could not switch cameras. Try again.</string>
     <string name="zoom_unavailable">This camera could not apply the selected zoom.</string>
+    <string name="recording_settings">Recording</string>
+    <string name="capture_length_mode">Capture Length</string>
+    <string name="capture_by_frames">Number of frames</string>
+    <string name="capture_by_duration">Duration</string>
+    <string name="capture_frame_count">Number of Frames</string>
+    <string name="capture_duration_seconds">Duration (seconds)</string>
+    <plurals name="capture_length_frames">
+        <item quantity="one">%1$d frame</item>
+        <item quantity="other">%1$d frames</item>
+    </plurals>
+    <plurals name="capture_length_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
+    <string name="capture_frame_range">Enter %1$d–%2$d frames. The camera stops after this many frame exposures; dropped frames are reported.</string>
+    <string name="capture_duration_range">Enter %1$d–%2$d whole seconds. Timing begins with the first frame, after the 3-second countdown. The number of saved frames depends on the actual frame rate.</string>
+    <string name="capture_duration_progress">Frames saved: %1$d · %2$.1f / %3$d s</string>
+    <string name="capture_duration_saved">Frames saved: %1$d · %2$d s requested</string>
 </resources>
