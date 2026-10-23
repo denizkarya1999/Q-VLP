@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <PreferenceCategory
+        android:title="@string/camera_settings"
+        android:layout="@layout/preference_category_layout">
+        <Preference
+            android:key="camera_status"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/camera_settings"
+            android:selectable="false" />
+        <EditTextPreference
+            android:key="exposure_us"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/exposure_time"
+            android:dialogTitle="@string/exposure_time"
+            android:persistent="false" />
+        <EditTextPreference
+            android:key="iso"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/iso"
+            android:dialogTitle="@string/iso"
+            android:persistent="false" />
+        <ListPreference
+            android:key="resolution"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/resolution"
+            android:dialogTitle="@string/resolution"
+            android:persistent="false" />
+        <ListPreference
+            android:key="frame_rate"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/frame_rate"
+            android:dialogTitle="@string/frame_rate"
+            android:persistent="false" />
+        <Preference
+            android:key="reset_camera"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/reset_camera"
+            android:summary="@string/reset_camera_summary" />
+    </PreferenceCategory>
+</PreferenceScreen>

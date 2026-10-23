@@ -1,0 +1,28 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Generated files from every Android module
+**/build/
+**/.cxx/
+.idea/
+/artifacts/
+
+# Local signing credentials and environment files
+*.jks
+*.keystore
+keystore.properties
+.env
+.env.*
