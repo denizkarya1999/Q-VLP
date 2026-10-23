@@ -1,80 +1,209 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@color/darkBlue" android:orientation="vertical">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:gravity="center_vertical" android:minHeight="64dp" android:paddingHorizontal="12dp">
-        <LinearLayout android:id="@+id/title_container" android:layout_width="0dp"
-            android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="56dp"
-            android:orientation="horizontal" android:gravity="center_vertical" android:focusable="true"
-            android:contentDescription="@string/open_project_website"
-            android:foreground="?android:attr/selectableItemBackground">
-            <ImageView android:layout_width="36dp" android:layout_height="36dp"
-                android:src="@drawable/qvlp_icon" android:importantForAccessibility="no" />
-            <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-                android:maxLines="1" android:ellipsize="end"
-                android:text="@string/app_name" android:textSize="28sp" android:textStyle="bold"
-                android:textColor="@color/yellow" android:paddingStart="8dp" android:paddingEnd="4dp" />
-        </LinearLayout>
-        <Button android:id="@+id/sessionsButton" style="?android:attr/borderlessButtonStyle"
-            android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="48dp"
-            android:minWidth="64dp" android:text="@string/sessions" android:textAllCaps="false"
-            android:textColor="@color/yellow" />
-        <Button android:id="@+id/moreButton" style="?android:attr/borderlessButtonStyle"
-            android:layout_width="48dp" android:layout_height="wrap_content" android:minWidth="48dp"
-            android:minHeight="48dp" android:text="⋮" android:textSize="28sp"
-            android:contentDescription="@string/more_options" android:textColor="@color/yellow" />
-    </LinearLayout>
-    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/preview_frame"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <TextureView
+        android:id="@+id/viewFinder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+
+    <!-- Keep the original top/bottom arrangement; allow scrolling on short screens. -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:fillViewport="true">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingBottom="16dp">
-            <TextView android:id="@+id/captureStatus" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:minHeight="48dp" android:gravity="center_vertical"
-                android:text="@string/camera_starting" android:textColor="@android:color/white"
-                android:textSize="15sp" android:focusable="true" android:clickable="true"
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/title_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:paddingVertical="16dp"
+                android:paddingHorizontal="12dp"
+                android:background="@color/darkBlue"
+                android:elevation="4dp"
+                android:focusable="true"
+                android:contentDescription="@string/open_project_website"
+                android:foreground="?android:attr/selectableItemBackground">
+                <ImageView
+                    android:layout_width="58dp"
+                    android:layout_height="58dp"
+                    android:src="@drawable/qvlp_icon"
+                    android:scaleType="fitCenter"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_name"
+                    android:textSize="44sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/yellow"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="0dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/top_controls_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="4dp">
+                <Button
+                    android:id="@+id/settingsButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:minWidth="0dp"
+                    android:text="@string/settings"
+                    android:textAllCaps="false"
+                    android:textSize="16sp"
+                    android:backgroundTint="@color/yellow"
+                    android:textColor="@color/darkBlue" />
+                <Button
+                    android:id="@+id/sessionsButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:minWidth="0dp"
+                    android:layout_marginHorizontal="4dp"
+                    android:text="@string/sessions"
+                    android:textAllCaps="false"
+                    android:textSize="16sp"
+                    android:backgroundTint="@color/yellow"
+                    android:textColor="@color/darkBlue" />
+                <Button
+                    android:id="@+id/aboutButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:minWidth="0dp"
+                    android:text="@string/about"
+                    android:textAllCaps="false"
+                    android:textSize="16sp"
+                    android:backgroundTint="@color/yellow"
+                    android:textColor="@color/darkBlue" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/captureStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginHorizontal="16dp"
+                android:padding="10dp"
+                android:gravity="center_vertical"
+                android:background="#CC00274C"
+                android:text="@string/camera_starting"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:focusable="true"
+                android:clickable="true"
                 android:foreground="?android:attr/selectableItemBackground" />
-            <FrameLayout android:layout_width="match_parent" android:layout_height="220dp"
-                android:background="@android:color/black">
-                <TextureView android:id="@+id/viewFinder" android:layout_width="match_parent"
-                    android:layout_height="match_parent" android:importantForAccessibility="no" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|start" android:padding="8dp" android:background="#CC00274C"
-                    android:text="@string/preview_hint" android:textSize="13sp" android:textColor="@android:color/white" />
-            </FrameLayout>
-            <Button android:id="@+id/positionButton" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="12dp"
-                android:text="@string/choose_position" android:textAllCaps="false"
-                android:backgroundTint="@color/yellow" android:textColor="@color/darkBlue" android:textSize="18sp" />
-            <TextView android:id="@+id/positionCoordinates" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:gravity="center" android:padding="4dp"
-                android:textColor="@android:color/white" android:textSize="14sp" />
-            <TextView android:id="@+id/burstStatus" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:gravity="center" android:paddingVertical="12dp"
-                android:text="@string/capture_workflow" android:textColor="@android:color/white"
-                android:textSize="18sp" android:accessibilityLiveRegion="polite" />
-            <ProgressBar android:id="@+id/captureProgress" style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:max="30" android:visibility="gone" android:progressTint="@color/yellow" />
-            <Button android:id="@+id/startCaptureButton" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:minHeight="56dp" android:text="@string/start_capture"
-                android:textAllCaps="false" android:textSize="18sp"
-                android:backgroundTint="@color/yellow" android:textColor="@color/darkBlue" />
-            <Button android:id="@+id/resultDetailsButton" style="?android:attr/borderlessButtonStyle"
-                android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
-                android:text="@string/capture_details" android:textAllCaps="false" android:visibility="gone"
-                android:textColor="@color/yellow" />
-            <LinearLayout android:id="@+id/resultActions" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="horizontal" android:visibility="gone">
-                <Button android:id="@+id/repeatCaptureButton" android:layout_width="0dp"
-                    android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="52dp"
-                    android:text="@string/repeat_capture" android:textAllCaps="false"
-                    android:backgroundTint="@color/yellow" android:textColor="@color/darkBlue" />
-                <Button android:id="@+id/nextPositionButton" android:layout_width="0dp"
-                    android:layout_weight="1" android:layout_height="wrap_content" android:minHeight="52dp"
-                    android:layout_marginStart="8dp" android:text="@string/next_position" android:textAllCaps="false"
-                    android:backgroundTint="@color/yellow" android:textColor="@color/darkBlue" />
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="96dp"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:id="@+id/button_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:layout_margin="12dp"
+                android:padding="10dp"
+                android:background="#E600274C">
+                <Button
+                    android:id="@+id/positionButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:text="@string/choose_position"
+                    android:textAllCaps="false"
+                    android:backgroundTint="@color/yellow"
+                    android:textColor="@color/darkBlue" />
+                <TextView
+                    android:id="@+id/positionCoordinates"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:padding="4dp"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp" />
+                <TextView
+                    android:id="@+id/burstStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:gravity="center"
+                    android:padding="6dp"
+                    android:text="@string/capture_workflow"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp"
+                    android:foreground="?android:attr/selectableItemBackground"
+                    android:accessibilityLiveRegion="polite" />
+                <ProgressBar
+                    android:id="@+id/captureProgress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="30"
+                    android:visibility="gone"
+                    android:progressTint="@color/yellow" />
+                <Button
+                    android:id="@+id/startCaptureButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="52dp"
+                    android:text="@string/start_capture"
+                    android:textAllCaps="false"
+                    android:textSize="16sp"
+                    android:backgroundTint="@color/green"
+                    android:textColor="@android:color/white" />
+                <LinearLayout
+                    android:id="@+id/resultActions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+                    <Button
+                        android:id="@+id/repeatCaptureButton"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="@string/repeat_capture"
+                        android:textAllCaps="false"
+                        android:backgroundTint="@color/yellow"
+                        android:textColor="@color/darkBlue" />
+                    <Button
+                        android:id="@+id/nextPositionButton"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:layout_marginStart="4dp"
+                        android:text="@string/next_position"
+                        android:textAllCaps="false"
+                        android:backgroundTint="@color/yellow"
+                        android:textColor="@color/darkBlue" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
-</LinearLayout>
+</FrameLayout>

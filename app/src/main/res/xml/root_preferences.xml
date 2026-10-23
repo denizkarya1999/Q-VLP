@@ -66,4 +66,6 @@
     </PreferenceCategory>
     <Preference android:key="mounting_setup" android:title="@string/mounting_setup"
         android:summary="@string/mounting_setup_summary" android:layout="@layout/preference_list_layout" />
+    <Preference android:key="capture_help" android:title="@string/how_to_capture"
+        android:layout="@layout/preference_list_layout" />
 </PreferenceScreen>

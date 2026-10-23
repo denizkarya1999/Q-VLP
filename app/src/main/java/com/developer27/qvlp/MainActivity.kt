@@ -23,7 +23,6 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.PopupMenu
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.preference.PreferenceManager
@@ -101,7 +100,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
         viewBinding.titleContainer.setOnClickListener { openProjectWebsite() }
-        viewBinding.moreButton.setOnClickListener { showMenu() }
+        viewBinding.settingsButton.setOnClickListener { openSettings() }
+        viewBinding.aboutButton.setOnClickListener {
+            startActivity(Intent(this, AboutQvlpActivity::class.java))
+        }
         viewBinding.sessionsButton.setOnClickListener { sessions.show() }
         viewBinding.positionButton.setOnClickListener { positions.show() }
         viewBinding.captureStatus.setOnClickListener {
@@ -129,7 +131,7 @@ class MainActivity : AppCompatActivity() {
                 if (it.x == null || it.y == null) positions.show()
             }
         }
-        viewBinding.resultDetailsButton.setOnClickListener {
+        viewBinding.burstStatus.setOnClickListener {
             resultDetails?.let {
                 AlertDialog.Builder(this).setTitle(R.string.capture_details).setMessage(it)
                     .setPositiveButton(android.R.string.ok, null).show()
@@ -138,26 +140,6 @@ class MainActivity : AppCompatActivity() {
         resultDetails = savedInstanceState?.getString("result_details")
         savedInstanceState?.getString("result_text")?.let { viewBinding.burstStatus.text = it }
         updateControls()
-    }
-
-    private fun showMenu() {
-        PopupMenu(this, viewBinding.moreButton).apply {
-            menu.add(0, 1, 0, R.string.settings)
-            menu.add(0, 2, 1, R.string.mounting_setup)
-            menu.add(0, 3, 2, R.string.how_to_capture)
-            menu.add(0, 4, 3, R.string.about)
-            setOnMenuItemClickListener {
-                when (it.itemId) {
-                    1 -> openSettings()
-                    2 -> openSettings(mounting = true)
-                    3 -> AlertDialog.Builder(this@MainActivity).setTitle(R.string.how_to_capture)
-                        .setMessage(R.string.capture_help).setPositiveButton(android.R.string.ok, null).show()
-                    4 -> startActivity(Intent(this@MainActivity, AboutQvlpActivity::class.java))
-                }
-                true
-            }
-            show()
-        }
     }
 
     override fun onResume() {
@@ -190,11 +172,10 @@ class MainActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
     }
 
-    private fun openSettings(mounting: Boolean = false) {
+    private fun openSettings() {
         val cameraId = runCatching { cameraHelper.getCameraId() }.getOrNull()
         startActivity(Intent(this, SettingsActivity::class.java)
-            .putExtra(SettingsActivity.EXTRA_CAMERA_ID, cameraId)
-            .putExtra(SettingsActivity.EXTRA_MOUNTING, mounting))
+            .putExtra(SettingsActivity.EXTRA_CAMERA_ID, cameraId))
     }
 
     /** The technical measurements stay available without filling the capture screen. */
@@ -286,7 +267,8 @@ class MainActivity : AppCompatActivity() {
             summary.warnings.isNotEmpty() -> getString(R.string.capture_warning_short, summary.warnings.size)
             else -> getString(R.string.capture_success_short)
         }
-        viewBinding.resultDetailsButton.setText(if (summary.warnings.isEmpty()) R.string.capture_details else R.string.review_warnings)
+        viewBinding.burstStatus.append("\n" + getString(
+            if (summary.warnings.isEmpty()) R.string.tap_capture_details else R.string.tap_capture_warnings))
         updateControls()
         if (!summary.interrupted) {
             runCatching {
@@ -310,7 +292,8 @@ class MainActivity : AppCompatActivity() {
     private fun updateControls() {
         val busy = captureBusy || fileBusy
         viewBinding.titleContainer.isEnabled = !busy
-        viewBinding.moreButton.isEnabled = !busy
+        viewBinding.settingsButton.isEnabled = !busy
+        viewBinding.aboutButton.isEnabled = !busy
         viewBinding.sessionsButton.isEnabled = !busy
         viewBinding.positionButton.isEnabled = !busy
         viewBinding.captureStatus.isEnabled = !busy
@@ -326,13 +309,13 @@ class MainActivity : AppCompatActivity() {
         viewBinding.startCaptureButton.setText(when {
             captureBusy -> R.string.cancel_capture
             fileBusy -> R.string.files_working
-            !hasPosition -> R.string.choose_position
             !cameraReady -> R.string.camera_wait_button
             else -> R.string.start_capture
         })
-        viewBinding.startCaptureButton.isEnabled = !fileBusy && (captureBusy || !hasPosition || cameraReady)
+        viewBinding.startCaptureButton.isEnabled = !fileBusy && (captureBusy || (hasPosition && cameraReady))
         viewBinding.resultActions.visibility = if (hasResult && !busy) View.VISIBLE else View.GONE
-        viewBinding.resultDetailsButton.visibility = if (hasResult && !busy) View.VISIBLE else View.GONE
+        viewBinding.burstStatus.isClickable = hasResult && !busy
+        viewBinding.burstStatus.isFocusable = hasResult && !busy
         viewBinding.repeatCaptureButton.isEnabled = !busy && cameraReady && lastPosition != null
         val hasNext = if (hasResult && !busy) PositionCatalog.next(preferences) != null else false
         viewBinding.nextPositionButton.isEnabled = !busy && hasNext

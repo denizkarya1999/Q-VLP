@@ -95,12 +95,12 @@
     <string name="mount_notes_help">Record the mount, phone orientation, reference point and measurement notes (up to 2000 characters).</string>
     <string name="not_provided">Not provided</string>
     <string name="session_value_invalid">Enter a valid measurement. Height and row time must be positive when known; leave unknown measurements empty.</string>
-    <string name="start_capture">Start</string>
+    <string name="start_capture">Start Capture</string>
     <string name="cancel_capture">Cancel</string>
     <string name="repeat_capture">Repeat</string>
     <string name="next_position">Next Position</string>
     <string name="position_button">Position %1$d · Change</string>
-    <string name="capture_workflow">Tap Start, then step away.\n3-second countdown · 30 frames</string>
+    <string name="capture_workflow">Tap Start Capture, then step away.\n3-second countdown · 30 frames</string>
     <string name="capture_countdown">%1$d\nStep away from the phone</string>
     <string name="capture_starting">Preparing capture…</string>
     <string name="capture_progress">Saving %1$d of 30 frames…</string>
@@ -110,8 +110,7 @@
     <string name="capture_interrupted">Capture Interrupted</string>
     <string name="capture_finished">Capture Complete</string>
     <string name="capture_no_warnings">No capture warnings. Open Sessions to save or share these files. LED analysis has not run.</string>
-    <string name="next_position_ready">Move the lens over this floor mark, then tap Start.</string>
-    <string name="more_options">Settings, mounting setup and help</string>
+    <string name="next_position_ready">Move the lens over this floor mark, then tap Start Capture.</string>
     <string name="mounting_setup">Mounting Setup</string>
     <string name="mounting_setup_summary">Lens height, offsets, notes and known row time</string>
     <string name="done">Done</string>
@@ -140,5 +139,7 @@
     <string name="review_warnings">Review Warnings</string>
     <string name="last_position">End of List</string>
     <string name="how_to_capture">How to Capture</string>
-    <string name="capture_help">1. Measure your floor positions. Import positions.csv from Choose Position, or enter a position and both coordinates.\n\n2. Set lens height, offsets and notes once in Mounting Setup. Add row time only when known for this camera and resolution. Keep the lens above the floor mark.\n\n3. Align the preview with the ceiling LEDs. Wait for Camera ready, tap Start and step away. After 3 seconds, the app captures 30 frames, then beeps and vibrates.\n\n4. Review any warnings. Repeat keeps the previous attempt. Next Position follows the imported file order. Move the mount before starting again.\n\n5. Open Sessions to share the data or save a file for USB transfer.\n\nThis version saves camera frames and measurements. LED identification and location estimates come later.</string>
+    <string name="capture_help">1. Measure your floor positions. Import positions.csv from Choose Position, or enter a position and both coordinates.\n\n2. Set lens height, offsets and notes once in Mounting Setup. Add row time only when known for this camera and resolution. Keep the lens above the floor mark.\n\n3. Align the preview with the ceiling LEDs. Wait for Camera ready, tap Start Capture and step away. After 3 seconds, the app captures 30 frames, then beeps and vibrates.\n\n4. Review any warnings. Repeat keeps the previous attempt. Next Position follows the imported file order. Move the mount before starting again.\n\n5. Open Sessions to share the data or save a file for USB transfer.\n\nThis version saves camera frames and measurements. LED identification and location estimates come later.</string>
+    <string name="tap_capture_details">Tap this result for details.</string>
+    <string name="tap_capture_warnings">Tap this result to review warnings.</string>
 </resources>

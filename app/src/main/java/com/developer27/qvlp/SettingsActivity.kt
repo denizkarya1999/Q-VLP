@@ -73,6 +73,12 @@ class SettingsActivity : AppCompatActivity() {
                     ResearchSettings.refreshRowTime(this, capabilities.cameraId to profile.stream.key)
                 return
             }
+            findPreference<Preference>("capture_help")?.setOnPreferenceClickListener {
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.how_to_capture).setMessage(R.string.capture_help)
+                    .setPositiveButton(android.R.string.ok, null).show()
+                true
+            }
             findPreference<Preference>("mounting_setup")?.setOnPreferenceClickListener {
                 startActivity(android.content.Intent(requireContext(), SettingsActivity::class.java)
                     .putExtra(EXTRA_CAMERA_ID, requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))
