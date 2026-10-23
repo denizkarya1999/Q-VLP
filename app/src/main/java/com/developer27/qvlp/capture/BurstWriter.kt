@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class BurstRequestTag(val controlsTag: Any?, val burstId: String)
 internal data class BurstSummary(val sessionId: String, val positionId: Int, val saved: Int, val length: CaptureLength,
-    val fps: Double?, val warnings: List<String>, val interrupted: Boolean, val publicSaveError: String? = null)
+    val fps: Double?, val warnings: List<String>, val interrupted: Boolean)
 
 internal data class FrameMetadata(val id: Int, val timestamp: Long?, val exposureNs: Long?, val iso: Int?, val details: JSONObject) {
     companion object {
@@ -60,7 +60,6 @@ internal class BurstWriter private constructor(
     private val position: Position,
     private val cameraInfo: JSONObject,
     private val progress: (Int, Long) -> Unit,
-    private val publishing: () -> Unit,
     private val completed: (BurstSummary) -> Unit
 ) {
     val id = UUID.randomUUID().toString()
@@ -258,10 +257,9 @@ internal class BurstWriter private constructor(
             } catch (e: Exception) {
                 warnings.add("Could not finish session metadata: ${e.message}. Saved frame files remain available.")
             }
-            publishing()
-            val publicSave = PublicSessionStorage.syncSession(context, requireNotNull(location.directory.parentFile))
-            completed(BurstSummary(location.sessionId, position.id, saved.size, length, fps, warnings.toList(), reason != null,
-                publicSave.exceptionOrNull()?.let { it.message ?: "Could not save this session." }))
+            if (SessionFiles.activeCapture == location.directory) SessionFiles.activeCapture = null
+            SessionPublisher.captureReady(context, requireNotNull(location.directory.parentFile))
+            completed(BurstSummary(location.sessionId, position.id, saved.size, length, fps, warnings.toList(), reason != null))
         }
     }
 
@@ -287,7 +285,7 @@ internal class BurstWriter private constructor(
 
     companion object {
         fun prepare(context: Context, profile: CameraProfile, length: CaptureLength, position: Position, mounting: JSONObject,
-                    cameraInfo: JSONObject, progress: (Int, Long) -> Unit, publishing: () -> Unit, completed: (BurstSummary) -> Unit,
+                    cameraInfo: JSONObject, progress: (Int, Long) -> Unit, completed: (BurstSummary) -> Unit,
                     prepared: (BurstWriter?, String?) -> Unit) {
             SessionFiles.io.execute {
                 try {
@@ -297,10 +295,11 @@ internal class BurstWriter private constructor(
                         YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height), reserveFrames), 32L * 1024 * 1024)
                     // Both the recoverable private copy and public copy occupy internal storage.
                     check(StatFs(context.filesDir.absolutePath).availableBytes >= Math.multiplyExact(required, 2L)) { "Not enough free storage for the selected capture length. Choose fewer frames or a shorter duration." }
-                    PublicSessionStorage.requireDestination(context)
+                    check(PublicSessionStorage.configured(context)) { "Choose Pictures/Q-VLP in Sessions → Storage before recording." }
                     val writer = BurstWriter(context.applicationContext, SessionFiles.createBurst(context, position, mounting), profile, length,
-                        position, cameraInfo, progress, publishing, completed)
+                        position, cameraInfo, progress, completed)
                     SessionFiles.writeJson(File(writer.location.directory, "burst.json"), writer.manifest("preparing"))
+                    SessionFiles.activeCapture = writer.location.directory
                     prepared(writer, null)
                 } catch (e: Exception) {
                     prepared(null, e.message ?: "Could not prepare session storage.")

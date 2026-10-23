@@ -4,17 +4,34 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.os.CancellationSignal
+import java.util.concurrent.CancellationException
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
 
-/** Public copies are published after capture, on SessionFiles.io. Private originals allow recovery. */
+internal class CopyControl(private val yieldToCapture: Boolean = false) {
+    val signal = CancellationSignal()
+    fun cancel() = signal.cancel()
+    fun check() {
+        while (yieldToCapture && SessionFiles.activeCapture != null && !signal.isCanceled) Thread.sleep(25)
+        if (signal.isCanceled) throw CancellationException("Saving paused. Original files remain safe.")
+    }
+}
+
+internal data class SessionFolder(val file: File, val files: List<File>, val children: List<SessionFolder>, val signature: String) {
+    val allFiles: List<File> get() = files + children.flatMap { it.allFiles }
+}
+internal data class SessionSnapshot(val root: SessionFolder, val signature: String)
+
+/** The capture worker snapshots immutable attempts; a separate worker publishes public copies. */
 internal object PublicSessionStorage {
     const val PATH = "Pictures/Q-VLP"
     private const val AUTHORITY = "com.android.externalstorage.documents"
     private const val PREFS = "public_session_storage"
     private const val TREE = "tree_uri"
+    private val receiptsLock = Any()
     private val access = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
     val initialUri: Uri = DocumentsContract.buildDocumentUri(AUTHORITY, "primary:Pictures")
 
@@ -46,61 +63,98 @@ internal object PublicSessionStorage {
         }
     }
 
-    fun requireDestination(context: Context): Uri {
+    fun requireDestination(context: Context, control: CopyControl = CopyControl()): Uri {
         check(configured(context)) { "Choose $PATH in Sessions → Storage before recording." }
-        return destination(context, requireNotNull(selected(context)))
+        return destination(context, requireNotNull(selected(context)), control)
     }
 
-    private fun destination(context: Context, tree: Uri): Uri {
+    private fun destination(context: Context, tree: Uri, control: CopyControl = CopyControl()): Uri {
         val document = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        val root = Document(context, document)
+        val root = Document(context, document, control)
         check(root.isDirectory()) { "The selected folder is unavailable. Choose it again in Sessions → Storage." }
         return if (DocumentsContract.getTreeDocumentId(tree) == "primary:$PATH") document
             else root.directory("Q-VLP").uri
     }
 
-    fun error(context: Context): String? = preferences(context).getString("error", null)
+    fun error(context: Context): String? = preferences(context).all.entries
+        .filter { it.key.startsWith("error_session_") }.mapNotNull { it.value as? String }
+        .distinct().joinToString("\n").ifBlank { null }
+
+    /** Called on SessionFiles.io. Never include an attempt that the camera is still writing. */
+    fun snapshot(session: File): SessionSnapshot {
+        fun read(directory: File): SessionFolder {
+            val entries = directory.listFiles() ?: error("Cannot read ${directory.name}.")
+            val files = entries.filter { it.isFile && publishable(it) }
+            val children = entries.filter { it.isDirectory && it != SessionFiles.activeCapture }.map(::read)
+            return SessionFolder(directory, files, children, signature(files, directory))
+        }
+        val root = read(session)
+        return SessionSnapshot(root, signature(root.allFiles, session))
+    }
+
+    private fun receiptFile(context: Context, id: String) = File(context.filesDir, "public_session_receipts/$id.json")
+
+    fun needsSave(context: Context, snapshot: SessionSnapshot): Boolean {
+        val receipt = synchronized(receiptsLock) { runCatching { SessionFiles.readJson(receiptFile(context, snapshot.root.file.name)) }.getOrNull() }
+        return preferences(context).contains("error_${snapshot.root.file.name}") ||
+            receipt?.optString("tree") != selected(context).toString() || receipt.optString("signature") != snapshot.signature
+    }
 
     fun syncAll(context: Context, verify: Boolean = false): Result<Int> = runCatching {
-        val sessions = SessionFiles.directories(context)
         val failures = mutableListOf<String>()
-        sessions.forEach { session ->
-            syncSession(context, session, verify).exceptionOrNull()?.let { failures.add(it.message ?: "Save failed.") }
+        val snapshots = SessionFiles.directories(context).map(::snapshot)
+        snapshots.filter { verify || needsSave(context, it) }.forEach { snapshot ->
+            syncSession(context, snapshot, verify).exceptionOrNull()?.let { failures.add(it.message ?: "Save failed.") }
         }
         check(failures.isEmpty()) { failures.distinct().joinToString("\n") }
-        sessions.size
-    }.also { rememberResult(context, it) }
+        snapshots.size
+    }
 
-    fun syncSession(context: Context, session: File, verify: Boolean = false): Result<Unit> = runCatching {
-        val root = Document(context, requireDestination(context))
-        val target = root.directory(session.name)
-        val receiptFile = File(context.filesDir, "public_session_receipts/${session.name}.json")
-        val receipt = runCatching { SessionFiles.readJson(receiptFile) }.getOrElse { JSONObject() }
-        val records = if (receipt.optString("destination") == root.uri.toString())
-            receipt.optJSONObject("directories") ?: JSONObject() else JSONObject()
-        // A crash during repair must not leave an old receipt claiming that the files are complete.
-        if (receiptFile.exists()) check(receiptFile.delete()) { "Cannot update the session save record." }
-        mirror(session, session, target, records, verify)
-        receiptFile.parentFile?.mkdirs()
-        SessionFiles.writeJson(receiptFile, JSONObject().put("destination", root.uri.toString())
-            .put("tree", selected(context).toString()).put("directories", records)
-            .put("signature", signature(session.walkTopDown().filter { it.isFile && publishable(it) }.toList(), session)))
-    }.also { rememberResult(context, it) }
+    fun syncSession(context: Context, session: File, verify: Boolean = false): Result<Unit> =
+        syncSession(context, snapshot(session), verify)
+
+    fun syncSession(context: Context, snapshot: SessionSnapshot, verify: Boolean = false,
+                    control: CopyControl = CopyControl(), progress: (Int, Int) -> Unit = { _, _ -> }): Result<Unit> {
+        val id = snapshot.root.file.name
+        return runCatching {
+            control.check()
+            val root = Document(context, requireDestination(context, control), control)
+            val target = root.directory(id)
+            val receiptFile = receiptFile(context, id)
+            val receipt = synchronized(receiptsLock) { runCatching { SessionFiles.readJson(receiptFile) }.getOrElse { JSONObject() } }
+            val records = if (!verify && receipt.optString("destination") == root.uri.toString())
+                receipt.optJSONObject("directories") ?: JSONObject() else JSONObject()
+            receiptFile.parentFile?.mkdirs()
+            fun checkpoint(signature: String = "") = synchronized(receiptsLock) {
+                SessionFiles.writeJson(receiptFile, JSONObject().put("destination", root.uri.toString())
+                    .put("tree", selected(context).toString()).put("directories", records).put("signature", signature))
+            }
+            // Preserve completed attempts across pause/process death, while keeping this session pending.
+            checkpoint()
+            var completed = 0
+            val total = snapshot.root.allFiles.size
+            progress(0, total)
+            mirror(snapshot.root.file, snapshot.root, target, records, verify, control, { checkpoint() }) { count ->
+                completed += count
+                progress(completed, total)
+            }
+            control.check()
+            checkpoint(snapshot.signature)
+        }.also { result ->
+            if (result.exceptionOrNull() !is CancellationException && result.exceptionOrNull() !is android.os.OperationCanceledException) {
+                preferences(context).edit().remove("error").apply {
+                    if (result.isFailure) putString("error_$id", result.exceptionOrNull()?.message ?: "Save failed.")
+                    else remove("error_$id")
+                }.apply()
+            }
+        }
+    }
 
     fun status(context: Context, session: File): String {
         if (!configured(context)) return "Choose $PATH in Storage"
-        if (error(context) != null) return "Public save needs attention · Open Storage"
-        val receipt = runCatching { SessionFiles.readJson(File(context.filesDir, "public_session_receipts/${session.name}.json")) }.getOrNull()
-        val current = signature(session.walkTopDown().filter { it.isFile && publishable(it) }.toList(), session)
-        return if (receipt?.optString("tree") == selected(context).toString() && receipt.optString("signature") == current) "Saved to $PATH"
+        if (preferences(context).contains("error_${session.name}")) return "Public save needs attention · Open Storage"
+        return if (!needsSave(context, snapshot(session))) "Saved to $PATH"
             else "Waiting to save to $PATH · Open Storage to retry"
-    }
-
-    private fun rememberResult(context: Context, result: Result<*>) {
-        preferences(context).edit().apply {
-            if (result.isFailure) putString("error", result.exceptionOrNull()?.message ?: "Save failed.")
-            else remove("error")
-        }.apply()
     }
 
     private fun publishable(file: File) = !file.name.endsWith(".part") && !file.name.endsWith(".bak") && !file.name.endsWith(".new")
@@ -110,32 +164,33 @@ internal object PublicSessionStorage {
             "${it.relativeTo(root).invariantSeparatorsPath}:${it.length()}:${it.lastModified()}"
         }.byteInputStream())
 
-    private fun mirror(root: File, source: File, target: Document, records: JSONObject, verify: Boolean) {
-        val children = source.listFiles() ?: error("Cannot read ${source.name}.")
-        val files = children.filter { it.isFile && publishable(it) }
-        val key = source.relativeTo(root).invariantSeparatorsPath.ifEmpty { "." }
-        val fingerprint = signature(files, source)
+    private fun mirror(root: File, source: SessionFolder, target: Document, records: JSONObject,
+                       verify: Boolean, control: CopyControl, checkpoint: () -> Unit, advance: (Int) -> Unit) {
+        control.check()
+        val key = source.file.relativeTo(root).invariantSeparatorsPath.ifEmpty { "." }
         val previous = records.optJSONObject(key)
-        // Each completed attempt is immutable. Receipts avoid rereading old frames on every capture.
-        if (verify || target.created || previous?.optString("signature") != fingerprint || previous.optString("uri") != target.uri.toString()) {
+        if (verify || target.created || previous?.optString("signature") != source.signature || previous.optString("uri") != target.uri.toString()) {
+            records.remove(key)
+            checkpoint()
             val existing = target.children().associateBy { it.name }
-            // Publish the capture's completion metadata only after its frames and CSV are verified.
-            files.sortedWith(compareBy<File> {
+            source.files.sortedWith(compareBy<File> {
                 when (it.name) { "burst.json" -> 2; "frames.csv" -> 1; else -> 0 }
-            }.thenBy { it.name }).forEach { sourceFile ->
-                target.publish(sourceFile, existing[sourceFile.name], existing[".${sourceFile.name}.qvlp-part"])
+            }.thenBy { it.name }).forEach { file ->
+                control.check()
+                target.publish(file, existing[file.name], existing[".${file.name}.qvlp-part"])
+                advance(1)
             }
-            records.put(key, JSONObject().put("signature", fingerprint).put("uri", target.uri.toString()))
-        }
-        children.filter { it.isDirectory }.forEach { child ->
-            mirror(root, child, target.directory(child.name), records, verify)
-        }
+            records.put(key, JSONObject().put("signature", source.signature).put("uri", target.uri.toString()))
+            checkpoint()
+        } else advance(source.files.size)
+        source.children.forEach { child -> mirror(root, child, target.directory(child.file.name), records, verify, control, checkpoint, advance) }
     }
 
-    private fun digest(input: InputStream): String = input.buffered().use { stream ->
+    private fun digest(input: InputStream, control: CopyControl? = null): String = input.buffered().use { stream ->
         val hash = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(64 * 1024)
         while (true) {
+            control?.check()
             val count = stream.read(buffer)
             if (count < 0) break
             hash.update(buffer, 0, count)
@@ -145,18 +200,19 @@ internal object PublicSessionStorage {
 
     private data class Entry(val name: String, val uri: Uri, val directory: Boolean)
 
-    private class Document(val context: Context, val uri: Uri, val created: Boolean = false) {
+    private class Document(val context: Context, val uri: Uri, private val control: CopyControl, val created: Boolean = false) {
         private val resolver get() = context.contentResolver
         private val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
 
-        fun isDirectory(): Boolean = resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use {
+        fun isDirectory(): Boolean = resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null, control.signal)?.use {
             it.moveToFirst() && it.getString(0) == DocumentsContract.Document.MIME_TYPE_DIR
         } ?: false
 
         fun children(): List<Entry> {
+            control.check()
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getDocumentId(uri))
-            return resolver.query(children, columns, null, null, null)?.use { cursor ->
+            return resolver.query(children, columns, null, null, null, control.signal)?.use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) add(Entry(cursor.getString(1),
                         DocumentsContract.buildDocumentUriUsingTree(uri, cursor.getString(0)),
@@ -169,17 +225,17 @@ internal object PublicSessionStorage {
             val found = children().firstOrNull { it.name == name }
             if (found != null) {
                 check(found.directory) { "$name is a file where a session folder is needed." }
-                return Document(context, found.uri)
+                return Document(context, found.uri, control)
             }
             return Document(context, DocumentsContract.createDocument(resolver, uri, DocumentsContract.Document.MIME_TYPE_DIR, name)
-                ?: error("Cannot create $name in $PATH."), created = true)
+                ?: error("Cannot create $name in $PATH."), control, created = true)
         }
 
         fun publish(source: File, existing: Entry?, unfinished: Entry?) {
-            val expected = digest(source.inputStream())
+            val expected = digest(source.inputStream(), control)
             if (existing != null) {
                 check(!existing.directory) { "${source.name} is a folder where a session file is needed." }
-                val actual = resolver.openInputStream(existing.uri)?.let(::digest)
+                val actual = resolver.openInputStream(existing.uri)?.let { digest(it, control) }
                 if (actual == expected) return
             }
             val partialName = ".${source.name}.qvlp-part"
@@ -190,8 +246,17 @@ internal object PublicSessionStorage {
                 ?: error("Cannot save ${source.name} to $PATH.")
             try {
                 val output = resolver.openOutputStream(partial, "wt") ?: error("Cannot open ${source.name} for saving.")
-                output.buffered().use { out -> source.inputStream().buffered().use { it.copyTo(out) } }
-                check(resolver.openInputStream(partial)?.let(::digest) == expected) { "Saved file verification failed: ${source.name}." }
+                output.buffered().use { out -> source.inputStream().buffered().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        control.check()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        out.write(buffer, 0, count)
+                    }
+                } }
+                check(resolver.openInputStream(partial)?.let { digest(it, control) } == expected) { "Saved file verification failed: ${source.name}." }
+                control.check()
                 if (existing != null) check(DocumentsContract.deleteDocument(resolver, existing.uri)) { "Cannot update ${source.name}." }
                 checkNotNull(DocumentsContract.renameDocument(resolver, partial, source.name)) { "Cannot finish saving ${source.name}." }
             } catch (e: Exception) {

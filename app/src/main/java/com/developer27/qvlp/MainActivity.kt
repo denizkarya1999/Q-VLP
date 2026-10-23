@@ -36,6 +36,7 @@ import com.developer27.qvlp.capture.PositionCatalog
 import com.developer27.qvlp.capture.PositionPicker
 import com.developer27.qvlp.capture.ResearchSettings
 import com.developer27.qvlp.capture.SessionBrowser
+import com.developer27.qvlp.capture.SessionPublisher
 import com.developer27.qvlp.databinding.ActivityMainBinding
 import org.json.JSONObject
 
@@ -56,6 +57,8 @@ class MainActivity : AppCompatActivity() {
     private var orientationBeforeCapture = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var lastPosition: Position? = null
     private var resultDetails: String? = null
+    private var storageState = SessionPublisher.State()
+    private var stopObservingStorage: (() -> Unit)? = null
 
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
@@ -91,6 +94,11 @@ class MainActivity : AppCompatActivity() {
             updateControls()
         }
         sessions.restore(savedInstanceState)
+        viewBinding.storageStatus.setOnClickListener { sessions.storage() }
+        stopObservingStorage = SessionPublisher.observe { state ->
+            storageState = state
+            showStorageStatus()
+        }
         positions = PositionPicker(this, preferences, ::setFileBusy) { imported ->
             if (imported) lastPosition = null
             clearResult()
@@ -181,6 +189,11 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onDestroy() {
+        stopObservingStorage?.invoke()
+        super.onDestroy()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         sessions.save(outState)
         outState.putString("result_details", resultDetails)
@@ -257,11 +270,6 @@ class MainActivity : AppCompatActivity() {
                                 else elapsedMs.toInt().coerceAtMost(viewBinding.captureProgress.max)
                         }
                     } },
-                    publishing = { runOnUiThread { if (!isDestroyed) {
-                        fileBusy = true
-                        viewBinding.burstStatus.text = "Saving to Pictures/Q-VLP…"
-                        updateControls()
-                    } } },
                     completed = { summary -> runOnUiThread { if (!isDestroyed) finishFrameCapture(summary) } },
                     failed = { error -> runOnUiThread {
                         if (!isDestroyed) {
@@ -292,7 +300,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun finishFrameCapture(summary: BurstSummary) {
         captureBusy = false
-        fileBusy = false
         requestedOrientation = orientationBeforeCapture
         val fps = summary.fps?.let { String.format(java.util.Locale.getDefault(), "%.2f", it) } ?: "—"
         val savedDescription = if (summary.length.mode == CaptureLengthMode.FRAMES)
@@ -301,10 +308,7 @@ class MainActivity : AppCompatActivity() {
         val description = getString(R.string.capture_summary, summary.positionId, savedDescription, fps)
         resultDetails = description + "\n\n" + (if (summary.warnings.isEmpty()) getString(R.string.capture_no_warnings)
             else summary.warnings.joinToString("\n\n"))
-        val storageMessage = summary.publicSaveError?.let {
-            "Could not save to Pictures/Q-VLP: $it\nYour capture is safe in the app. Open Sessions → Storage → Save now to retry."
-        } ?: "Saved to Pictures/Q-VLP/${summary.sessionId}"
-        resultDetails += "\n\n$storageMessage"
+        resultDetails += "\n\nSession folder: Pictures/Q-VLP/${summary.sessionId}. Check the folder-saving status before copying files. A recovery copy is saved in the app."
         viewBinding.burstStatus.text = savedDescription + "\n" + when {
             summary.interrupted -> getString(R.string.capture_interrupted_short)
             summary.warnings.isNotEmpty() -> getString(R.string.capture_warning_short, summary.warnings.size)
@@ -312,8 +316,6 @@ class MainActivity : AppCompatActivity() {
         }
         viewBinding.burstStatus.append("\n" + getString(
             if (summary.warnings.isEmpty()) R.string.tap_capture_details else R.string.tap_capture_warnings))
-        viewBinding.burstStatus.append(if (summary.publicSaveError == null) "\nSaved to Pictures/Q-VLP"
-            else "\nFolder save failed · Open Sessions → Storage")
         updateControls()
         if (!summary.interrupted) {
             runCatching {
@@ -341,7 +343,13 @@ class MainActivity : AppCompatActivity() {
         viewBinding.burstStatus.text = getString(R.string.capture_workflow, CaptureLength.COUNTDOWN_SECONDS, label)
     }
 
+    private fun showStorageStatus() {
+        viewBinding.storageStatus.text = if (captureBusy && storageState.running)
+            "Folder saving will continue after this capture." else storageState.message
+    }
+
     private fun updateControls() {
+        showStorageStatus()
         val busy = captureBusy || fileBusy
         viewBinding.titleContainer.isEnabled = !busy
         viewBinding.settingsButton.isEnabled = !busy
@@ -350,6 +358,7 @@ class MainActivity : AppCompatActivity() {
         viewBinding.zoomOutButton.isEnabled = !busy && cameraReady && currentZoom > 1.001f
         viewBinding.aboutButton.isEnabled = !busy
         viewBinding.sessionsButton.isEnabled = !busy
+        viewBinding.storageStatus.isEnabled = !busy
         viewBinding.positionButton.isEnabled = !busy
         viewBinding.captureStatus.isEnabled = !busy
         val position = ResearchSettings.position(preferences)

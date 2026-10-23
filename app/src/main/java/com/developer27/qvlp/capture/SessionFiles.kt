@@ -20,6 +20,7 @@ internal data class SavedSession(val id: String, val label: String, val warnings
 
 internal object SessionFiles {
     val io = Executors.newSingleThreadExecutor()
+    @Volatile var activeCapture: File? = null
     private const val ACTIVE = "active_research_session"
     private fun root(context: Context) = File(context.filesDir, "sessions").apply { mkdirs() }
     private fun validId(id: String) = id.matches(Regex("session_[0-9a-f-]+"))

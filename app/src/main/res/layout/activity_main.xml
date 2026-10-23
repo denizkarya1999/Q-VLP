@@ -114,6 +114,20 @@
                 android:clickable="true"
                 android:foreground="?android:attr/selectableItemBackground" />
 
+            <TextView
+                android:id="@+id/storageStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginHorizontal="16dp"
+                android:padding="10dp"
+                android:background="#CC00274C"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:focusable="true"
+                android:clickable="true"
+                android:foreground="?android:attr/selectableItemBackground" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="176dp"

@@ -13,27 +13,11 @@ import java.io.File
 internal class SessionBrowser(private val activity: AppCompatActivity, private val busy: (Boolean) -> Unit,
                               private val sessionChanged: () -> Unit) {
     private var pendingZip: File? = null
-    private var saving = false
     private val chooseFolder = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            saving = true
-            busy(true)
-            message("Saving sessions to Pictures/Q-VLP…")
-            SessionFiles.io.execute {
-                val result = runCatching {
-                    PublicSessionStorage.select(activity.applicationContext, uri)
-                    PublicSessionStorage.syncAll(activity.applicationContext, verify = true).getOrThrow()
-                }
-                ui {
-                    saving = false
-                    busy(false)
-                    if (result.isSuccess) message("${result.getOrNull()} session(s) saved to Pictures/Q-VLP.")
-                    else AlertDialog.Builder(activity).setTitle("Folder save needs attention")
-                        .setMessage("${result.exceptionOrNull()?.message}\n\nYour original files are safe in the app. Open Sessions → Storage to retry.")
-                        .setPositiveButton(android.R.string.ok, null).show()
-                }
-            }
-        }
+        if (uri != null) SessionPublisher.selectFolder(activity.applicationContext, uri) { result -> ui {
+            result.exceptionOrNull()?.let { message(it.message ?: "Cannot use this folder.") }
+                ?: message("Sessions will save to Pictures/Q-VLP. You can keep using the camera.")
+        } }
     }
     private val saveFile = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         val source = pendingZip
@@ -70,43 +54,32 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
         return false
     }
 
-    /** Retry interrupted publication when the app returns; the capture worker uses the same queue. */
-    fun resumeSaving() {
-        if (PublicSessionStorage.configured(activity) && !saving) saveSessions(announce = false)
-    }
+    fun resumeSaving() = SessionPublisher.request(activity.applicationContext)
 
-    private fun storage() {
+    fun storage() {
         val configured = PublicSessionStorage.configured(activity)
+        val paused = SessionPublisher.isPaused(activity)
         val error = PublicSessionStorage.error(activity)
         AlertDialog.Builder(activity).setTitle("Session Storage")
-            .setMessage("Sessions save automatically to Internal storage → Pictures → Q-VLP after each capture. Raw frames, measurements and repeated attempts keep their own folders.\n\n" +
-                (if (configured) "Your existing sessions are also copied there. The app keeps a recovery copy. Save now verifies all public files and retries unfinished copies."
-                else "Choose Pictures or its Q-VLP folder, then tap Use this folder and Allow. Your existing sessions will be copied there too.") +
-                (if (error == null) "" else "\n\nLast save needs attention: $error\nYour original files are safe in the app."))
-            .setPositiveButton(if (configured) "Save now" else "Choose folder") { _, _ ->
-                if (configured) saveSessions(verify = true, announce = true) else chooseFolder.launch(PublicSessionStorage.initialUri)
+            .setMessage("Sessions save to Internal storage → Pictures → Q-VLP in the background. You can keep recording or open Settings while they copy. The app keeps a recovery copy.\n\n" +
+                (if (configured) "Save now retries unfinished saves. Use More → Verify all files to check or restore copies that were removed or changed outside the app."
+                else "Choose Pictures or its Q-VLP folder, then tap Use this folder and Allow. Existing sessions will be copied there too.") +
+                (if (error == null) "" else "\n\nSave needs attention: $error\nOriginal files remain safe in the app."))
+            .setPositiveButton(if (!configured) "Choose folder" else if (paused) "Resume saving" else "Save now") { _, _ ->
+                if (configured) SessionPublisher.request(activity.applicationContext, manual = true)
+                else chooseFolder.launch(PublicSessionStorage.initialUri)
             }
-            .apply { if (configured) setNeutralButton("Choose folder") { _, _ -> chooseFolder.launch(PublicSessionStorage.initialUri) } }
+            .apply { if (configured) setNeutralButton("More") { _, _ ->
+                AlertDialog.Builder(activity).setTitle("Storage Options")
+                    .setItems(arrayOf("Verify all files", "Choose folder", "Pause saving")) { _, index ->
+                        when (index) {
+                            0 -> SessionPublisher.request(activity.applicationContext, verify = true, manual = true)
+                            1 -> chooseFolder.launch(PublicSessionStorage.initialUri)
+                            2 -> SessionPublisher.pause(activity.applicationContext)
+                        }
+                    }.setNegativeButton("Close", null).show()
+            } }
             .setNegativeButton("Close", null).show()
-    }
-
-    private fun saveSessions(verify: Boolean = false, announce: Boolean) {
-        if (saving) return
-        saving = true
-        busy(true)
-        if (announce) message("Saving sessions to Pictures/Q-VLP…")
-        SessionFiles.io.execute {
-            val result = PublicSessionStorage.syncAll(activity.applicationContext, verify)
-            ui {
-                saving = false
-                busy(false)
-                result.exceptionOrNull()?.let {
-                    AlertDialog.Builder(activity).setTitle("Folder save needs attention")
-                        .setMessage("${it.message}\n\nYour original files are safe in the app. Open Sessions → Storage to retry.")
-                        .setPositiveButton(android.R.string.ok, null).show()
-                } ?: if (announce) message("${result.getOrNull()} session(s) saved to Pictures/Q-VLP.") else Unit
-            }
-        }
     }
 
     fun show() {

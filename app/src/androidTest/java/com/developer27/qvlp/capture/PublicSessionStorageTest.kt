@@ -117,6 +117,81 @@ class PublicSessionStorageTest {
         }
     }
 
+    @Test fun snapshotsExcludeActiveCapturesAndDoNotGrowWhileBeingPublished() {
+        val session = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
+        val active = File(session, "position_active").apply { mkdirs() }
+        File(active, "frame_00000.yuv").writeBytes(byteArrayOf(1))
+        File(session, "session.json").writeText("{}")
+        try {
+            SessionFiles.activeCapture = active
+            val before = PublicSessionStorage.snapshot(session)
+            assertEquals(listOf("session.json"), before.root.allFiles.map { it.name })
+            SessionFiles.activeCapture = null
+            val closed = PublicSessionStorage.snapshot(session)
+            assertEquals(2, closed.root.allFiles.size)
+            File(active, "later.yuv").writeBytes(byteArrayOf(2))
+            assertEquals(2, closed.root.allFiles.size)
+            assertEquals(3, PublicSessionStorage.snapshot(session).root.allFiles.size)
+        } finally {
+            SessionFiles.activeCapture = null
+            session.deleteRecursively()
+        }
+    }
+
+    @Test fun pausedCopyKeepsOriginalsAndCanResumeWithoutMarkingAnUnfinishedSessionSaved() {
+        assumeTrue(PublicSessionStorage.configured(context))
+        val root = PublicSessionStorage.requireDestination(context)
+        val source = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
+        File(source, "first.yuv").writeBytes(byteArrayOf(1, 2, 3))
+        File(source, "second.yuv").writeBytes(byteArrayOf(4, 5, 6))
+        val snapshot = PublicSessionStorage.snapshot(source)
+        val control = CopyControl()
+        try {
+            val result = PublicSessionStorage.syncSession(context, snapshot, control = control) { done, _ ->
+                if (done == 1) control.cancel()
+            }
+            assertTrue(result.isFailure)
+            assertTrue(PublicSessionStorage.needsSave(context, snapshot))
+            assertEquals(2, source.listFiles()!!.size)
+            PublicSessionStorage.syncSession(context, snapshot).getOrThrow()
+            assertFalse(PublicSessionStorage.needsSave(context, snapshot))
+            // Deleting an already-published folder must not make reopening trigger its restoration.
+            DocumentsContract.deleteDocument(context.contentResolver, requireNotNull(find(root, source.name)))
+            assertFalse(PublicSessionStorage.needsSave(context, snapshot))
+        } finally {
+            find(root, source.name)?.let { DocumentsContract.deleteDocument(context.contentResolver, it) }
+            File(context.filesDir, "public_session_receipts/${source.name}.json").delete()
+            source.deleteRecursively()
+        }
+    }
+
+    @Test fun blockedPublicCopyDoesNotBlockTheCaptureWorker() {
+        assumeTrue(PublicSessionStorage.configured(context))
+        val root = PublicSessionStorage.requireDestination(context)
+        val source = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
+        File(source, "frame.yuv").writeBytes(byteArrayOf(1, 2, 3))
+        val snapshot = PublicSessionStorage.snapshot(source)
+        val control = CopyControl(yieldToCapture = true)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            SessionFiles.activeCapture = File(context.cacheDir, "simulated_active_capture")
+            val copy = executor.submit<Result<Unit>> { PublicSessionStorage.syncSession(context, snapshot, control = control) }
+            val captureWork = SessionFiles.io.submit<Int> { 42 }
+            assertEquals(42, captureWork.get(1, java.util.concurrent.TimeUnit.SECONDS))
+            assertFalse(copy.isDone)
+            SessionFiles.activeCapture = null
+            copy.get(10, java.util.concurrent.TimeUnit.SECONDS).getOrThrow()
+        } finally {
+            SessionFiles.activeCapture = null
+            control.cancel()
+            executor.shutdown()
+            executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)
+            find(root, source.name)?.let { DocumentsContract.deleteDocument(context.contentResolver, it) }
+            File(context.filesDir, "public_session_receipts/${source.name}.json").delete()
+            source.deleteRecursively()
+        }
+    }
+
     private fun find(parent: Uri, name: String): Uri? {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(parent, DocumentsContract.getDocumentId(parent))
         return context.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
