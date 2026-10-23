@@ -60,8 +60,12 @@ internal object SessionFiles {
     fun directories(context: Context): List<File> = root(context).listFiles().orEmpty()
         .filter { it.isDirectory && validId(it.name) }
 
+    fun activeSessionId(context: Context): String? =
+        PreferenceManager.getDefaultSharedPreferences(context).getString(ACTIVE, null)
+
     fun newSession(context: Context) {
         PreferenceManager.getDefaultSharedPreferences(context).edit().remove(ACTIVE).apply()
+        SessionPublisher.sessionChanged()
     }
 
     /** Called on the capture I/O worker. Mount changes create a new session automatically. */
@@ -94,6 +98,7 @@ internal object SessionFiles {
                 survey.forEach { csv.appendLine("${it.id},${it.x},${it.y}") }
             }
             prefs.edit().putString(ACTIVE, session.name).apply()
+            SessionPublisher.sessionChanged()
             File(session, "README.txt").writeText("""
                 Q-VLP pre-CV capture session
 

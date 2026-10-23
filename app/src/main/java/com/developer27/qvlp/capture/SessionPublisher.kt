@@ -52,6 +52,21 @@ internal object SessionPublisher {
         notifyObservers()
     }
 
+    /** Reset old confirmations without cancelling saves or hiding storage problems. */
+    fun sessionChanged() {
+        synchronized(lock) {
+            if (!state.needsAttention) update(State(running = current != null || pending.isNotEmpty()))
+        }
+    }
+
+    /** Check identity and publish under the same lock as reset, including delayed worker callbacks. */
+    private fun updateForSession(job: Job, value: State) {
+        synchronized(lock) {
+            update(if (SessionFiles.activeSessionId(job.context) == job.snapshot.root.file.name) value
+                else State(running = value.running))
+        }
+    }
+
     private fun enableAutoSave(context: Context) {
         // Upgrade earlier versions that allowed a persistent pause. Every position now auto-saves.
         val prefs = context.getSharedPreferences("public_session_storage", Context.MODE_PRIVATE)
@@ -243,7 +258,7 @@ internal object SessionPublisher {
                     if (done == total || now - lastUpdate > 1_500_000_000L) {
                         lastUpdate = now
                         val label = job.positionId?.let { "Saving position $it" } ?: "Finishing auto-save"
-                        update(State(true, "$label · $done/$total files"))
+                        updateForSession(job, State(true, "$label · $done/$total files"))
                     }
                 }.getOrThrow()
             } catch (error: Exception) {
@@ -254,9 +269,9 @@ internal object SessionPublisher {
                     current = null
                     control = null
                     if (!selectingFolder && pending.isEmpty() && deletions.isEmpty()) {
-                        update(if (failure != null || PublicSessionStorage.error(job.context) != null) failedState()
-                            else State(message = job.positionId?.let { "Position $it saved · Pictures/Q-VLP" }
-                                ?: "Saved to Pictures/Q-VLP"))
+                        if (failure != null || PublicSessionStorage.error(job.context) != null) update(failedState())
+                        else updateForSession(job, State(message = job.positionId?.let { "Position $it saved · Pictures/Q-VLP" }
+                            ?: "Saved to Pictures/Q-VLP"))
                     }
                 }
             }

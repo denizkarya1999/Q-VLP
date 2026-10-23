@@ -164,14 +164,10 @@
     <string name="capture_help">1. Choose a position\nEnter its position number and X/Y coordinates, or import your position list.\n\n2. Set the recording length\nIn Settings → Recording, choose a frame count or duration. Set your mounting details once.\n\n3. Get the camera ready\nAim the mounted phone at the LEDs and wait for Camera ready. Use Mounted Camera Check before research recordings.\n\n4. Start recording\nTap Start Capture or press a volume button. Step away during the 3-second countdown. Press again to cancel.\n\n5. Wait for completion\nThe phone beeps and vibrates when recording finishes. Your files save automatically to Pictures/Q-VLP. On first use, allow access to this folder when asked. Wait for the saved message before copying files.\n\n6. Continue\nReview any warnings. Tap Repeat to try the same position again, or Next Position and move the phone. Repeat keeps earlier attempts.</string>
     <string name="tap_capture_details">Tap this result for details.</string>
     <string name="tap_capture_warnings">Tap this result to review warnings.</string>
-    <string name="switch_camera">Switch Camera</string>
     <string name="maximize_camera">Maximize (zoom in)</string>
     <string name="minimize_camera">Minimize (zoom out)</string>
     <string name="default_zoom">1.0×</string>
     <string name="zoom_value">%1$.1f×</string>
-    <string name="other_camera_missing">No camera is available on the other side of this phone.</string>
-    <string name="other_camera_unsupported">The other camera does not support the manual settings needed for frame capture. Your current camera is still selected.</string>
-    <string name="camera_switch_failed">Could not switch cameras. Try again.</string>
     <string name="zoom_unavailable">This camera could not apply the selected zoom.</string>
     <string name="recording_settings">Recording</string>
     <string name="capture_length_mode">Capture Length</string>

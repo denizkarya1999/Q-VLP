@@ -324,7 +324,7 @@ class CameraHelper(
         }
     }
 
-    // Start on the rear camera; retain a camera explicitly chosen by the operator.
+    // Retain the research camera selection; default to the rear camera.
     fun getCameraId(): String {
         selectedCameraId?.let { return it }
         val ids = cameraManager.cameraIdList.toList()
@@ -335,44 +335,6 @@ class CameraHelper(
         } ?: ids.firstOrNull() ?: error("No camera is available on this device.")
         selectedCameraId = selected
         return selected
-    }
-
-    @SuppressLint("MissingPermission")
-    fun switchCamera() {
-        if (dispatch { switchCamera() }) return
-        if (burstRequested || isOpeningCamera) return
-        try {
-            val current = getCameraId()
-            val facing = cameraManager.getCameraCharacteristics(current)[CameraCharacteristics.LENS_FACING]
-            val targetFacing = if (facing == CameraCharacteristics.LENS_FACING_BACK)
-                CameraCharacteristics.LENS_FACING_FRONT else CameraCharacteristics.LENS_FACING_BACK
-            val targets = cameraManager.cameraIdList.filter {
-                cameraManager.getCameraCharacteristics(it)[CameraCharacteristics.LENS_FACING] == targetFacing
-            }
-            if (targets.isEmpty()) {
-                message(activity.getString(R.string.other_camera_missing))
-                return
-            }
-            // Check the destination before closing the working camera. A camera lacking
-            // manual sensor/YUV support cannot provide the same research capture controls.
-            val target = targets.firstOrNull { id ->
-                runCatching { FixedCamera.resolve(cameraManager, id,
-                    sharedPreferences.getString(FixedCamera.preferenceKey(id), null)).capabilities }.isSuccess
-            }
-            if (target == null) {
-                message(activity.getString(R.string.other_camera_unsupported))
-                return
-            }
-            closeCamera()
-            selectedCameraId = target
-            zoomLevel = 1f
-            sharedPreferences.edit().putString("selected_capture_camera", target)
-                .putFloat("camera_${target}_zoom", 1f).apply()
-            SessionFiles.newSession(activity.applicationContext)
-            openCamera()
-        } catch (error: Exception) {
-            message(error.message ?: activity.getString(R.string.camera_switch_failed))
-        }
     }
 
     fun changeZoom(step: Float) {

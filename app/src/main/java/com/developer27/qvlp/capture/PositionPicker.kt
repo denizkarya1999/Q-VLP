@@ -18,7 +18,7 @@ internal class PositionPicker(private val activity: AppCompatActivity, private v
         SessionFiles.io.execute {
             val result = runCatching {
                 val input = context.contentResolver.openInputStream(uri) ?: error("Cannot open this file.")
-                PositionCatalog.import(input, prefs)
+                PositionCatalog.import(input, prefs).also { SessionPublisher.sessionChanged() }
             }
             activity.runOnUiThread {
                 if (!activity.isDestroyed && !activity.isFinishing) {

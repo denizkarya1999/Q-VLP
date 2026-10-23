@@ -121,12 +121,6 @@ class MainActivity : AppCompatActivity() {
         }
         viewBinding.titleContainer.setOnClickListener { openProjectWebsite() }
         viewBinding.settingsButton.setOnClickListener { openSettings() }
-        viewBinding.switchCameraButton.setOnClickListener {
-            if (!captureBusy && !fileBusy) {
-                if (cameraPermissionGranted()) cameraHelper.switchCamera()
-                else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-            }
-        }
         viewBinding.zoomInButton.setOnClickListener { if (!captureBusy && !fileBusy) cameraHelper.changeZoom(0.1f) }
         viewBinding.zoomOutButton.setOnClickListener { if (!captureBusy && !fileBusy) cameraHelper.changeZoom(-0.1f) }
         viewBinding.aboutButton.setOnClickListener {
@@ -392,7 +386,6 @@ class MainActivity : AppCompatActivity() {
         val busy = captureBusy || fileBusy
         viewBinding.titleContainer.isEnabled = !busy
         viewBinding.settingsButton.isEnabled = !busy
-        viewBinding.switchCameraButton.isEnabled = !busy
         viewBinding.zoomInButton.isEnabled = !busy && cameraReady && currentZoom < maximumZoom - 0.001f
         viewBinding.zoomOutButton.isEnabled = !busy && cameraReady && currentZoom > 1.001f
         viewBinding.aboutButton.isEnabled = !busy
