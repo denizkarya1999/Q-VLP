@@ -27,7 +27,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
                 ui {
                     busy(false)
                     message(result.exceptionOrNull()?.let { "Export failed: ${it.message}" }
-                        ?: "Session ZIP saved. You can copy it to your computer using USB file transfer.")
+                        ?: "Saved. Connect your phone by USB to copy this file to your computer.")
                 }
             }
         }
@@ -64,17 +64,17 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
     }
 
     private fun actions(session: SavedSession) {
-        AlertDialog.Builder(activity).setTitle("Export Session")
-            .setMessage("${session.label}\n\nIncludes YUV frames, camera metadata and warnings. Save the ZIP in Downloads to copy it over USB, or choose a connected USB drive." +
+        AlertDialog.Builder(activity).setTitle("Session")
+            .setMessage("${session.label}\n\nAll frames, measurements and warnings are included. Choose Save to Files, then Downloads, to copy the session to a computer by USB." +
                 if (session.warnings.isBlank()) "" else "\n\n${session.warnings}")
-            .setPositiveButton("Share ZIP") { _, _ -> export(session, share = true) }
-            .setNeutralButton("Save ZIP") { _, _ -> export(session, share = false) }
+            .setPositiveButton("Share") { _, _ -> export(session, share = true) }
+            .setNeutralButton("Save to Files") { _, _ -> export(session, share = false) }
             .setNegativeButton("Close", null).show()
     }
 
     private fun export(session: SavedSession, share: Boolean) {
         busy(true)
-        message("Preparing session ZIP…")
+        message("Preparing your session…")
         SessionFiles.io.execute {
             val result = runCatching { SessionFiles.archive(activity.applicationContext, session.id) }
             ui {

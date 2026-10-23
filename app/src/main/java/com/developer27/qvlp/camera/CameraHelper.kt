@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Rect
+import android.graphics.Matrix
+import android.os.Build
 import android.graphics.ImageFormat
 import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CameraAccessException
@@ -21,7 +23,6 @@ import android.os.Looper
 import android.media.ImageReader
 import android.util.Log
 import android.util.Size
-import android.view.MotionEvent
 import android.view.Surface
 import android.widget.Toast
 import androidx.annotation.RequiresPermission
@@ -36,7 +37,7 @@ import com.developer27.qvlp.capture.Position
 import org.json.JSONObject
 import java.util.Locale
 
-/** Owns Camera2 preview and one manual profile shared with the recorder. */
+/** Owns the rear-camera preview and uncompressed research capture. */
 class CameraHelper(
     private val activity: MainActivity,
     private val viewBinding: ActivityMainBinding,
@@ -54,7 +55,7 @@ class CameraHelper(
     // Capture builder for preview (and record)
     var captureRequestBuilder: CaptureRequest.Builder? = null
 
-    // Preview + video sizes
+    // Fixed preview and frame size
     var previewSize: Size? = null
     @Volatile internal var activeProfile: CameraProfile? = null
         private set
@@ -66,20 +67,16 @@ class CameraHelper(
     private var burstGeneration = 0
     @Volatile private var burstRequested = false
 
-    // Sensor area for zoom
+    // Full sensor area at 1x
     var sensorArraySize: Rect? = null
 
-    // Whether we are using the front camera
-    var isFrontCamera = false
 
     // Thread for camera operations
     private var backgroundThread: HandlerThread? = null
     var backgroundHandler: Handler? = null
         private set
 
-    // Zoom control
-    private var zoomLevel = 1.0f
-    private var maxZoom = 1.0f
+    private var cameraCharacteristics: CameraCharacteristics? = null
     @Volatile
     private var isOpeningCamera = false
     @Volatile
@@ -145,21 +142,18 @@ class CameraHelper(
         if (dispatch { openCamera() }) return
         if (cameraDevice != null || isOpeningCamera) return
         try {
-            // Decide which camera (front/back)
             val cameraId = getCameraId()
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
 
-            // Grab the full sensor area for zoom
+            cameraCharacteristics = characteristics
             sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
-            maxZoom = (characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)
-                ?: 1.0f).coerceAtLeast(1.0f)
-            zoomLevel = zoomLevel.coerceIn(1.0f, maxZoom)
 
             val capabilities = CameraCapabilities.read(cameraId, characteristics)
             val profile = CameraSettingsStore(sharedPreferences, cameraId).load(capabilities)
             activeProfile = profile
             cameraControls = FocusWhiteBalanceController(activity.applicationContext, capabilities.controls, profile.controls)
             previewSize = profile.stream.size
+            activity.runOnUiThread { fitPreview() }
             showRequestedProfile(profile)
 
             // Now open the selected camera
@@ -299,23 +293,19 @@ class CameraHelper(
         }
     }
 
-    // ------------------------------------------------------------------------
-    // Camera Selection (Front/Back)
-    // ------------------------------------------------------------------------
+    // Keep one rear camera selected across launches. Never fall back to a front camera.
     fun getCameraId(): String {
-        for (id in cameraManager.cameraIdList) {
-            val facing = cameraManager
-                .getCameraCharacteristics(id)
-                .get(CameraCharacteristics.LENS_FACING)
-            if (!isFrontCamera && facing == CameraCharacteristics.LENS_FACING_BACK) {
-                return id
-            } else if (isFrontCamera && facing == CameraCharacteristics.LENS_FACING_FRONT) {
-                return id
-            }
+        val rear = cameraManager.cameraIdList.filter { id ->
+            cameraManager.getCameraCharacteristics(id)[CameraCharacteristics.LENS_FACING] == CameraCharacteristics.LENS_FACING_BACK
         }
-        // fallback if none matched
-        return cameraManager.cameraIdList.firstOrNull()
-            ?: throw IllegalStateException("No camera is available on this device.")
+        val selected = sharedPreferences.getString("research_rear_camera", null)
+        if (selected != null) {
+            check(selected in rear) { "The selected rear camera is unavailable. Restart the app to reconnect it." }
+            return selected
+        }
+        val id = rear.firstOrNull() ?: error("Q-VLP needs a rear camera with manual controls.")
+        sharedPreferences.edit().putString("research_rear_camera", id).apply()
+        return id
     }
 
     /** Apply the capture profile; locks may briefly meter before restoring manual AE. */
@@ -332,7 +322,7 @@ class CameraHelper(
             set(CaptureRequest.COLOR_CORRECTION_MODE, CaptureRequest.COLOR_CORRECTION_MODE_FAST)
             cameraControls?.apply(this)
         }
-        applyZoom(submitRequest = false)
+        applyResearchGeometry()
         if (submitRequest) updatePreview()
     }
 
@@ -344,20 +334,22 @@ class CameraHelper(
     private fun showRequestedProfile(profile: CameraProfile) {
         activity.runOnUiThread {
             if (activeProfile == profile) {
-                viewBinding.captureStatus.text = requestedText(profile) + "\n" +
-                    activity.getString(R.string.capture_waiting)
+                activity.showCameraState(false, requestedText(profile) + "\n" +
+                    activity.getString(R.string.capture_waiting))
             }
         }
     }
 
     private fun showCameraError(message: String) {
         activity.runOnUiThread {
-            viewBinding.captureStatus.text = activity.getString(R.string.capture_unavailable, message)
+            activity.showCameraState(false, message, error = true)
             Toast.makeText(activity, message, Toast.LENGTH_LONG).show()
         }
     }
 
     internal fun recordingBlockReason(): String? {
+        if (cameraDevice == null || cameraCaptureSession == null || activeProfile == null)
+            return activity.getString(R.string.camera_controls_wait)
         val controls = cameraControls ?: return activity.getString(R.string.camera_controls_wait)
         return if (controls.ready) null else controls.error ?: activity.getString(R.string.camera_controls_wait)
     }
@@ -390,7 +382,8 @@ class CameraHelper(
             JSONObject().put("camera_id", getCameraId())
                 .put("sensor_orientation_degrees", characteristics[CameraCharacteristics.SENSOR_ORIENTATION])
                 .put("lens_facing", characteristics[CameraCharacteristics.LENS_FACING])
-                .put("digital_zoom", zoomLevel)
+                .put("digital_zoom", 1.0)
+                .put("lens_selection", "fixed rear camera ID; physical lens pinning not yet implemented")
         } catch (e: Exception) {
             burstRequested = false
             failed(e.message ?: "Camera information is unavailable.")
@@ -514,7 +507,7 @@ class CameraHelper(
                 applyCaptureSettings()
                 deliverReadiness(controls.error)
                 activity.runOnUiThread {
-                    if (expectedSession === cameraCaptureSession) viewBinding.captureStatus.text = controls.status()
+                    if (expectedSession === cameraCaptureSession) activity.showCameraState(false, controls.status(), error = true)
                 }
             }
         }, FocusWhiteBalanceController.SETTLE_TIMEOUT_MS + 1000L)
@@ -580,112 +573,48 @@ class CameraHelper(
                     R.string.capture_reported, reportedExposure, reportedIso, cadence
                 ) + "\n" + controls.status()
                 activity.runOnUiThread {
-                    if (session === cameraCaptureSession) viewBinding.captureStatus.text = text
+                    if (session === cameraCaptureSession) activity.showCameraState(controls.ready, text, controls.error != null)
                 }
             }
         }.also { activeCaptureCallback = it }
     }
 
-    // ------------------------------------------------------------------------
-    // Zoom
-    // ------------------------------------------------------------------------
-    fun setupZoomControls() {
-        val zoomHandler = Handler(activity.mainLooper)
-        var zoomInRunnable: Runnable? = null
-        var zoomOutRunnable: Runnable? = null
-
-        // Repetitive zoom in on long-press
-        viewBinding.zoomInButton.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    zoomInRunnable = object : Runnable {
-                        override fun run() {
-                            zoomIn()
-                            zoomHandler.postDelayed(this, 50)
-                        }
-                    }
-                    zoomHandler.post(zoomInRunnable!!)
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    zoomInRunnable?.let(zoomHandler::removeCallbacks)
-                    true
-                }
-                else -> false
+    /** No user zoom; request stable geometry where the device exposes the controls. */
+    private fun applyResearchGeometry() {
+        val builder = captureRequestBuilder ?: return
+        val c = cameraCharacteristics ?: return
+        val keys = c.availableCaptureRequestKeys
+        sensorArraySize?.let { builder.set(CaptureRequest.SCALER_CROP_REGION, it) }
+        if (Build.VERSION.SDK_INT >= 30 && CaptureRequest.CONTROL_ZOOM_RATIO in keys)
+            builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, 1f)
+        if (CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE in keys)
+            builder.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_OFF)
+        if (CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE in keys)
+            builder.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF)
+        if (CaptureRequest.CONTROL_SCENE_MODE in keys)
+            builder.set(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_DISABLED)
+        if (Build.VERSION.SDK_INT >= 28 && CaptureRequest.DISTORTION_CORRECTION_MODE in keys &&
+            c[CameraCharacteristics.DISTORTION_CORRECTION_AVAILABLE_MODES]?.contains(CaptureRequest.DISTORTION_CORRECTION_MODE_OFF) == true) {
+            builder.set(CaptureRequest.DISTORTION_CORRECTION_MODE, CaptureRequest.DISTORTION_CORRECTION_MODE_OFF)
+            c[CameraCharacteristics.SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE]?.let {
+                builder.set(CaptureRequest.SCALER_CROP_REGION, it)
             }
         }
-
-        // Repetitive zoom out on long-press
-        viewBinding.zoomOutButton.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    zoomOutRunnable = object : Runnable {
-                        override fun run() {
-                            zoomOut()
-                            zoomHandler.postDelayed(this, 50)
-                        }
-                    }
-                    zoomHandler.post(zoomOutRunnable!!)
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    zoomOutRunnable?.let(zoomHandler::removeCallbacks)
-                    true
-                }
-                else -> false
-            }
-        }
+        if (Build.VERSION.SDK_INT >= 31 && CaptureRequest.SCALER_ROTATE_AND_CROP in keys &&
+            c[CameraCharacteristics.SCALER_AVAILABLE_ROTATE_AND_CROP_MODES]?.contains(CaptureRequest.SCALER_ROTATE_AND_CROP_NONE) == true)
+            builder.set(CaptureRequest.SCALER_ROTATE_AND_CROP, CaptureRequest.SCALER_ROTATE_AND_CROP_NONE)
     }
 
-    private fun zoomIn() {
-        if (!viewBinding.zoomInButton.isEnabled || burstRequested) return
-        if (zoomLevel < maxZoom) {
-            zoomLevel += 0.1f
-            applyZoom()
-        }
-    }
-
-    private fun zoomOut() {
-        if (!viewBinding.zoomOutButton.isEnabled || burstRequested) return
-        if (zoomLevel > 1.0f) {
-            zoomLevel -= 0.1f
-            applyZoom()
-        }
-    }
-
-    /**
-     * Applies digital zoom by setting the SCALER_CROP_REGION
-     */
-    fun applyZoom(submitRequest: Boolean = true) {
-        if (dispatch { applyZoom(submitRequest) }) return
-        if (burstRequested) return
-        val sensorRect = sensorArraySize ?: return
-        val requestBuilder = captureRequestBuilder ?: return
-        zoomLevel = zoomLevel.coerceIn(1.0f, maxZoom)
-        val ratio = 1 / zoomLevel
-        val croppedWidth = sensorRect.width() * ratio
-        val croppedHeight = sensorRect.height() * ratio
-
-        val left = sensorRect.left + ((sensorRect.width() - croppedWidth) / 2).toInt()
-        val top = sensorRect.top + ((sensorRect.height() - croppedHeight) / 2).toInt()
-        val right = (left + croppedWidth).toInt()
-        val bottom = (top + croppedHeight).toInt()
-
-        val zoomRect = Rect(left, top, right, bottom)
-        requestBuilder.set(CaptureRequest.SCALER_CROP_REGION, zoomRect)
-
-        if (!submitRequest) return
-        try {
-            cameraCaptureSession?.setRepeatingRequest(
-                synchronized(requestBuilder) { requestBuilder.build() },
-                activeCaptureCallback,
-                backgroundHandler
-            )
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-        } catch (e: IllegalStateException) {
-            Log.e(TAG, "Unable to update zoom", e)
-        }
+    /** Letterbox the sensor-native preview; the saved pixels are never transformed. */
+    fun fitPreview() {
+        val size = previewSize ?: return
+        val view = viewBinding.viewFinder
+        if (view.width == 0 || view.height == 0) return
+        val sourceRatio = size.width.toFloat() / size.height
+        val viewRatio = view.width.toFloat() / view.height
+        val sx = if (viewRatio > sourceRatio) sourceRatio / viewRatio else 1f
+        val sy = if (viewRatio < sourceRatio) viewRatio / sourceRatio else 1f
+        view.setTransform(Matrix().apply { setScale(sx, sy, view.width / 2f, view.height / 2f) })
     }
 
     private companion object {

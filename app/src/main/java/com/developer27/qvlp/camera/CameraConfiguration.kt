@@ -5,10 +5,6 @@ import android.graphics.SurfaceTexture
 import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
-import android.media.MediaCodecInfo
-import android.media.MediaCodecList
-import android.media.MediaFormat
-import android.media.MediaRecorder
 import android.util.Range
 import android.util.Size
 import kotlin.math.abs
@@ -16,8 +12,7 @@ import kotlin.math.abs
 internal data class StreamOption(
     val size: Size,
     val minFrameDurationNs: Long,
-    val frameRates: List<Int>,
-    val videoFrameRates: List<Int>
+    val frameRates: List<Int>
 ) {
     val key: String get() = "${size.width}x${size.height}"
     val label: String get() = "${size.width} × ${size.height}"
@@ -33,14 +28,9 @@ internal data class CameraProfile(
     val controls: FocusWhiteBalanceProfile
 ) {
     val frameDurationNs: Long get() = stream.frameDurationNs(fps)
-    val videoBitRate: Int get() = videoBitRate(stream.size, fps)
 }
 
-private fun videoBitRate(size: Size, fps: Int): Int =
-    (size.width.toLong() * size.height * fps * 15 / 100)
-        .coerceIn(2_000_000L, 60_000_000L).toInt()
-
-/** Preview/YUV capabilities; MP4 support is tracked separately from research capture. */
+/** Preview and uncompressed YUV capabilities. */
 internal data class CameraCapabilities(
     val cameraId: String,
     val exposureRangeNs: Range<Long>,
@@ -78,7 +68,7 @@ internal data class CameraCapabilities(
             val requiredKeys = listOf(CaptureRequest.SENSOR_EXPOSURE_TIME,
                 CaptureRequest.SENSOR_SENSITIVITY, CaptureRequest.SENSOR_FRAME_DURATION)
             require(manual && characteristics.availableCaptureRequestKeys.containsAll(requiredKeys)) {
-                "This camera does not support manual exposure, ISO and frame duration. Switch cameras to use Q-VLP capture."
+                "This camera does not support manual exposure, ISO and frame duration. Use a device with manual rear-camera controls."
             }
             val exposure = requireNotNull(characteristics[CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE]) {
                 "This camera does not report its exposure range."
@@ -93,9 +83,7 @@ internal data class CameraCapabilities(
                 "This camera does not report its output sizes."
             }
             val previews = map.getOutputSizes(SurfaceTexture::class.java)?.toSet().orEmpty()
-            val videos = map.getOutputSizes(MediaRecorder::class.java).orEmpty()
             val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888).orEmpty()
-            val codecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
             // Use normal-session AE ranges only as a conservative ceiling for the menu.
             // The manual request itself controls timing through SENSOR_FRAME_DURATION.
             val normalMaxFps = characteristics[CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES]
@@ -113,13 +101,10 @@ internal data class CameraCapabilities(
                     fps <= normalMaxFps && minDuration <= requestedDuration * 1.001 &&
                         duration <= maxDuration && exposure.lower <= duration
                 }
-                val videoMin = if (size in videos) map.getOutputMinFrameDuration(MediaRecorder::class.java, size) else 0L
-                val videoRates = rates.filter { videoMin > 0L &&
-                    videoMin <= CaptureSettings.frameDurationNanos(it) * 1.001 && supportsEncoding(codecs, size, it) }
-                if (rates.isEmpty()) null else StreamOption(size, minDuration, rates, videoRates)
+                if (rates.isEmpty()) null else StreamOption(size, minDuration, rates)
             }.distinctBy { it.key }.sortedByDescending { it.size.width.toLong() * it.size.height }
             require(streams.isNotEmpty()) {
-                "No compatible preview/YUV configuration was reported by this camera. Try another camera."
+                "No compatible preview/YUV configuration was reported by this camera. Use a device with compatible manual rear-camera controls."
             }
             val sensor = characteristics[CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE]
             val aspect = sensor?.let { it.width().toDouble() / it.height() } ?: 4.0 / 3.0
@@ -127,15 +112,7 @@ internal data class CameraCapabilities(
                 FocusWhiteBalanceCapabilities.read(characteristics))
         }
 
-        private fun supportsEncoding(codecs: MediaCodecList, size: Size, fps: Int): Boolean =
-            runCatching {
-                val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, size.width, size.height).apply {
-                    setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                    setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-                    setInteger(MediaFormat.KEY_BIT_RATE, videoBitRate(size, fps))
-                }
-                codecs.findEncoderForFormat(format) != null
-            }.getOrDefault(false)
+
     }
 }
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <PreferenceCategory android:title="@string/mounting_setup" android:layout="@layout/preference_category_layout">
+        <EditTextPreference android:key="lens_height_m" android:title="@string/lens_height"
+            android:dialogTitle="@string/lens_height" android:dialogMessage="@string/mount_measurement_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="lens_offset_x_m" android:title="@string/lens_offset_x"
+            android:dialogTitle="@string/lens_offset_x" android:dialogMessage="@string/mount_offset_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="lens_offset_y_m" android:title="@string/lens_offset_y"
+            android:dialogTitle="@string/lens_offset_y" android:dialogMessage="@string/mount_offset_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="row_time_us" android:title="@string/row_time"
+            android:dialogTitle="@string/row_time" android:dialogMessage="@string/row_time_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="mount_notes" android:title="@string/mount_notes"
+            android:dialogTitle="@string/mount_notes" android:dialogMessage="@string/mount_notes_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+    </PreferenceCategory>
+</PreferenceScreen>

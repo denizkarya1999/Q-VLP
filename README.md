@@ -18,66 +18,56 @@ Thuy-Anh Nguyen, Shahed Alabdulrahman, Deniz Karya Acikbas, Christian Nwobu, Cla
 
 Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · University of Michigan-Dearborn.
 
-The app provides preview, manual exposure/ISO, focus/white balance locks, timed YUV frame bursts, research session storage, ZIP export, camera switching, zoom and optional MP4 recording. CV/ML processing is not included.
+## Using Q-VLP
 
-## Capture and export
+1. Tap **Choose Position**. Import your surveyed `positions.csv`, or enter the floor mark ID and its measured X/Y coordinates. Coordinates are required before capture and are never estimated by the phone.
+2. Open **⋮ → Mounting Setup** once to record lens height, offsets and notes. Enter row time only if it is known for this camera and resolution. Keep the camera lens over the surveyed mark.
+3. Align the ceiling LEDs in the preview and wait for **Camera ready**. Tap **Start**, then step away. The app waits 3 seconds, requests 30 uncompressed frames, saves them, then beeps and vibrates. Device sound/vibration settings apply.
+4. Read the result on the same screen. **Review Warnings** opens the details. **Repeat** keeps the earlier attempt; **Next Position** follows the imported file order. Move the mount to that mark before starting again. Manual positions advance the ID and ask for new coordinates.
+5. Open **Sessions**. Select a session and choose **Share** or **Save to Files**. Save in Downloads to copy it to a computer over USB, or choose a mounted USB drive. **New Session** groups later captures separately; it does not delete previous data.
 
-1. In **Settings → Capture Session**, enter a Position ID and surveyed X/Y coordinates if known. Enter lens height, lens offsets, mounting notes and calibrated row time when available. Unknown values remain empty. The Position button opens this section directly.
-2. Return to preview and wait for the selected camera controls to be confirmed. Tap **Start Capture**: a 3-second countdown precedes 30 camera requests. The app saves the frames, then beeps and vibrates. Device sound/vibration settings still apply.
-3. Read the completion summary. **Repeat** makes another attempt at the same position without overwriting files. **Next Position** increments the ID and clears the previous coordinates; move to the next mark before starting again. Coordinates are researcher inputs, never phone estimates. Surveyed-position CSV import is not implemented yet.
-4. Open **Sessions** to review saved sessions and warnings. **Share ZIP** opens Android sharing; **Save ZIP** opens the system file picker. Choose Downloads for later USB file transfer to a computer, or a mounted USB drive. Sharing is initiated by the operator. **New Session** groups subsequent captures separately.
+**⋮ → Settings** contains Exposure Time, ISO Rate, Resolution, Target Frame Rate, Focus Mode, White Balance and Restore Recommended Settings. Only the selected values appear in the list; entry dialogs explain valid ranges. Mounting details have a separate page. Numeric entry works in light and dark mode. Tap the camera status for requested settings, reported measurements and lock status.
 
-Camera, zoom and navigation controls are disabled during countdown/capture; screen orientation is held until completion. MP4 and research capture cannot run simultaneously. Cancel or leaving the foreground preserves a partial attempt with an interruption warning. A new session is automatically created when mounting metadata changes. Row time is accepted only for the camera and resolution for which it was entered; other profiles export it as unknown.
+The main screen has one capture action. Legacy MP4 recording, audio/storage permissions, zoom buttons and front-camera switching have been removed. Q-VLP retains a rear camera ID and requests 1× capture. The preview is letterboxed to the selected buffer aspect ratio. Screen orientation is held during a burst; raw frames are not rotated. Cancel or leaving the app preserves any frames already saved and marks the attempt as interrupted.
 
-### Saved data
+### Survey file
 
-Files are stored locally in the app's private `files/sessions/` folder and survive app restarts. Export copies before uninstalling the app. A ZIP contains:
+Use UTF-8 CSV with exactly these columns (column order may vary):
 
-- `session.json`: device/app details, mounting notes and known row time with its calibration profile.
-- One `position_<id>_<unique-id>/` folder per capture attempt.
-- `frame_00000.yuv`, etc.: uncompressed I420 (8-bit Y, then U, then V), without Android row padding, pixel rotation or scaling. Plane row/pixel strides are handled explicitly. These are YUV image files, not compressed video or RAW sensor files.
-- `frames.csv`: actual exposure in seconds, ISO, sensor timestamp, dimensions, measured frame rate and row time for each saved frame. Frame IDs map to filenames. Exposure/ISO come from the matching capture result, never substituted requested settings. Missing values and all unprocessed LED columns are empty.
-- `burst.json`: requested settings, actual frame details, source crop/strides, capture status, missing frame IDs and warnings. It is journaled after each saved frame, so an interrupted process leaves recovery metadata. Incomplete attempts may lack a finalized CSV; their YUV files and journal remain exportable.
-- `README.txt`: format and decoding notes that travel with the exported data.
+```csv
+position_id,rx_x_m,rx_y_m
+0,0.3,0.3
+1,0.6,0.3
+```
 
-YUV images and results are matched by sensor timestamp. Per-frame FPS is `1e9 / elapsed_timestamp_ns` between consecutive saved frames; the first FPS cell is empty. Burst FPS is `(saved_frames - 1) / elapsed_seconds`. Warnings cover missing/dropped frames, whole-burst or individual-interval FPS drops greater than 10%, exposure/ISO changes, missing metadata, storage errors and lost camera locks. Unknown timestamps are not replaced with wall-clock time. No LED detection, frequency estimation or fingerprint aggregation runs.
+These are examples; use measurements from the real room. Decimal points, LF/CRLF, an optional UTF-8 BOM and quoted numeric cells are supported. IDs must be unique nonnegative integers up to 999999, and coordinates must be finite numbers. Files are limited to 1 MB / 10,000 positions. Invalid files leave the existing list untouched. Import preserves file order, so researchers can prepare a snake path. The last position shows **End of List**; this is not a claim that every position was captured.
 
-The image reader drains in order and closes every acquired image. Saving runs off the camera thread with a bounded frame queue and a free-space check. Capture sequences have a timeout and a two-second image-delivery drain after the final result. Unsupported stream combinations or insufficient throughput are reported; sustained performance still depends on the phone and profile.
+A successful import selects the first position and starts a new session on the next capture. The app keeps the imported list locally. Session metadata includes the input file hash and surveyed positions; a normalized `positions.csv` is included in new sessions. Manual entries record their source separately. Existing attempts are never relabeled when the list changes.
 
-Android references: [YUV planes and strides](https://developer.android.com/reference/android/graphics/ImageFormat#YUV_420_888), [ordered image acquisition and buffer lifetime](https://developer.android.com/reference/android/media/ImageReader#acquireNextImage()), and [temporary file sharing permissions](https://developer.android.com/training/secure-file-sharing/share-file).
+## Camera and saved data
 
-## Camera settings
+- Manual exposure and ISO use device-reported limits. Frame cadence is requested through `SENSOR_FRAME_DURATION`. Recommended settings request 100 µs, minimum ISO, 1280 × 960 at 30 fps and automatic focus/white-balance locking where supported; fallbacks use available capabilities. Settings remain adjustable for device setup. For the document's research protocol, select exposure at most 100 µs, at least 30 fps, full sensor aspect ratio, and locked or fixed focus/white balance. Unlocked modes and slower profiles remain available for setup and are not protocol-compliant research settings.
+- Automatic focus/white-balance preparation briefly uses AE, freezes supported lens/color values or native locks, restores manual exposure, and requires matching camera results before capture. Returning from Settings reacquires the locks. Use manual focus and a fixed white-balance preset for values that must remain identical across camera reopenings.
+- Requests disable electronic/optical stabilization and scene effects where exposed, request full-sensor cropping and 1× zoom, disable distortion correction where supported, and disable rotate-and-crop where supported. Actual geometry-related result fields are logged; unavailable results stay unknown. Physical-camera changes reported within a burst produce a warning.
+- Each frame is saved as tightly packed **I420 YUV**: 8-bit Y, then U, then V, with Android row padding/interleaving removed. It is uncompressed and sensor-native, without pixel rotation or rescaling.
+- Camera images and metadata are paired by sensor timestamp. Actual exposure, ISO, timestamp, resolution and measured cadence are saved. Requested values are never substituted for missing actual measurements.
+- Missing frames, a frame-rate drop greater than 10%, exposure/ISO changes, lost camera locks, missing metadata and storage errors remain visible in capture details and exported metadata.
 
-Open **Settings** from the camera screen. Under **Camera Settings**, tap **Exposure Time (µs)** or **ISO Rate** to enter a value, and tap **Resolution** or **Target Frame Rate** to choose a device-reported option. Return to the camera screen to apply the saved profile. Each camera has its own settings; changes are disabled during recording.
+Files live in the app's private `files/sessions/` directory and survive app restarts. Export before uninstalling. Each session has `session.json`, a format guide and, when imported, `positions.csv`. Each attempt has its own `position_<id>_<unique-id>/` folder containing YUV frames, `frames.csv` and `burst.json`. Repeating does not overwrite earlier attempts.
 
-- Exposure is expressed in microseconds (100 µs = 0.1 ms), with up to three decimal places. It is validated against the sensor range and the selected frame interval. ISO uses the selected camera's reported sensitivity range.
-- Resolution choices are shared by preview and YUV output. Ordinary session frame rates use both streams' minimum durations, the reported normal-session FPS ceiling and the maximum frame duration. MP4 eligibility is checked separately using recorder timing and an available H.264 encoder; it does not restrict YUV choices. High-speed sessions are excluded. A resolution change that requires a different rate displays a message; an exposure too long for a requested rate must be shortened first.
-- The recommended profile requests 100 µs, minimum ISO, 1280 × 960 and 30 fps where supported. Otherwise it chooses an available resolution near that size, preferring the sensor aspect ratio, and a usable rate. Exposure is bounded by the camera range. Existing manual exposure/ISO preferences are imported once. Use **Restore Recommended Settings** to replace those imported values.
-- Exposure and ISO are manual during capture (`CONTROL_AE_MODE_OFF`); `SENSOR_FRAME_DURATION` requests the cadence. The preparation phase for automatic focus/white balance locks briefly enables AE, then restores the saved exposure and ISO before recording. Preview and recording use the same capture profile. Cameras without the required manual controls show an explanation.
-- The preview shows requested values separately from reported exposure/ISO and cadence measured over roughly one second of sensor timestamps. Preview cadence counts capture results, not encoded MP4 frames. Research bursts save actual per-frame metadata and independently measure saved-frame cadence.
+`frames.csv` retains the document's exact per-frame column names. Unknown values and unprocessed LED columns are empty. Per-frame FPS is `1e9 / elapsed_timestamp_ns` between consecutive saved frames (the first cell is empty); burst FPS uses `(saved_frames - 1) / elapsed_seconds`. Capture settings, original crop/strides, missing IDs and warnings are in `burst.json`. The journal is updated after each saved frame; interrupted attempts may lack a finalized CSV, but their files and journal remain exportable. Mount changes create a new session. Row time is only reused for its recorded camera/resolution.
 
-Device capability reports cannot guarantee a particular simultaneous stream/encoder combination or sustained rate. Runtime failures ask the user to lower resolution or FPS; actual exposure and cadence may differ because of sensor rounding, readout overhead, or device load. These require a physical-device check. Very short exposure and low ISO can make the scene dark; adjust ISO in Settings as needed. Preview display geometry and fixed physical lens/stabilization controls are later milestones.
+## Remaining requirements
 
-### Focus and white balance
+This is the **pre-CV capture workflow**, not full implementation of the application description:
 
-- **Focus Mode** offers **Auto then Lock**, **Manual (Fixed)**, and **Continuous Auto** when supported. Fixed-focus cameras show their lens status. **Focus Distance** accepts the device's supported range, with 0 for infinity; cameras without calibrated distances use the label **Focus Position** and camera units. The numeric field is editable only in Manual mode and uses the existing light/dark dialog theme.
-- **White Balance** offers **Auto then Lock**, **Auto (Unlocked)**, and only the fixed lighting presets reported by the selected camera. Unsupported locks are explained in Settings. No estimated Kelvin-to-gain conversion is used.
-- Auto then Lock is the default when supported. On each camera opening, automatic exposure is temporarily enabled for focus and white balance acquisition. Autofocus receives one START trigger, then IDLE requests; white balance settles before a lock is requested. Failed autofocus is not treated as a successful lock.
-- Once locks are acknowledged, supported cameras freeze the reported lens position and white balance gains/transform using manual controls. Other cameras retain the supported native locks. These values remain in memory across preview/video session changes. Manual exposure is restored, and two matching results are required before capture is ready. The preview displays the preparation state, confirmed locks, or an actionable failure message.
-- Recording is blocked until the selected controls are confirmed. Its new camera session first sends preview-only frames to confirm the retained controls before sending any frames to the encoder. A timeout prevents an indefinite recording start. Returning from Settings or reopening the camera acquires new automatic locks; numeric focus values and mode selections persist per camera. Use manual focus and a fixed white balance preset when values must remain repeatable across camera reopenings.
-- Continuous Auto and Auto (Unlocked) deliberately allow changes; their behavior with manual exposure is device dependent. **Restore Recommended Settings** also restores the recommended focus and white balance modes.
+- Pin one physical rear lens for logical multi-camera devices; retaining a rear camera ID and 1× zoom alone does not guarantee that the device never changes physical lenses.
+- Validate actual geometry, fixed settings and sustained capture rate on the mounted target phone. A successful build does not establish device compliance or the PDF's acceptance criteria.
+- Implement LED detection, stripe frequency identification, row-time calibration from an LED, quality filtering, preview overlays and position-level fingerprint aggregation. LED CSV columns remain empty and `fingerprints.csv` is not generated yet.
 
-Implementation references: Android's [focus controls](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest#CONTROL_AF_MODE), [white balance lock and transfer to manual controls](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest#CONTROL_AWB_LOCK), and [manual focus distance](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest#LENS_FOCUS_DISTANCE).
+The current export preserves each repeated attempt in its own folder. The final pipeline's session-level frame/fingerprint layout and repeat-selection policy must be integrated with CV. No LED counts or location estimates are presented as measured results in this version.
 
-Camera2 references: [manual exposure and frame duration](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest#SENSOR_FRAME_DURATION), [stream timing](https://developer.android.com/reference/android/hardware/camera2/params/StreamConfigurationMap#getOutputMinFrameDuration(java.lang.Class,%20android.util.Size)).
-
-## Next capture milestones
-
-1. Check the new camera settings and reported values on the target Android phone.
-2. Fix the physical camera, zoom, stabilization and capture geometry for a session.
-3. Import surveyed positions from CSV (manual entry and per-burst association are already available).
-
-LED detection, stripe estimation and fingerprint generation follow those capture milestones.
+Android references: [document import/export](https://developer.android.com/training/data-storage/shared/documents-files), [Camera2 capture controls](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest), [YUV planes](https://developer.android.com/reference/android/graphics/ImageFormat#YUV_420_888), and [temporary sharing permissions](https://developer.android.com/training/secure-file-sharing/share-file).
 
 ## Development
 

@@ -5,6 +5,7 @@ import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.media.Image
 import android.os.StatFs
+import android.os.Build
 import com.developer27.qvlp.camera.CameraProfile
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,6 +29,17 @@ internal data class FrameMetadata(val id: Int, val timestamp: Long?, val exposur
                     put("camera_frame_number", r.frameNumber)
                     put("frame_duration_ns", r[CaptureResult.SENSOR_FRAME_DURATION] ?: JSONObject.NULL)
                     put("focus_distance", r[CaptureResult.LENS_FOCUS_DISTANCE] ?: JSONObject.NULL)
+                    put("video_stabilization_mode", r[CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE] ?: JSONObject.NULL)
+                    put("optical_stabilization_mode", r[CaptureResult.LENS_OPTICAL_STABILIZATION_MODE] ?: JSONObject.NULL)
+                    put("scene_mode", r[CaptureResult.CONTROL_SCENE_MODE] ?: JSONObject.NULL)
+                    if (Build.VERSION.SDK_INT >= 28) {
+                        put("distortion_correction_mode", r[CaptureResult.DISTORTION_CORRECTION_MODE] ?: JSONObject.NULL)
+                    }
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        put("active_physical_camera_id", r[CaptureResult.LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID] ?: JSONObject.NULL)
+                    }
+                    if (Build.VERSION.SDK_INT >= 30) put("zoom_ratio", r[CaptureResult.CONTROL_ZOOM_RATIO] ?: JSONObject.NULL)
+                    if (Build.VERSION.SDK_INT >= 31) put("rotate_and_crop", r[CaptureResult.SCALER_ROTATE_AND_CROP] ?: JSONObject.NULL)
                     put("af_mode", r[CaptureResult.CONTROL_AF_MODE] ?: JSONObject.NULL)
                     put("awb_mode", r[CaptureResult.CONTROL_AWB_MODE] ?: JSONObject.NULL)
                     put("awb_locked", r[CaptureResult.CONTROL_AWB_LOCK] ?: JSONObject.NULL)
@@ -197,6 +209,10 @@ internal class BurstWriter private constructor(
                 warnings.add("ISO changed during the burst.")
             if (saved.values.any { it.isNull("exposure_time_ns") || it.isNull("iso") })
                 warnings.add("Actual exposure or ISO is missing for some frames.")
+            val physicalIds = allMetadata.values.mapNotNull {
+                it.details.optString("active_physical_camera_id").takeIf { value -> value.isNotBlank() && value != "null" }
+            }.distinct()
+            if (physicalIds.size > 1) warnings.add("The phone switched physical lenses during this capture. Repeat with a fixed physical lens before using these frames for research.")
             var previous: Long? = null
             ordered.forEach { frame ->
                 val now = frame.getLong("timestamp_ns")

@@ -24,6 +24,9 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.settings_activity)
+        findViewById<android.widget.TextView>(R.id.settingsTitle).setText(
+            if (intent.getBooleanExtra(EXTRA_MOUNTING, false)) R.string.mounting_setup else R.string.settings)
+        findViewById<android.widget.Button>(R.id.settingsDone).setOnClickListener { finish() }
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.settings_container, SettingsFragment()).commit()
@@ -33,6 +36,7 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_CAMERA_ID = "camera_id"
         const val EXTRA_PREFERENCE_KEY = "preference_key"
+        const val EXTRA_MOUNTING = "mounting"
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
@@ -52,9 +56,28 @@ class SettingsActivity : AppCompatActivity() {
         private lateinit var whiteBalance: ListPreference
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            setPreferencesFromResource(R.xml.root_preferences, rootKey)
-            ResearchSettings.bind(this) {
-                if (::capabilities.isInitialized && ::profile.isInitialized) capabilities.cameraId to profile.stream.key else null
+            val mounting = requireActivity().intent.getBooleanExtra(EXTRA_MOUNTING, false)
+            setPreferencesFromResource(if (mounting) R.xml.mount_preferences else R.xml.root_preferences, rootKey)
+            if (mounting) {
+                runCatching {
+                    val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                    val id = requireNotNull(requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))
+                    capabilities = CameraCapabilities.read(id, manager.getCameraCharacteristics(id))
+                    store = CameraSettingsStore(PreferenceManager.getDefaultSharedPreferences(requireContext()), id)
+                    profile = store.load(capabilities)
+                }
+                ResearchSettings.bind(this) {
+                    if (::capabilities.isInitialized && ::profile.isInitialized) capabilities.cameraId to profile.stream.key else null
+                }
+                if (::capabilities.isInitialized && ::profile.isInitialized)
+                    ResearchSettings.refreshRowTime(this, capabilities.cameraId to profile.stream.key)
+                return
+            }
+            findPreference<Preference>("mounting_setup")?.setOnPreferenceClickListener {
+                startActivity(android.content.Intent(requireContext(), SettingsActivity::class.java)
+                    .putExtra(EXTRA_CAMERA_ID, requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))
+                    .putExtra(EXTRA_MOUNTING, true))
+                true
             }
             exposure = requireNotNull(findPreference("exposure_us"))
             iso = requireNotNull(findPreference("iso"))
@@ -187,11 +210,10 @@ class SettingsActivity : AppCompatActivity() {
 
         private fun refresh() {
             exposure.text = CaptureSettings.exposureMicros(profile.exposureNs)
-            exposure.summary = getString(R.string.exposure_summary, exposure.text, exposureRangeMessage())
+            exposure.summary = getString(R.string.exposure_summary, exposure.text)
             exposure.dialogMessage = exposureRangeMessage()
             iso.text = profile.iso.toString()
-            iso.summary = getString(R.string.iso_summary, profile.iso,
-                capabilities.isoRange.lower, capabilities.isoRange.upper)
+            iso.summary = getString(R.string.iso_summary, profile.iso)
             iso.dialogMessage = getString(R.string.iso_range, capabilities.isoRange.lower, capabilities.isoRange.upper)
             resolution.entries = capabilities.streams.map { it.label }.toTypedArray()
             resolution.entryValues = capabilities.streams.map { it.key }.toTypedArray()
@@ -227,14 +249,14 @@ class SettingsActivity : AppCompatActivity() {
             if (!controls.focusLock && !controls.fixedFocus) {
                 focus.summary = "${focus.summary}\n${getString(R.string.focus_lock_unavailable)}"
             }
-            focusDistance.isVisible = controls.manualFocus
+            focusDistance.isVisible = controls.manualFocus && selected.focusMode == FocusMode.MANUAL
             focusDistance.isEnabled = selected.focusMode == FocusMode.MANUAL
             focusDistance.title = getString(if (controls.focusCalibrated) R.string.focus_distance else R.string.focus_position)
             focusDistance.dialogTitle = focusDistance.title
             focusDistance.text = selected.focusDistance.toBigDecimal().stripTrailingZeros().toPlainString()
             focusDistance.dialogMessage = focusRangeMessage()
             focusDistance.summary = if (focusDistance.isEnabled)
-                "${focusDistance.text}\n${focusRangeMessage()}" else getString(R.string.focus_distance_disabled)
+                focusDistance.text else getString(R.string.focus_distance_disabled)
             whiteBalance.entries = controls.whiteBalanceOptions.map { getString(it.label) }.toTypedArray()
             whiteBalance.entryValues = controls.whiteBalanceOptions.map { it.mode.toString() }.toTypedArray()
             whiteBalance.value = selected.whiteBalanceMode.toString()

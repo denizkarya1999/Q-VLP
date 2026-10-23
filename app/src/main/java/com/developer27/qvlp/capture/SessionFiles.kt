@@ -7,6 +7,9 @@ import androidx.preference.PreferenceManager
 import org.json.JSONObject
 import java.io.File
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
@@ -44,10 +47,16 @@ internal object SessionFiles {
                 put("android_api", Build.VERSION.SDK_INT)
                 put("app_version", context.packageManager.getPackageInfo(context.packageName, 0).versionName)
                 put("mounting", mounting)
+                put("survey", PositionCatalog.snapshot(prefs))
                 put("image_format", "I420: 8-bit Y, then U, then V; no row padding or compression")
                 put("image_orientation", "sensor-native; no pixel rotation or rescaling")
                 put("unknown_values", "CSV empty cells; JSON null")
             })
+            val survey = PositionCatalog.read(prefs)
+            if (survey.isNotEmpty()) File(session, "positions.csv").bufferedWriter(Charsets.UTF_8).use { csv ->
+                csv.appendLine("position_id,rx_x_m,rx_y_m")
+                survey.forEach { csv.appendLine("${it.id},${it.x},${it.y}") }
+            }
             prefs.edit().putString(ACTIVE, session.name).apply()
             File(session, "README.txt").writeText("""
                 Q-VLP pre-CV capture session
@@ -91,7 +100,12 @@ internal object SessionFiles {
                     (0 until warnings.length()).map { "Position $position: ${warnings.getString(it)}" }
                 }.getOrElse { listOf("Incomplete capture metadata in ${capture.name}.") }
             }
-            SavedSession(dir.name, "${info?.optString("created_at") ?: dir.name}\n${captures.size} captures · $count frames" +
+            val date = runCatching {
+                DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+                    .withLocale(java.util.Locale.getDefault()).withZone(ZoneId.systemDefault())
+                    .format(Instant.parse(info?.optString("created_at")))
+            }.getOrDefault("Saved session")
+            SavedSession(dir.name, "$date\n${captures.size} captures · $count frames" +
                 (if (pending > 0) " · $pending interrupted/incomplete" else "") +
                 (if (issues.isNotEmpty()) " · ${issues.size} warnings" else ""),
                 issues.take(20).joinToString("\n\n") + if (issues.size > 20) "\n\nMore warnings are included in the ZIP." else "")

@@ -9,9 +9,9 @@ import androidx.preference.PreferenceManager
 import com.developer27.qvlp.R
 import org.json.JSONObject
 
-internal data class Position(val id: Int, val x: Double?, val y: Double?) {
+internal data class Position(val id: Int, val x: Double?, val y: Double?, val source: String = "manual") {
     fun json() = JSONObject().put("position_id", id).put("rx_x_m", x ?: JSONObject.NULL)
-        .put("rx_y_m", y ?: JSONObject.NULL)
+        .put("rx_y_m", y ?: JSONObject.NULL).put("source", source)
 }
 
 internal object ResearchSettings {
@@ -20,13 +20,8 @@ internal object ResearchSettings {
 
     fun position(p: SharedPreferences) = Position(
         p.getString("position_id", "0")?.toIntOrNull()?.coerceIn(0, 999999) ?: 0,
-        number(p, "rx_x_m"), number(p, "rx_y_m")
+        number(p, "rx_x_m"), number(p, "rx_y_m"), p.getString("position_source", "manual") ?: "manual"
     )
-
-    fun nextPosition(p: SharedPreferences) {
-        p.edit().putString("position_id", (position(p).id + 1).coerceAtMost(999999).toString())
-            .remove("rx_x_m").remove("rx_y_m").apply()
-    }
 
     private fun rowTimeMatches(p: SharedPreferences, key: Pair<String, String>?): Boolean = key != null &&
         p.getString("row_time_camera_id", null) == key.first && p.getString("row_time_resolution", null) == key.second
@@ -45,7 +40,7 @@ internal object ResearchSettings {
 
     fun bind(fragment: PreferenceFragmentCompat, profileKey: () -> Pair<String, String>?) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(fragment.requireContext())
-        val fields = listOf("position_id", "rx_x_m", "rx_y_m", "lens_height_m",
+        val fields = listOf("lens_height_m",
             "lens_offset_x_m", "lens_offset_y_m", "row_time_us", "mount_notes")
         fields.forEach { key ->
             val pref = requireNotNull(fragment.findPreference<EditTextPreference>(key))
@@ -54,7 +49,6 @@ internal object ResearchSettings {
             }
             pref.setOnBindEditTextListener { edit ->
                 edit.inputType = when (key) {
-                    "position_id" -> InputType.TYPE_CLASS_NUMBER
                     "mount_notes" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                     else -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
                 }
@@ -67,7 +61,6 @@ internal object ResearchSettings {
                 val raw = (value as? String).orEmpty().trim()
                 val n = raw.replace(',', '.').toDoubleOrNull()
                 val valid = when (key) {
-                    "position_id" -> raw.toIntOrNull()?.let { it in 0..999999 } == true
                     "mount_notes" -> raw.length <= 2000
                     else -> raw.isEmpty() || (n != null && n.isFinite() &&
                         (key !in listOf("lens_height_m", "row_time_us") || n > 0.0))
