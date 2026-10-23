@@ -8,18 +8,19 @@ import android.hardware.camera2.CaptureRequest
 import com.developer27.qvlp.capture.SessionFiles
 import kotlin.math.abs
 
-internal data class ResearchCameraSelection(val cameraId: String, val profile: CameraProfile)
+internal data class ResearchCameraSelection(val cameraId: String, val profile: CameraProfile, val physicalId: String? = null)
 
 /** Resolves a complete supported preset before changing any preference. */
 internal object ResearchCameraReset {
-    fun select(manager: CameraManager, preferredId: String?): ResearchCameraSelection {
+    fun select(manager: CameraManager, preferredId: String?, preferences: SharedPreferences? = null): ResearchCameraSelection {
         val failures = mutableListOf<String>()
         for (id in manager.cameraIdList.sortedBy { if (it == preferredId) 0 else 1 }) {
             val result = runCatching {
                 val characteristics = manager.getCameraCharacteristics(id)
                 if (characteristics[CameraCharacteristics.LENS_FACING] != CameraCharacteristics.LENS_FACING_BACK)
                     return@runCatching null
-                ResearchCameraSelection(id, defaults(CameraCapabilities.read(id, characteristics)))
+                val fixed = FixedCamera.resolve(manager, id, preferences?.getString(FixedCamera.preferenceKey(id), null))
+                ResearchCameraSelection(id, defaults(fixed.capabilities), fixed.physicalId)
             }
             result.getOrNull()?.let { return it }
             result.exceptionOrNull()?.message?.let { failures.add(it) }
@@ -58,6 +59,7 @@ internal object ResearchCameraReset {
 
     fun apply(context: Context, preferences: SharedPreferences, selection: ResearchCameraSelection) {
         CameraSettingsStore(preferences, selection.cameraId).save(selection.profile)
+        selection.physicalId?.let { preferences.edit().putString(FixedCamera.preferenceKey(selection.cameraId), it).apply() }
         preferences.edit()
             .putString("selected_capture_camera", selection.cameraId)
             .putFloat("camera_${selection.cameraId}_zoom", 1f)

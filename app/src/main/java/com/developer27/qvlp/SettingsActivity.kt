@@ -12,6 +12,7 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
+import com.developer27.qvlp.camera.FixedCamera
 import com.developer27.qvlp.camera.CameraCapabilities
 import com.developer27.qvlp.camera.CameraProfile
 import com.developer27.qvlp.camera.CameraSettingsStore
@@ -66,7 +67,9 @@ class SettingsActivity : AppCompatActivity() {
                 runCatching {
                     val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
                     val id = requireNotNull(requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))
-                    capabilities = CameraCapabilities.read(id, manager.getCameraCharacteristics(id))
+                    val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    val fixed = FixedCamera.resolve(manager, id, prefs.getString(FixedCamera.preferenceKey(id), null))
+                    capabilities = fixed.capabilities
                     store = CameraSettingsStore(PreferenceManager.getDefaultSharedPreferences(requireContext()), id)
                     profile = store.load(capabilities)
                 }
@@ -115,7 +118,7 @@ class SettingsActivity : AppCompatActivity() {
                 try {
                     val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
                     val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    val selection = ResearchCameraReset.select(manager, prefs.getString("selected_capture_camera", null))
+                    val selection = ResearchCameraReset.select(manager, prefs.getString("selected_capture_camera", null), prefs)
                     ResearchCameraReset.apply(requireContext(), prefs, selection)
                     requireActivity().intent.putExtra(EXTRA_CAMERA_ID, selection.cameraId)
                     message(getString(R.string.camera_defaults_restored, selection.profile.stream.label, selection.profile.fps))
@@ -133,7 +136,10 @@ class SettingsActivity : AppCompatActivity() {
                 val id = requireNotNull(requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID)) {
                     "No camera selected. Return to the camera screen and try again."
                 }
-                capabilities = CameraCapabilities.read(id, manager.getCameraCharacteristics(id))
+                val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                val fixed = FixedCamera.resolve(manager, id, prefs.getString(FixedCamera.preferenceKey(id), null))
+                capabilities = fixed.capabilities
+                requireNotNull(findPreference<Preference>("fixed_lens")).summary = fixed.description
                 store = CameraSettingsStore(PreferenceManager.getDefaultSharedPreferences(requireContext()), id)
                 profile = store.load(capabilities)
                 status.isVisible = false

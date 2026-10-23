@@ -2,7 +2,6 @@ package com.developer27.qvlp.capture
 
 import android.content.Context
 import android.hardware.camera2.CaptureResult
-import android.hardware.camera2.TotalCaptureResult
 import android.media.Image
 import android.os.StatFs
 import android.os.Build
@@ -21,12 +20,14 @@ internal data class BurstSummary(val sessionId: String, val positionId: Int, val
 
 internal data class FrameMetadata(val id: Int, val timestamp: Long?, val exposureNs: Long?, val iso: Int?, val details: JSONObject) {
     companion object {
-        fun read(id: Int, r: TotalCaptureResult): FrameMetadata {
+        fun read(id: Int, r: CaptureResult, cameraId: String, physical: Boolean): FrameMetadata {
             val gains = r[CaptureResult.COLOR_CORRECTION_GAINS]
             val crop = r[CaptureResult.SCALER_CROP_REGION]
             return FrameMetadata(id, r[CaptureResult.SENSOR_TIMESTAMP], r[CaptureResult.SENSOR_EXPOSURE_TIME],
                 r[CaptureResult.SENSOR_SENSITIVITY], JSONObject().apply {
                     put("camera_frame_number", r.frameNumber)
+                    put("metadata_camera_id", cameraId)
+                    put("metadata_source", if (physical) "physical_capture_result" else "capture_result")
                     put("frame_duration_ns", r[CaptureResult.SENSOR_FRAME_DURATION] ?: JSONObject.NULL)
                     put("focus_distance", r[CaptureResult.LENS_FOCUS_DISTANCE] ?: JSONObject.NULL)
                     put("video_stabilization_mode", r[CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE] ?: JSONObject.NULL)
@@ -70,6 +71,7 @@ internal class BurstWriter private constructor(
     private val metadata = mutableMapOf<Long, FrameMetadata>()
     private val allMetadata = mutableMapOf<Int, FrameMetadata>()
     private val starts = mutableMapOf<Long, Int>()
+    private val startTimestamps = mutableMapOf<Int, Long>()
     private val saved = sortedMapOf<Int, JSONObject>()
     private val warnings = linkedSetOf<String>()
     private val createdAt = Instant.now().toString()
@@ -96,7 +98,12 @@ internal class BurstWriter private constructor(
     }
 
     fun onStarted(frameId: Int, timestamp: Long) {
-        if (accepting.get()) SessionFiles.io.execute { starts[timestamp] = frameId }
+        if (accepting.get()) SessionFiles.io.execute {
+            // Replace the logical start clock with this frame's physical sensor timestamp.
+            // The frame still counts once, even if the two timestamps differ.
+            startTimestamps.put(frameId, timestamp)?.let(starts::remove)
+            starts[timestamp] = frameId
+        }
     }
 
     /** Discard extra in-flight frames after a repeating capture reaches its limit. */
@@ -228,9 +235,9 @@ internal class BurstWriter private constructor(
             if (saved.values.any { it.isNull("exposure_time_ns") || it.isNull("iso") })
                 warnings.add("Actual exposure or ISO is missing for some frames.")
             val physicalIds = allMetadata.values.mapNotNull {
-                it.details.optString("active_physical_camera_id").takeIf { value -> value.isNotBlank() && value != "null" }
+                it.details.optString("metadata_camera_id", it.details.optString("active_physical_camera_id")).takeIf { value -> value.isNotBlank() && value != "null" }
             }.distinct()
-            if (physicalIds.size > 1) warnings.add("The phone switched physical lenses during this capture. Repeat with a fixed physical lens before using these frames for research.")
+            if (physicalIds.size > 1) warnings.add("Frame metadata came from more than one camera. Repeat the capture before using it for research.")
             var previous: Long? = null
             ordered.forEach { frame ->
                 val now = frame.getLong("timestamp_ns")

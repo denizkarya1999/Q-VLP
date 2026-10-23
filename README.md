@@ -26,7 +26,7 @@ Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · Un
 4. Read the result on the same screen. Tap the result to open capture details and warnings. **Repeat** keeps the earlier attempt; **Next Position** follows the imported file order. Move the mount to that mark before starting again. Manual positions advance the ID and ask for new coordinates.
 5. Open **Sessions**. Select a session and choose **Share** or **Save to Files**. Save in Downloads to copy it to a computer over USB, or choose a mounted USB drive. **New Session** groups later captures separately; it does not delete previous data.
 
-**Settings** contains Exposure Time, ISO Rate, Resolution, Preview Size, Target Frame Rate, Focus Mode, White Balance and Factory Reset. Only the selected values appear in the list; entry dialogs explain valid ranges. Mounting details have a separate page. Numeric entry works in light and dark mode. Tap the camera status for requested settings, reported measurements and lock status.
+**Settings** shows the Fixed Camera Lens and contains Exposure Time, ISO Rate, Resolution, Preview Size, Target Frame Rate, Focus Mode, White Balance and Factory Reset. Only the selected values appear in the list; entry dialogs explain valid ranges. Mounting details have a separate page. Numeric entry works in light and dark mode. Tap the camera status for requested settings, reported measurements and lock status.
 
 The original full-screen preview, centered title, top button row and bottom capture panel are restored. **Settings**, **Sessions** and **About** are across the top; **Position**, green **Start Capture**, and **Switch Camera** are at the bottom. **+ / −** on the right of the preview increase or decrease digital zoom, with the current magnification shown between them. After a capture, **Repeat** and **Next Position** replace Start Capture. Results open their details when tapped, so there is no separate details button. **Settings → How to Capture** opens the instructions. Legacy MP4 recording and audio/storage permissions remain removed. Switch Camera alternates between compatible front/rear cameras and resets the new camera to 1×; if the other camera lacks manual sensor/YUV support, an explanation is shown and the current camera stays selected. Zoom uses the camera’s supported digital crop range in 0.1× steps, from 1× to its maximum. Camera selection and zoom are remembered, and controls are disabled throughout countdown/capture. A change of camera or zoom starts a new session on the next capture; requested zoom and actual crop metadata are saved. The preview defaults to **Full screen (original)**, matching RoTemplate’s full-screen display mapping. **Settings → Preview Size** also offers **Fit entire frame**, **Medium**, and **Small**. Fit shows the whole sensor-native frame at its original proportions; Medium and Small use 75% and 50% of that fitted size, centered on a black background. The chosen display size is remembered across camera switches and app restarts. Factory Reset also restores the original full-screen preview size. Preview size only changes the on-screen view; it does not change camera zoom, frame resolution, row-time calibration or saved pixels. Screen orientation is held during a burst; raw frames are not rotated. Cancel or leaving the app preserves any frames already saved and marks the attempt as interrupted.
 
@@ -48,7 +48,7 @@ A successful import selects the first position and starts a new session on the n
 
 - Manual exposure and ISO use device-reported limits. Frame cadence is requested through `SENSOR_FRAME_DURATION`. Recommended settings request 100 µs, minimum ISO, 1280 × 960 at 30 fps and automatic focus/white-balance locking where supported; fallbacks use available capabilities. Settings remain adjustable for device setup. For the document's research protocol, use the rear camera at 1× and select exposure at most 100 µs, at least 30 fps, full sensor aspect ratio, and locked or fixed focus/white balance. Unlocked modes and slower profiles remain available for setup, but research capture is blocked until the required settings are selected and confirmed.
 - Automatic focus/white-balance preparation briefly uses AE, freezes supported lens/color values or native locks, restores manual exposure, and requires matching camera results before capture. Returning from Settings reacquires the locks. Use manual focus and a fixed white-balance preset for values that must remain identical across camera reopenings.
-- Requests disable electronic/optical stabilization and scene effects where exposed, apply the operator-selected digital crop (full sensor at 1×), disable distortion correction where supported, and disable rotate-and-crop where supported. Actual geometry-related result fields are logged; unavailable results stay unknown. Physical-camera changes reported within a burst produce a warning.
+- Requests disable electronic/optical stabilization and scene effects where exposed, apply the operator-selected digital crop (full sensor at 1×), disable distortion correction where supported, and disable rotate-and-crop where supported. Actual geometry-related result fields are logged; unavailable results stay unknown. Both preview and YUV outputs are pinned to the same physical rear lens. Physical-stream metadata confirms readiness and supplies the saved exposure, ISO and timestamps; missing physical metadata blocks or interrupts capture.
 - Each frame is saved as tightly packed **I420 YUV**: 8-bit Y, then U, then V, with Android row padding/interleaving removed. It is uncompressed and sensor-native, without pixel rotation or rescaling.
 - Camera images and metadata are paired by sensor timestamp. Actual exposure, ISO, timestamp, resolution and measured cadence are saved. Requested values are never substituted for missing actual measurements.
 - Missing frames, a frame-rate drop greater than 10%, exposure/ISO changes, lost camera locks, missing metadata and storage errors remain visible in capture details and exported metadata.
@@ -67,9 +67,31 @@ Progress, completion details, storage checks, missing-frame accounting and timeo
 
 **Settings → Camera Settings → Factory Reset** restores a supported research camera preset: a rear camera, 1× zoom, a fixed full-sensor-aspect-ratio resolution (closest to 1280 × 960), at least 30 fps, exposure at most 100 µs, minimum ISO, and locked or fixed focus/white balance. It first checks the entire preset and makes no changes if no rear camera supports it. The button remains available when the current camera is unsupported, so a front-camera setup can be recovered. Returning to the camera reopens the selected rear camera and reacquires its locks.
 
-This resets camera settings only. Capture length, surveyed positions, mounting measurements and saved sessions are kept; the next capture starts a new session. A supplied row time is still used only when its recorded camera, resolution and zoom match. This action does not pin a physical lens within a logical multi-camera device.
+This resets camera settings only. Capture length, surveyed positions, mounting measurements and saved sessions are kept; the next capture starts a new session. A supplied row time is still used only when its recorded camera, resolution and zoom match. The physical rear-lens selection is retained by Factory Reset.
 
 Capture is checked before the countdown and again immediately before camera capture. The selected rear camera, 1× zoom, fixed full-aspect-ratio resolution, short exposure, manual ISO, target FPS and fixed/locked focus and white balance must be valid. Camera readiness also requires confirmed focus/white-balance controls and two stable actual exposure/ISO/frame-duration readings with the expected sensor crop. Unknown measurements, exposure above 100 µs, or a reported frame duration longer than 33,350,000 ns prevent capture. Nominal 30 fps allows at most 0.05% sensor-timing rounding; the requested FPS must still be at least 30. Sensor frame duration confirms the reported cadence; sustained delivered FPS still needs measurement on the phone and is logged separately. Later drift generates capture warnings.
+
+### Fixed physical rear lens
+
+On a logical multi-camera device (Android 9+), the app chooses the physical rear lens
+whose field of view is closest to the logical camera's native 1× view, then persists
+that physical ID. Both the preview and YUV `OutputConfiguration` objects explicitly
+target that lens. A missing saved lens, unsupported configuration or missing physical
+capture results prevents capture; the app never silently substitutes another lens.
+Devices exposing a single rear camera use that camera directly.
+
+Settings and Camera Details identify the fixed lens. Capabilities, focus/white-balance
+checks, exposure/ISO, crop and timestamps come from the selected physical camera.
+Frame-count mode counts all started exposures; duration mode uses the physical
+sensor's timestamps. `burst.json` records the logical and physical IDs, selection
+method and metadata source; each frame also records its metadata camera ID/source.
+The first pin starts a fresh session, preserving earlier captures. Reopening,
+switching back to the rear camera and Factory Reset retain the same pin.
+
+On the tested Pixel 8a, logical camera 0 is pinned to physical main rear camera 2.
+Android reports both output streams as physical camera 2. This uses Camera2's
+[physical output routing](https://developer.android.com/reference/android/hardware/camera2/params/OutputConfiguration#setPhysicalCameraId(java.lang.String))
+and [physical capture results](https://developer.android.com/reference/android/hardware/camera2/TotalCaptureResult#getPhysicalCameraResults()).
 
 ### Pixel 8a timing compatibility
 
@@ -83,7 +105,6 @@ On Pixel 8 and Pixel 8a, initial defaults and Factory Reset prefer manual focus 
 
 This is the **pre-CV capture workflow**, not full implementation of the application description:
 
-- Pin one physical rear lens for logical multi-camera devices; retaining a rear camera ID and 1× zoom alone does not guarantee that the device never changes physical lenses.
 - Validate actual geometry, fixed settings and sustained capture rate on the mounted target phone. A successful build does not establish device compliance or the PDF's acceptance criteria.
 - Implement LED detection, stripe frequency identification, row-time calibration from an LED, quality filtering, preview overlays and position-level fingerprint aggregation. LED CSV columns remain empty and `fingerprints.csv` is not generated yet.
 

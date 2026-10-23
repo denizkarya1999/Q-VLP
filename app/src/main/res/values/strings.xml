@@ -177,4 +177,5 @@
     <string name="capture_duration_range">Enter %1$d–%2$d whole seconds. Timing begins with the first frame, after the 3-second countdown. The number of saved frames depends on the actual frame rate.</string>
     <string name="capture_duration_progress">Frames saved: %1$d · %2$.1f / %3$d s</string>
     <string name="capture_duration_saved">Frames saved: %1$d · %2$d s requested</string>
+    <string name="fixed_lens">Fixed Camera Lens</string>
 </resources>

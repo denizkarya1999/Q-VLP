@@ -3,7 +3,6 @@ package com.developer27.qvlp.camera
 import android.content.Context
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
-import android.hardware.camera2.TotalCaptureResult
 import android.hardware.camera2.params.ColorSpaceTransform
 import android.hardware.camera2.params.RggbChannelVector
 import android.os.SystemClock
@@ -97,11 +96,11 @@ internal class FocusWhiteBalanceController(
         }
     }
 
-    @Synchronized fun onResult(result: TotalCaptureResult): Update {
-        val requestTag = result.request.tag
+    @Synchronized fun onResult(result: CaptureResult, request: CaptureRequest = result.request): Update {
+        val requestTag = request.tag
         val tag = ((requestTag as? BurstRequestTag)?.controlsTag ?: requestTag) as? RequestTag ?: return Update()
         if (tag.owner !== this || error != null) return Update()
-        if (result.request[CaptureRequest.CONTROL_AF_TRIGGER] == CaptureRequest.CONTROL_AF_TRIGGER_START) {
+        if (request[CaptureRequest.CONTROL_AF_TRIGGER] == CaptureRequest.CONTROL_AF_TRIGGER_START) {
             focusTriggerFrame = result.frameNumber
         }
         // Older in-flight requests must never confirm a newer lock/configuration.

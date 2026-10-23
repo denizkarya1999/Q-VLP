@@ -81,6 +81,8 @@ class CameraHelper(
         private set
 
     private var cameraCharacteristics: CameraCharacteristics? = null
+    @Volatile private var fixedCamera: FixedCamera? = null
+    @Volatile private var lensIssue: String? = null
     @Volatile private var activeCapabilities: CameraCapabilities? = null
     @Volatile private var requestedResearchCrop: Rect? = null
     private val researchConfirmation = ResearchCapturePolicy.Confirmation()
@@ -154,7 +156,12 @@ class CameraHelper(
         if (cameraDevice != null || isOpeningCamera) return
         try {
             val cameraId = getCameraId()
-            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val fixed = FixedCamera.resolve(cameraManager, cameraId,
+                sharedPreferences.getString(FixedCamera.preferenceKey(cameraId), null))
+            fixedCamera = fixed
+            lensIssue = if (fixed.physicalOutputs) "Waiting for the pinned rear lens to report its settings." else null
+            val characteristics = fixed.characteristics
+            fixed.remember(sharedPreferences)
 
             cameraCharacteristics = characteristics
             sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
@@ -211,6 +218,8 @@ class CameraHelper(
         captureRequestBuilder = null
         activeProfile = null
         activeCapabilities = null
+        fixedCamera = null
+        lensIssue = null
         selectedCameraId = null // Re-read the selection after Settings applies Factory Reset.
         requestedResearchCrop = null
         resetResearchConfirmation()
@@ -260,8 +269,8 @@ class CameraHelper(
             // Now create the capture session
             cameraCaptureSession?.close()
             cameraCaptureSession = null
-            activeCamera.createCaptureSession(
-                listOf(previewSurface, reader.surface),
+            activeCamera.createCaptureSessionByOutputConfigurations(
+                requireNotNull(fixedCamera).outputs(listOf(previewSurface, reader.surface)),
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         if (cameraDevice !== activeCamera) {
@@ -277,7 +286,7 @@ class CameraHelper(
                     override fun onConfigureFailed(session: CameraCaptureSession) {
                         session.close()
                         if (cameraDevice === activeCamera) showCameraError(
-                            "Camera rejected the preview configuration. Choose a lower resolution or frame rate in Settings."
+                            "The fixed lens rejected this configuration. Choose another resolution or frame rate in Settings. Lens switching remains disabled."
                         )
                     }
                 },
@@ -347,7 +356,8 @@ class CameraHelper(
             // Check the destination before closing the working camera. A camera lacking
             // manual sensor/YUV support cannot provide the same research capture controls.
             val target = targets.firstOrNull { id ->
-                runCatching { CameraCapabilities.read(id, cameraManager.getCameraCharacteristics(id)) }.isSuccess
+                runCatching { FixedCamera.resolve(cameraManager, id,
+                    sharedPreferences.getString(FixedCamera.preferenceKey(id), null)).capabilities }.isSuccess
             }
             if (target == null) {
                 message(activity.getString(R.string.other_camera_unsupported))
@@ -439,6 +449,7 @@ class CameraHelper(
     internal fun recordingBlockReason(): String? {
         if (cameraDevice == null || cameraCaptureSession == null || activeProfile == null)
             return activity.getString(R.string.camera_controls_wait)
+        lensIssue?.let { return it }
         researchConfigurationIssue()?.let { return it.message }
         val controls = cameraControls ?: return activity.getString(R.string.camera_controls_wait)
         if (!controls.ready) return controls.error ?: activity.getString(R.string.camera_controls_wait)
@@ -491,12 +502,16 @@ class CameraHelper(
         burstRequested = true
         val generation = ++burstGeneration
         val cameraInfo = try {
-            val characteristics = cameraManager.getCameraCharacteristics(getCameraId())
+            val fixed = requireNotNull(fixedCamera)
+            val characteristics = fixed.characteristics
             JSONObject().put("camera_id", getCameraId())
                 .put("sensor_orientation_degrees", characteristics[CameraCharacteristics.SENSOR_ORIENTATION])
                 .put("lens_facing", characteristics[CameraCharacteristics.LENS_FACING])
                 .put("digital_zoom", zoomLevel.toDouble())
-                .put("lens_selection", "operator-selected camera ID; physical lens pinning not yet implemented")
+                .put("physical_camera_id", fixed.physicalId)
+                .put("physical_lens_pinned", fixed.rear)
+                .put("lens_selection", if (fixed.physicalOutputs) "pinned_physical_outputs" else "single_camera")
+                .put("metadata_source", if (fixed.physicalOutputs) "physical_capture_result" else "capture_result")
         } catch (e: Exception) {
             burstRequested = false
             failed(e.message ?: "Camera information is unavailable.")
@@ -534,26 +549,46 @@ class CameraHelper(
                         builder.setTag(originalTag)
                     }
                     val previewCallback = activeCaptureCallback
+                    val fixed = requireNotNull(fixedCamera)
                     val window = CaptureWindow(length)
                     var stopped = false
+                    fun admit(s: CameraCaptureSession, frameNumber: Long, timestamp: Long): Int? {
+                        val index = window.start(frameNumber, timestamp)
+                        if (index != null) writer.onStarted(index, timestamp) else writer.exclude(timestamp)
+                        if (window.complete && !stopped) {
+                            stopped = true
+                            try { s.stopRepeating() } catch (e: Exception) {
+                                cancelBurst("Could not stop capture: ${e.message}")
+                            }
+                        }
+                        return index
+                    }
                     session.stopRepeating()
                     // One request keeps long captures bounded; frame IDs come from actual starts.
                     session.setRepeatingRequest(request, object : CameraCaptureSession.CaptureCallback() {
                         override fun onCaptureStarted(s: CameraCaptureSession, request: CaptureRequest, timestamp: Long, frameNumber: Long) {
                             if (burstWriter !== writer) return
-                            val index = window.start(frameNumber, timestamp)
-                            if (index != null) writer.onStarted(index, timestamp) else writer.exclude(timestamp)
-                            if (window.complete && !stopped) {
-                                stopped = true
-                                try { s.stopRepeating() } catch (e: Exception) {
-                                    cancelBurst("Could not stop capture: ${e.message}")
-                                }
-                            }
+                            // Count every started exposure in frame mode, including failed ones.
+                            // Timed physical streams use their own sensor clock below.
+                            if (!fixed.physicalOutputs || length.frameCount != null) admit(s, frameNumber, timestamp)
                         }
                         override fun onCaptureCompleted(s: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
                             if (burstWriter !== writer) return
-                            window.frameId(result.frameNumber)?.let { index ->
-                                runCatching { FrameMetadata.read(index, result) }
+                            val reading = fixed.result(result)
+                            val timestamp = reading?.get(CaptureResult.SENSOR_TIMESTAMP)
+                            if (reading == null || (fixed.physicalOutputs && timestamp == null)) {
+                                lensIssue = "The pinned lens did not report its frame metadata. Reopen the camera."
+                                cancelBurst(requireNotNull(lensIssue))
+                                return
+                            }
+                            val index = if (fixed.physicalOutputs && length.durationNs != null)
+                                admit(s, result.frameNumber, requireNotNull(timestamp)) else window.frameId(result.frameNumber)
+                            if (fixed.physicalOutputs && length.frameCount != null) {
+                                if (index != null) writer.onStarted(index, requireNotNull(timestamp))
+                                else writer.exclude(requireNotNull(timestamp))
+                            }
+                            index?.let {
+                                runCatching { FrameMetadata.read(index, reading, fixed.physicalId, fixed.physicalOutputs) }
                                     .onSuccess(writer::onMetadata)
                                     .onFailure { writer.warning("Metadata was unavailable for frame $index: ${it.message}") }
                             }
@@ -656,7 +691,18 @@ class CameraHelper(
                 if (session !== cameraCaptureSession) return
                 val profile = activeProfile ?: return
                 if (controls !== cameraControls) return
-                val update = controls.onResult(result)
+                val reading = fixedCamera?.result(result)
+                if (reading == null) {
+                    val issue = "Waiting for metadata from the pinned rear lens. Capture is disabled."
+                    lensIssue = issue
+                    resetResearchConfirmation()
+                    activity.runOnUiThread {
+                        if (session === cameraCaptureSession) activity.showCameraState(false, issue)
+                    }
+                    return
+                }
+                lensIssue = null
+                val update = controls.onResult(reading, request)
                 if (update.repeat) applyCaptureSettings()
                 if (update.triggerFocus) {
                     val builder = captureRequestBuilder ?: return
@@ -677,15 +723,15 @@ class CameraHelper(
                 if (controls.error != null || controls.ready) deliverReadiness(controls.error)
                 if (session !== cameraCaptureSession) return
                 if (controls.ready && researchConfigurationIssue() == null) {
-                    val reportedZoom = if (Build.VERSION.SDK_INT >= 30) result[CaptureResult.CONTROL_ZOOM_RATIO] else null
-                    val cropMatches = requestedResearchCrop != null && result[CaptureResult.SCALER_CROP_REGION] == requestedResearchCrop &&
+                    val reportedZoom = if (Build.VERSION.SDK_INT >= 30) reading[CaptureResult.CONTROL_ZOOM_RATIO] else null
+                    val cropMatches = requestedResearchCrop != null && reading[CaptureResult.SCALER_CROP_REGION] == requestedResearchCrop &&
                         (reportedZoom == null || kotlin.math.abs(reportedZoom - 1f) <= 0.0001f)
                     reportedResearchIssue = researchConfirmation.observe(ResearchCapturePolicy.Reading(
-                        result[CaptureResult.SENSOR_EXPOSURE_TIME], result[CaptureResult.SENSOR_SENSITIVITY],
-                        result[CaptureResult.SENSOR_FRAME_DURATION], cropMatches
+                        reading[CaptureResult.SENSOR_EXPOSURE_TIME], reading[CaptureResult.SENSOR_SENSITIVITY],
+                        reading[CaptureResult.SENSOR_FRAME_DURATION], cropMatches
                     ))
                 } else resetResearchConfirmation()
-                val timestamp = result[CaptureResult.SENSOR_TIMESTAMP]
+                val timestamp = reading[CaptureResult.SENSOR_TIMESTAMP]
                 if (timestamp != null) {
                     if (firstTimestamp == 0L || timestamp <= previousTimestamp) {
                         firstTimestamp = timestamp
@@ -705,16 +751,16 @@ class CameraHelper(
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (now - lastUiUpdateMs < 1000L) return
                 lastUiUpdateMs = now
-                val reportedExposure = result[CaptureResult.SENSOR_EXPOSURE_TIME]
+                val reportedExposure = reading[CaptureResult.SENSOR_EXPOSURE_TIME]
                     ?.let(CaptureSettings::exposureMicros) ?: "—"
-                val reportedIso = result[CaptureResult.SENSOR_SENSITIVITY]?.toString() ?: "—"
+                val reportedIso = reading[CaptureResult.SENSOR_SENSITIVITY]?.toString() ?: "—"
                 val cadence = measuredFps?.let { String.format(Locale.getDefault(), "%.3f", it) } ?: "—"
                 val block = recordingBlockReason()
                 val issue = researchConfigurationIssue() ?: reportedResearchIssue
-                val timingNote = result[CaptureResult.SENSOR_FRAME_DURATION]
+                val timingNote = reading[CaptureResult.SENSOR_FRAME_DURATION]
                     ?.takeIf { block == null && ResearchCapturePolicy.usesFrameTimingTolerance(it) }
                     ?.let { "\n" + activity.getString(R.string.capture_nominal_cadence, 1_000_000_000.0 / it) }.orEmpty()
-                val text = requestedText(profile) + "\n" + activity.getString(
+                val text = requestedText(profile) + "\n" + fixedCamera?.description.orEmpty() + "\n" + activity.getString(
                     R.string.capture_reported, reportedExposure, reportedIso, cadence
                 ) + "\n" + controls.status() + timingNote + (block?.let { "\n$it" } ?: "")
                 val error = controls.error != null || (issue != null && issue != ResearchCapturePolicy.Issue.CONFIRMING)

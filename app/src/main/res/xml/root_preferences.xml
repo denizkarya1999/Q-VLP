@@ -7,6 +7,8 @@
             android:key="camera_status"
             android:layout="@layout/preference_list_layout"
             android:selectable="false" />
+        <Preference android:key="fixed_lens" android:title="@string/fixed_lens"
+            android:selectable="false" android:layout="@layout/preference_list_layout" />
         <EditTextPreference
             android:key="exposure_us"
             android:layout="@layout/preference_list_layout"
