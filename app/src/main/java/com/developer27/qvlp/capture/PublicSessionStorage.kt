@@ -66,14 +66,14 @@ internal object PublicSessionStorage {
     }
 
     fun requireDestination(context: Context, control: CopyControl = CopyControl()): Uri {
-        check(configured(context)) { "Choose $PATH in Sessions → More → Save location before recording." }
+        check(configured(context)) { "Tap the auto-save status on the camera screen and choose $PATH before recording." }
         return destination(context, requireNotNull(selected(context)), control)
     }
 
     private fun destination(context: Context, tree: Uri, control: CopyControl = CopyControl()): Uri {
         val document = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val root = Document(context, document, control)
-        check(root.isDirectory()) { "The selected folder is unavailable. Choose it again in Sessions → More → Save location." }
+        check(root.isDirectory()) { "The selected folder is unavailable. Tap the auto-save status on the camera screen to choose it again." }
         return if (DocumentsContract.getTreeDocumentId(tree) == "primary:$PATH") document
             else root.directory("Q-VLP").uri
     }
@@ -122,10 +122,10 @@ internal object PublicSessionStorage {
         require(SessionFiles.validId(id) && SessionFiles.isDeleting(context, id))
         val tree = selected(context)
         if (tree == null) {
-            check(!receiptFile(context, id).exists()) { "Choose $PATH in Save location to finish deleting this session." }
+            check(!receiptFile(context, id).exists()) { "Tap the auto-save status on the camera screen and choose $PATH to finish deleting this session." }
             return // Never published and no public folder selected.
         }
-        check(configured(context)) { "Choose $PATH in Save location to finish deleting this session." }
+        check(configured(context)) { "Tap the auto-save status on the camera screen and choose $PATH to finish deleting this session." }
         val rootUri = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val control = CopyControl()
         val root = Document(context, rootUri, control)
@@ -203,8 +203,8 @@ internal object PublicSessionStorage {
     }
 
     fun status(context: Context, session: File): String {
-        if (!configured(context)) return "Set up auto-save in Save location"
-        if (preferences(context).contains("error_${session.name}")) return "Auto-save needs attention · Open Save location"
+        if (!configured(context)) return "Set up auto-save from the camera screen"
+        if (preferences(context).contains("error_${session.name}")) return "Auto-save needs attention · Tap the camera screen’s auto-save status"
         return if (!needsSave(context, snapshot(session))) "Saved to $PATH"
             else "Auto-save pending · $PATH"
     }

@@ -291,7 +291,7 @@ internal class BurstWriter private constructor(
                         YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height), reserveFrames), 32L * 1024 * 1024)
                     // Both the recoverable private copy and public copy occupy internal storage.
                     check(StatFs(context.filesDir.absolutePath).availableBytes >= Math.multiplyExact(required, 2L)) { "Not enough free storage for the selected capture length. Choose fewer frames or a shorter duration." }
-                    check(PublicSessionStorage.configured(context)) { "Choose Pictures/Q-VLP in Sessions → Save location before recording." }
+                    check(PublicSessionStorage.configured(context)) { "Tap the auto-save status on the camera screen and choose Pictures/Q-VLP before recording." }
                     val writer = BurstWriter(context.applicationContext, SessionFiles.createBurst(context, position, mounting), profile, length,
                         position, cameraInfo, progress, completed)
                     SessionFiles.writeJson(File(writer.location.directory, "burst.json"), writer.manifest("preparing"))

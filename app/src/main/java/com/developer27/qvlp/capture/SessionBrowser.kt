@@ -100,8 +100,12 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
                         }
                 }
                 builder.setCustomTitle(title.root)
-                    .setNegativeButton("Close", null)
-                    .setNeutralButton("More") { _, _ -> more() }
+                    .setNeutralButton("Close", null)
+                    .setNegativeButton("New Session") { _, _ ->
+                        SessionFiles.newSession(activity.applicationContext)
+                        sessionChanged(true)
+                        message("The next capture will start a new session.")
+                    }
                     .setPositiveButton(activity.getString(R.string.delete_session_count, 0), null)
                 if (sessions.isEmpty()) builder.setMessage("Start a capture to save your first session.")
                 else builder.setAdapter(rows, null)
@@ -143,17 +147,6 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
                 dialog.show()
             }
         }
-    }
-
-    private fun more() {
-        AlertDialog.Builder(activity).setTitle("Sessions")
-            .setItems(arrayOf("New Session", "Save location")) { _, index ->
-                if (index == 1) storage() else {
-                    SessionFiles.newSession(activity.applicationContext)
-                    sessionChanged(true)
-                    message("The next capture will start a new session.")
-                }
-            }.setNegativeButton("Close", null).show()
     }
 
     private fun details(session: SavedSession) {
