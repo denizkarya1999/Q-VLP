@@ -81,6 +81,10 @@ class CameraHelper(
         private set
 
     private var cameraCharacteristics: CameraCharacteristics? = null
+    @Volatile private var activeCapabilities: CameraCapabilities? = null
+    @Volatile private var requestedResearchCrop: Rect? = null
+    private val researchConfirmation = ResearchCapturePolicy.Confirmation()
+    @Volatile private var reportedResearchIssue: ResearchCapturePolicy.Issue? = ResearchCapturePolicy.Issue.CONFIRMING
     @Volatile private var selectedCameraId: String? = null
     private var zoomLevel = 1f
     private var maxZoom = 1f
@@ -162,6 +166,7 @@ class CameraHelper(
             reportZoom()
 
             val capabilities = CameraCapabilities.read(cameraId, characteristics)
+            activeCapabilities = capabilities
             val profile = CameraSettingsStore(sharedPreferences, cameraId).load(capabilities)
             activeProfile = profile
             cameraControls = FocusWhiteBalanceController(activity.applicationContext, capabilities.controls, profile.controls)
@@ -205,6 +210,10 @@ class CameraHelper(
         cameraDevice = null
         captureRequestBuilder = null
         activeProfile = null
+        activeCapabilities = null
+        selectedCameraId = null // Re-read the selection after Settings applies Factory Reset.
+        requestedResearchCrop = null
+        resetResearchConfirmation()
         activeCaptureCallback = null
         cameraControls = null
     }
@@ -364,6 +373,7 @@ class CameraHelper(
         val previous = zoomLevel
         try {
             zoomLevel = next
+            resetResearchConfirmation()
             applyResearchGeometry()
             updatePreview()
             sharedPreferences.edit().putFloat("camera_${getCameraId()}_zoom", zoomLevel).apply()
@@ -389,6 +399,7 @@ class CameraHelper(
     /** Apply the capture profile; locks may briefly meter before restoring manual AE. */
     fun applyCaptureSettings(submitRequest: Boolean = true) {
         val profile = activeProfile ?: return
+        resetResearchConfirmation()
         captureRequestBuilder?.apply {
             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
@@ -428,8 +439,32 @@ class CameraHelper(
     internal fun recordingBlockReason(): String? {
         if (cameraDevice == null || cameraCaptureSession == null || activeProfile == null)
             return activity.getString(R.string.camera_controls_wait)
+        researchConfigurationIssue()?.let { return it.message }
         val controls = cameraControls ?: return activity.getString(R.string.camera_controls_wait)
-        return if (controls.ready) null else controls.error ?: activity.getString(R.string.camera_controls_wait)
+        if (!controls.ready) return controls.error ?: activity.getString(R.string.camera_controls_wait)
+        return reportedResearchIssue?.message
+    }
+
+    private fun researchConfigurationIssue(): ResearchCapturePolicy.Issue? {
+        val profile = activeProfile ?: return ResearchCapturePolicy.Issue.CONFIRMING
+        val capabilities = activeCapabilities ?: return ResearchCapturePolicy.Issue.CONFIRMING
+        val size = profile.stream.size
+        val fixedResolution = previewSize == size && frameReader?.width == size.width && frameReader?.height == size.height &&
+            profile.stream in capabilities.streams &&
+            kotlin.math.abs(size.width.toDouble() / size.height - capabilities.sensorAspectRatio) < 0.02
+        return ResearchCapturePolicy.settingsIssue(
+            rear = cameraCharacteristics?.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK,
+            zoom = zoomLevel, fixedResolution = fixedResolution, exposureNs = profile.exposureNs,
+            fixedIso = capabilities.isoRange.contains(profile.iso),
+            fps = profile.fps.takeIf { it in profile.stream.frameRates } ?: 0,
+            fixedFocus = profile.controls.focusMode in listOf(FocusMode.LOCK, FocusMode.MANUAL, FocusMode.FIXED),
+            fixedWhiteBalance = ResearchCameraReset.isFixedWhiteBalance(profile.controls.whiteBalanceMode)
+        )
+    }
+
+    private fun resetResearchConfirmation() {
+        researchConfirmation.reset()
+        reportedResearchIssue = ResearchCapturePolicy.Issue.CONFIRMING
     }
 
     private fun dispatch(action: () -> Unit): Boolean {
@@ -524,6 +559,9 @@ class CameraHelper(
                             }
                             previewCallback?.onCaptureCompleted(s, request, result)
                             cameraControls?.error?.let { writer.warning(it) }
+                            if (window.frameId(result.frameNumber) != null) reportedResearchIssue?.let {
+                                writer.warning("Research settings need attention: ${it.message}")
+                            }
                         }
                         override fun onCaptureFailed(s: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure) {
                             if (burstWriter !== writer) return
@@ -638,6 +676,15 @@ class CameraHelper(
                 }
                 if (controls.error != null || controls.ready) deliverReadiness(controls.error)
                 if (session !== cameraCaptureSession) return
+                if (controls.ready && researchConfigurationIssue() == null) {
+                    val reportedZoom = if (Build.VERSION.SDK_INT >= 30) result[CaptureResult.CONTROL_ZOOM_RATIO] else null
+                    val cropMatches = requestedResearchCrop != null && result[CaptureResult.SCALER_CROP_REGION] == requestedResearchCrop &&
+                        (reportedZoom == null || kotlin.math.abs(reportedZoom - 1f) <= 0.0001f)
+                    reportedResearchIssue = researchConfirmation.observe(ResearchCapturePolicy.Reading(
+                        result[CaptureResult.SENSOR_EXPOSURE_TIME], result[CaptureResult.SENSOR_SENSITIVITY],
+                        result[CaptureResult.SENSOR_FRAME_DURATION], cropMatches
+                    ))
+                } else resetResearchConfirmation()
                 val timestamp = result[CaptureResult.SENSOR_TIMESTAMP]
                 if (timestamp != null) {
                     if (firstTimestamp == 0L || timestamp <= previousTimestamp) {
@@ -662,11 +709,14 @@ class CameraHelper(
                     ?.let(CaptureSettings::exposureMicros) ?: "—"
                 val reportedIso = result[CaptureResult.SENSOR_SENSITIVITY]?.toString() ?: "—"
                 val cadence = measuredFps?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "—"
+                val block = recordingBlockReason()
+                val issue = researchConfigurationIssue() ?: reportedResearchIssue
                 val text = requestedText(profile) + "\n" + activity.getString(
                     R.string.capture_reported, reportedExposure, reportedIso, cadence
-                ) + "\n" + controls.status()
+                ) + "\n" + controls.status() + (block?.let { "\n$it" } ?: "")
+                val error = controls.error != null || (issue != null && issue != ResearchCapturePolicy.Issue.CONFIRMING)
                 activity.runOnUiThread {
-                    if (session === cameraCaptureSession) activity.showCameraState(controls.ready, text, controls.error != null)
+                    if (session === cameraCaptureSession) activity.showCameraState(block == null, text, error)
                 }
             }
         }.also { activeCaptureCallback = it }
@@ -699,7 +749,8 @@ class CameraHelper(
             val height = kotlin.math.ceil(sensor.height() / zoomLevel.toDouble()).toInt().coerceIn(1, sensor.height())
             val left = sensor.left + (sensor.width() - width) / 2
             val top = sensor.top + (sensor.height() - height) / 2
-            builder.set(CaptureRequest.SCALER_CROP_REGION, Rect(left, top, left + width, top + height))
+            requestedResearchCrop = Rect(left, top, left + width, top + height)
+            builder.set(CaptureRequest.SCALER_CROP_REGION, requestedResearchCrop)
         }
         if (Build.VERSION.SDK_INT >= 31 && CaptureRequest.SCALER_ROTATE_AND_CROP in keys &&
             c[CameraCharacteristics.SCALER_AVAILABLE_ROTATE_AND_CROP_MODES]?.contains(CaptureRequest.SCALER_ROTATE_AND_CROP_NONE) == true)

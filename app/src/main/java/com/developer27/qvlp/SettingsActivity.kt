@@ -19,6 +19,7 @@ import com.developer27.qvlp.camera.CaptureSettings
 import com.developer27.qvlp.camera.FocusMode
 import com.developer27.qvlp.camera.FocusWhiteBalanceCapabilities
 import com.developer27.qvlp.camera.PreviewDisplaySize
+import com.developer27.qvlp.camera.ResearchCameraReset
 import com.developer27.qvlp.capture.CaptureLengthPreferences
 import com.developer27.qvlp.capture.ResearchSettings
 
@@ -109,6 +110,24 @@ class SettingsActivity : AppCompatActivity() {
             whiteBalance = requireNotNull(findPreference("white_balance_mode"))
             val status = requireNotNull(findPreference<Preference>("camera_status"))
             val reset = requireNotNull(findPreference<Preference>("reset_camera"))
+            // This must remain available even when the currently selected camera is unsupported.
+            reset.setOnPreferenceClickListener {
+                try {
+                    val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                    val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    val selection = ResearchCameraReset.select(manager, prefs.getString("selected_capture_camera", null))
+                    ResearchCameraReset.apply(requireContext(), prefs, selection)
+                    requireActivity().intent.putExtra(EXTRA_CAMERA_ID, selection.cameraId)
+                    message(getString(R.string.camera_defaults_restored, selection.profile.stream.label, selection.profile.fps))
+                    requireActivity().recreate()
+                } catch (error: Exception) {
+                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setTitle(R.string.factory_reset_unavailable)
+                        .setMessage(error.message ?: getString(R.string.camera_settings_unavailable))
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }
+                true
+            }
             try {
                 val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
                 val id = requireNotNull(requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID)) {
@@ -122,7 +141,7 @@ class SettingsActivity : AppCompatActivity() {
                 status.isVisible = true
                 status.title = getString(R.string.camera_settings_unavailable)
                 status.summary = error.message ?: getString(R.string.camera_settings_unavailable)
-                listOf(exposure, iso, resolution, fps, focus, focusDistance, whiteBalance, reset)
+                listOf(exposure, iso, resolution, fps, focus, focusDistance, whiteBalance)
                     .forEach { it.isEnabled = false }
                 return
             }
@@ -207,12 +226,6 @@ class SettingsActivity : AppCompatActivity() {
                     }
                 }
                 false
-            }
-            reset.setOnPreferenceClickListener {
-                save(capabilities.defaults())
-                previewDisplaySize.value = PreviewDisplaySize.ORIGINAL.key
-                message(getString(R.string.camera_defaults_restored))
-                true
             }
             refresh()
         }
