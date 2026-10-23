@@ -1,147 +1,141 @@
-<androidx.constraintlayout.widget.ConstraintLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/darkBlue"
-    android:padding="16dp"
+    android:fillViewport="true"
     tools:context=".AboutQvlpActivity">
 
-    <!-- Title Bar (Icon + Title) -->
     <LinearLayout
-        android:id="@+id/title_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:background="@color/darkBlue"
-        android:paddingTop="16dp"
-        android:paddingBottom="16dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <!-- Icon (ImageButton) -->
-        <ImageButton
-            android:id="@+id/iconImageButton"
-            android:layout_width="58dp"
-            android:layout_height="58dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/qvlp_icon"
-            android:scaleType="fitCenter"
-            android:adjustViewBounds="true"
-            android:contentDescription="@string/app_logo_description" />
-
-        <!-- Title Text -->
-        <TextView
-            android:id="@+id/titleText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textSize="44sp"
-            android:textColor="@color/yellow"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:paddingStart="8dp" />
-    </LinearLayout>
-
-    <!-- Details container: wraps content after "University" -->
-    <LinearLayout
-        android:id="@+id/details_container"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@color/yellow"
-        android:padding="16dp"
-        android:layout_marginStart="3dp"
-        android:layout_marginEnd="3dp"
-        app:layout_constraintTop_toBottomOf="@id/title_container"
-        app:layout_constraintBottom_toTopOf="@id/umLogo"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        android:gravity="center_horizontal"
+        android:padding="16dp">
 
-        <!-- Header Text -->
-        <TextView
-            android:id="@+id/detailsHeader"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:id="@+id/title_container"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/about_qvlp"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:textColor="@color/darkBlue"
-            android:layout_gravity="center_horizontal"
-            android:paddingBottom="8dp" />
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp">
 
-        <TextView
-            android:id="@+id/textViewEdition"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/project_description"
-            android:textColor="@color/darkBlue" />
+            <ImageView
+                android:id="@+id/iconImageButton"
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:src="@drawable/qvlp_icon"
+                android:scaleType="fitCenter"
+                android:contentDescription="@string/app_logo_description" />
 
-        <TextView
-            android:id="@+id/textViewVersion"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/project_version"
-            android:textColor="@color/darkBlue"
-            android:layout_marginTop="8dp" />
+            <TextView
+                android:id="@+id/titleText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textSize="44sp"
+                android:textColor="@color/yellow"
+                android:textStyle="bold"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+        </LinearLayout>
 
-        <TextView
-            android:id="@+id/textViewReleaseDate"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:id="@+id/details_container"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/project_stage"
-            android:textColor="@color/darkBlue"
-            android:layout_marginTop="8dp" />
+            android:orientation="vertical"
+            android:background="@color/yellow"
+            android:padding="16dp"
+            android:layout_marginStart="3dp"
+            android:layout_marginEnd="3dp">
 
-        <TextView
-            android:id="@+id/textViewDevelopers"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Developer: Deniz Acikbas"
-            android:textColor="@color/darkBlue"
-            android:layout_marginTop="8dp" />
+            <TextView
+                android:id="@+id/detailsHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/about_qvlp"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/darkBlue"
+                android:layout_gravity="center_horizontal"
+                android:paddingBottom="8dp" />
 
-        <TextView
-            android:id="@+id/textViewProfessor"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Professor: Xiao Zhang"
-            android:textColor="@color/darkBlue"
-            android:layout_marginTop="8dp" />
+            <TextView
+                android:id="@+id/textViewEdition"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_description"
+                android:textColor="@color/darkBlue" />
 
-        <TextView
-            android:id="@+id/textViewLab"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Lab: Trustworthy AIoT Lab"
-            android:textColor="@color/darkBlue"
-            android:layout_marginTop="8dp" />
+            <TextView
+                android:id="@+id/textViewVersion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_version"
+                android:textColor="@color/darkBlue"
+                android:layout_marginTop="8dp" />
 
-        <TextView
-            android:id="@+id/textViewUniversity"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="University: University of Michigan-Dearborn"
-            android:textColor="@color/darkBlue"
-            android:layout_marginTop="8dp" />
+            <TextView
+                android:id="@+id/textViewReleaseDate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_release_date"
+                android:textColor="@color/darkBlue"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_authors_label"
+                android:textStyle="bold"
+                android:textColor="@color/darkBlue"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/textViewAuthors"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_authors"
+                android:lineSpacingExtra="4dp"
+                android:textColor="@color/darkBlue"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:id="@+id/textViewProfessor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_professor"
+                android:textColor="@color/darkBlue"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/textViewLab"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_lab"
+                android:textColor="@color/darkBlue"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:id="@+id/textViewUniversity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/project_university"
+                android:textColor="@color/darkBlue"
+                android:layout_marginTop="8dp" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/umLogo"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:src="@drawable/umlogo"
+            android:contentDescription="@string/university_logo_description"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="16dp" />
     </LinearLayout>
-
-    <!-- UofM Logo with smaller dimensions, placed at the bottom -->
-    <ImageView
-        android:id="@+id/umLogo"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
-        android:src="@drawable/umlogo"
-        android:layout_marginStart="32dp"
-        android:layout_marginEnd="32dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="16dp"
-        app:layout_constraintTop_toBottomOf="@id/details_container"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</ScrollView>

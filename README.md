@@ -6,10 +6,17 @@ The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplat
 
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
-- Version: 0.2.0
+- Version: 1.0
+- Release date: TBD
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
 **Topics:** `android` · `kotlin` · `camera2` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
+
+## Authors
+
+Thuy-Anh Nguyen, Shahed Alabdulrahman, Deniz Karya Acikbas, Christian Nwobu, Clark Friese, and Ethan Liu.
+
+Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · University of Michigan-Dearborn.
 
 This camera foundation provides preview, exposure/ISO controls, camera switching, zoom and MP4 video recording. Legacy tracking code, model assets, unused imagery and unused CV/ML dependencies have been removed. The full Q-VLP frame-burst and metadata workflow is still to be implemented.
 
