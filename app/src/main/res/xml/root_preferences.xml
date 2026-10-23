@@ -64,4 +64,39 @@
             android:title="@string/reset_camera"
             android:summary="@string/reset_camera_summary" />
     </PreferenceCategory>
+    <PreferenceCategory android:title="@string/capture_session_settings"
+        android:layout="@layout/preference_category_layout">
+        <EditTextPreference android:key="position_id" android:title="@string/position_id"
+            android:dialogTitle="@string/position_id" android:defaultValue="0"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="rx_x_m" android:title="@string/position_x"
+            android:dialogTitle="@string/position_x" android:dialogMessage="@string/position_coordinates_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="rx_y_m" android:title="@string/position_y"
+            android:dialogTitle="@string/position_y" android:dialogMessage="@string/position_coordinates_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="lens_height_m" android:title="@string/lens_height"
+            android:dialogTitle="@string/lens_height" android:dialogMessage="@string/mount_measurement_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="lens_offset_x_m" android:title="@string/lens_offset_x"
+            android:dialogTitle="@string/lens_offset_x" android:dialogMessage="@string/mount_offset_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="lens_offset_y_m" android:title="@string/lens_offset_y"
+            android:dialogTitle="@string/lens_offset_y" android:dialogMessage="@string/mount_offset_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="row_time_us" android:title="@string/row_time"
+            android:dialogTitle="@string/row_time" android:dialogMessage="@string/row_time_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+        <EditTextPreference android:key="mount_notes" android:title="@string/mount_notes"
+            android:dialogTitle="@string/mount_notes" android:dialogMessage="@string/mount_notes_help"
+            android:layout="@layout/preference_list_layout" android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting" android:negativeButtonText="@android:string/cancel" />
+    </PreferenceCategory>
 </PreferenceScreen>

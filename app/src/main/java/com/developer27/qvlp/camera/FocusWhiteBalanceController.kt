@@ -8,6 +8,7 @@ import android.hardware.camera2.params.ColorSpaceTransform
 import android.hardware.camera2.params.RggbChannelVector
 import android.os.SystemClock
 import com.developer27.qvlp.R
+import com.developer27.qvlp.capture.BurstRequestTag
 import kotlin.math.abs
 
 /** Acquires locks once per camera opening and carries them across preview/record sessions. */
@@ -97,7 +98,8 @@ internal class FocusWhiteBalanceController(
     }
 
     @Synchronized fun onResult(result: TotalCaptureResult): Update {
-        val tag = result.request.tag as? RequestTag ?: return Update()
+        val requestTag = result.request.tag
+        val tag = ((requestTag as? BurstRequestTag)?.controlsTag ?: requestTag) as? RequestTag ?: return Update()
         if (tag.owner !== this || error != null) return Update()
         if (result.request[CaptureRequest.CONTROL_AF_TRIGGER] == CaptureRequest.CONTROL_AF_TRIGGER_START) {
             focusTriggerFrame = result.frameNumber

@@ -3,6 +3,7 @@ package com.developer27.qvlp
 import android.content.Context
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.view.View
 import android.text.InputType
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -17,6 +18,7 @@ import com.developer27.qvlp.camera.CameraSettingsStore
 import com.developer27.qvlp.camera.CaptureSettings
 import com.developer27.qvlp.camera.FocusMode
 import com.developer27.qvlp.camera.FocusWhiteBalanceCapabilities
+import com.developer27.qvlp.capture.ResearchSettings
 
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,9 +32,14 @@ class SettingsActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_CAMERA_ID = "camera_id"
+        const val EXTRA_PREFERENCE_KEY = "preference_key"
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
+        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+            super.onViewCreated(view, savedInstanceState)
+            requireActivity().intent.getStringExtra(EXTRA_PREFERENCE_KEY)?.let { scrollToPreference(it) }
+        }
         private lateinit var capabilities: CameraCapabilities
         private lateinit var store: CameraSettingsStore
         private lateinit var profile: CameraProfile
@@ -46,6 +53,9 @@ class SettingsActivity : AppCompatActivity() {
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.root_preferences, rootKey)
+            ResearchSettings.bind(this) {
+                if (::capabilities.isInitialized && ::profile.isInitialized) capabilities.cameraId to profile.stream.key else null
+            }
             exposure = requireNotNull(findPreference("exposure_us"))
             iso = requireNotNull(findPreference("iso"))
             resolution = requireNotNull(findPreference("resolution"))
@@ -192,6 +202,7 @@ class SettingsActivity : AppCompatActivity() {
             fps.value = profile.fps.toString()
             fps.summary = getString(R.string.fps_summary, profile.fps)
             refreshFocusAndWhiteBalance()
+            ResearchSettings.refreshRowTime(this, capabilities.cameraId to profile.stream.key)
         }
 
         private fun focusRangeMessage(): String = getString(

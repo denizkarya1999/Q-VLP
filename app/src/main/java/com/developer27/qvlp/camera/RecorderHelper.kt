@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.ParcelFileDescriptor
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
 import android.view.Surface
@@ -41,6 +42,12 @@ class RecorderHelper(
      */
     @SuppressLint("MissingPermission")
     fun startRecordingVideo(callback: (String?) -> Unit) {
+        cameraHelper.backgroundHandler?.let { handler ->
+            if (Looper.myLooper() != handler.looper) {
+                handler.post { startRecordingVideo { error -> mainActivity.runOnUiThread { callback(error) } } }
+                return
+            }
+        }
         if (recordingRequested || isRecording) return
         val cameraDevice = cameraHelper.cameraDevice
         if (cameraDevice == null) {
@@ -54,6 +61,10 @@ class RecorderHelper(
         }
         cameraHelper.recordingBlockReason()?.let { reason ->
             callback(reason)
+            return
+        }
+        if (profile.fps !in profile.stream.videoFrameRates) {
+            callback("This resolution/frame rate supports YUV capture but not MP4 recording. Choose another profile for video.")
             return
         }
 
@@ -154,6 +165,12 @@ class RecorderHelper(
 
     /** Stops recording, finalizes the media item, and optionally restores camera preview. */
     fun stopRecordingVideo(restorePreview: Boolean = true) {
+        cameraHelper.backgroundHandler?.let { handler ->
+            if (Looper.myLooper() != handler.looper) {
+                handler.post { stopRecordingVideo(restorePreview) }
+                return
+            }
+        }
         val hadPendingRecording = recordingRequested || isRecording || mediaRecorder != null
         val savedDisplayName = outputDisplayName
         recordingRequested = false

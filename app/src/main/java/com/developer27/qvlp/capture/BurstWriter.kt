@@ -1,0 +1,260 @@
+package com.developer27.qvlp.capture
+
+import android.content.Context
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
+import android.media.Image
+import android.os.StatFs
+import com.developer27.qvlp.camera.CameraProfile
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.time.Instant
+import java.util.UUID
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
+
+internal data class BurstRequestTag(val controlsTag: Any?, val burstId: String, val frameId: Int)
+internal data class BurstSummary(val sessionId: String, val positionId: Int, val saved: Int,
+    val fps: Double?, val warnings: List<String>, val interrupted: Boolean)
+
+internal data class FrameMetadata(val id: Int, val timestamp: Long?, val exposureNs: Long?, val iso: Int?, val details: JSONObject) {
+    companion object {
+        fun read(id: Int, r: TotalCaptureResult): FrameMetadata {
+            val gains = r[CaptureResult.COLOR_CORRECTION_GAINS]
+            val crop = r[CaptureResult.SCALER_CROP_REGION]
+            return FrameMetadata(id, r[CaptureResult.SENSOR_TIMESTAMP], r[CaptureResult.SENSOR_EXPOSURE_TIME],
+                r[CaptureResult.SENSOR_SENSITIVITY], JSONObject().apply {
+                    put("camera_frame_number", r.frameNumber)
+                    put("frame_duration_ns", r[CaptureResult.SENSOR_FRAME_DURATION] ?: JSONObject.NULL)
+                    put("focus_distance", r[CaptureResult.LENS_FOCUS_DISTANCE] ?: JSONObject.NULL)
+                    put("af_mode", r[CaptureResult.CONTROL_AF_MODE] ?: JSONObject.NULL)
+                    put("awb_mode", r[CaptureResult.CONTROL_AWB_MODE] ?: JSONObject.NULL)
+                    put("awb_locked", r[CaptureResult.CONTROL_AWB_LOCK] ?: JSONObject.NULL)
+                    put("white_balance_gains", gains?.let { JSONArray((0..3).map(it::getComponent)) } ?: JSONObject.NULL)
+                    put("sensor_crop", crop?.let { JSONArray(listOf(it.left, it.top, it.right, it.bottom)) } ?: JSONObject.NULL)
+                })
+        }
+    }
+}
+
+/** One bounded, asynchronous writer per burst; camera buffers are always released promptly. */
+internal class BurstWriter private constructor(
+    private val location: BurstLocation,
+    private val profile: CameraProfile,
+    private val position: Position,
+    private val cameraInfo: JSONObject,
+    private val progress: (Int) -> Unit,
+    private val completed: (BurstSummary) -> Unit
+) {
+    val id = UUID.randomUUID().toString()
+    private val accepting = AtomicBoolean(true)
+    private val slots = Semaphore(maxOf(1, minOf(4,
+        (32L * 1024 * 1024 / YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height)).toInt())))
+    // These collections are accessed only on SessionFiles.io.
+    private val images = mutableMapOf<Long, YuvFrame>()
+    private val metadata = mutableMapOf<Long, FrameMetadata>()
+    private val allMetadata = mutableMapOf<Int, FrameMetadata>()
+    private val starts = mutableMapOf<Long, Int>()
+    private val saved = sortedMapOf<Int, JSONObject>()
+    private val warnings = linkedSetOf<String>()
+    private val createdAt = Instant.now().toString()
+
+    private fun manifest(state: String) = JSONObject().apply {
+        put("burst_id", id)
+        put("session_id", location.sessionId)
+        put("state", state)
+        put("started_at", createdAt)
+        put("position", position.json())
+        put("camera", cameraInfo)
+        put("requested", JSONObject().put("frames", FRAME_COUNT).put("countdown_seconds", 3)
+            .put("exposure_time_ns", profile.exposureNs).put("iso", profile.iso)
+            .put("width", profile.stream.size.width).put("height", profile.stream.size.height)
+            .put("fps", profile.fps).put("focus_mode", profile.controls.focusMode.name)
+            .put("focus_value", profile.controls.focusDistance).put("white_balance_mode", profile.controls.whiteBalanceMode))
+        put("frames_saved", saved.size)
+        put("frames", JSONArray(saved.values.toList()))
+        put("warnings", JSONArray(warnings.toList()))
+    }
+
+    fun onStarted(frameId: Int, timestamp: Long) {
+        if (accepting.get()) SessionFiles.io.execute { starts[timestamp] = frameId }
+    }
+
+    fun onMetadata(value: FrameMetadata) {
+        if (!accepting.get()) return
+        SessionFiles.io.execute {
+            allMetadata[value.id] = value
+            value.timestamp?.let { timestamp ->
+                metadata[timestamp] = value
+                images.remove(timestamp)?.let { writeFrame(it, value) }
+            }
+        }
+    }
+
+    fun warning(message: String) {
+        if (accepting.get()) SessionFiles.io.execute { warnings.add(message) }
+    }
+
+    /** Must run on the same camera handler as the capture callbacks and finish(). */
+    fun onImage(image: Image) {
+        try {
+            if (!accepting.get()) return
+            if (!slots.tryAcquire()) {
+                warning("Frame buffer full: one or more frames could not be saved. Lower resolution or frame rate.")
+                return
+            }
+            val frame = try { YuvFrame.copy(image) } catch (e: Exception) {
+                slots.release()
+                warning("Could not read a YUV frame: ${e.message}")
+                return
+            }
+            SessionFiles.io.execute {
+                if (images.containsKey(frame.timestamp)) {
+                    warnings.add("Duplicate image timestamp received.")
+                    slots.release()
+                } else {
+                    val data = metadata[frame.timestamp]
+                    if (data != null) writeFrame(frame, data) else images[frame.timestamp] = frame
+                }
+            }
+        } finally {
+            image.close()
+        }
+    }
+
+    private fun writeFrame(frame: YuvFrame, meta: FrameMetadata) {
+        try {
+            if (meta.id !in 0 until FRAME_COUNT || saved.containsKey(meta.id)) {
+                warnings.add("Duplicate or unrecognized frame was excluded.")
+                return
+            }
+            val name = "frame_${meta.id.toString().padStart(5, '0')}.yuv"
+            val partial = File(location.directory, "$name.part")
+            try {
+                partial.outputStream().buffered().use { it.write(frame.bytes) }
+                check(partial.renameTo(File(location.directory, name))) { "Could not finish the frame file." }
+            } catch (e: Exception) {
+                partial.delete()
+                throw e
+            }
+            saved[meta.id] = JSONObject().apply {
+                put("frame_id", meta.id)
+                put("file", name)
+                put("timestamp_ns", frame.timestamp)
+                put("exposure_time_ns", meta.exposureNs ?: JSONObject.NULL)
+                put("iso", meta.iso ?: JSONObject.NULL)
+                put("width", frame.width)
+                put("height", frame.height)
+                put("image_crop", JSONArray(frame.crop))
+                put("source_row_strides", JSONArray(frame.rowStrides))
+                put("source_pixel_strides", JSONArray(frame.pixelStrides))
+                put("capture_result", meta.details)
+            }
+            // Journal each saved frame: a process interruption still leaves usable metadata.
+            SessionFiles.writeJson(File(location.directory, "burst.json"), manifest("capturing"))
+            progress(saved.size)
+        } catch (e: Exception) {
+            warnings.add("Storage error for frame ${meta.id}: ${e.message}")
+        } finally {
+            slots.release()
+        }
+    }
+
+    fun finish(reason: String? = null) {
+        if (!accepting.compareAndSet(true, false)) return
+        SessionFiles.io.execute {
+            if (reason != null) warnings.add(reason)
+            // Keep images with a known request ID even if the device omitted its result.
+            images.values.toList().forEach { frame ->
+                val frameId = starts[frame.timestamp]
+                if (frameId != null) {
+                    warnings.add("Some frames have no capture metadata; unknown values are left empty.")
+                    writeFrame(frame, allMetadata[frameId]
+                        ?: FrameMetadata(frameId, frame.timestamp, null, null, JSONObject()))
+                } else {
+                    warnings.add("An image had no matching capture timestamp and was excluded.")
+                    slots.release()
+                }
+            }
+            images.clear()
+            val missing = (0 until FRAME_COUNT).filterNot(saved::containsKey)
+            if (missing.isNotEmpty()) warnings.add("Missing frames: ${missing.size} of $FRAME_COUNT (${saved.size} saved).")
+            val ordered = saved.values.sortedBy { it.getLong("timestamp_ns") }
+            val elapsed = if (ordered.size >= 2) ordered.last().getLong("timestamp_ns") - ordered.first().getLong("timestamp_ns") else 0L
+            val fps = if (elapsed > 0) (ordered.size - 1) * 1_000_000_000.0 / elapsed else null
+            val slowIntervals = ordered.zipWithNext().count { (a, b) ->
+                val interval = b.getLong("timestamp_ns") - a.getLong("timestamp_ns")
+                interval > 0 && 1_000_000_000.0 / interval < profile.fps * 0.9
+            }
+            if (fps != null && fps < profile.fps * 0.9) warnings.add(
+                "Frame rate dropped more than 10%: ${String.format(java.util.Locale.US, "%.2f", fps)} fps measured; ${profile.fps} fps requested.")
+            else if (slowIntervals > 0) warnings.add("Frame rate dropped more than 10% in $slowIntervals frame interval(s).")
+            if (fps == null) warnings.add("Not enough frames to measure frame rate.")
+            if (allMetadata.values.mapNotNull { it.exposureNs }.distinct().size > 1)
+                warnings.add("Exposure changed during the burst.")
+            if (allMetadata.values.mapNotNull { it.iso }.distinct().size > 1)
+                warnings.add("ISO changed during the burst.")
+            if (saved.values.any { it.isNull("exposure_time_ns") || it.isNull("iso") })
+                warnings.add("Actual exposure or ISO is missing for some frames.")
+            var previous: Long? = null
+            ordered.forEach { frame ->
+                val now = frame.getLong("timestamp_ns")
+                val delta = previous?.let { now - it }
+                frame.put("fps", if (delta != null && delta > 0) 1_000_000_000.0 / delta else JSONObject.NULL)
+                previous = now
+            }
+            try {
+                writeCsv()
+                val output = manifest(if (reason == null) "complete" else "interrupted")
+                    .put("finished_at", Instant.now().toString()).put("measured_fps", fps ?: JSONObject.NULL)
+                    .put("slow_frame_intervals", slowIntervals)
+                    .put("missing_frame_ids", JSONArray(missing))
+                SessionFiles.writeJson(File(location.directory, "burst.json"), output)
+            } catch (e: Exception) {
+                warnings.add("Could not finish session metadata: ${e.message}. Saved frame files remain available.")
+            }
+            completed(BurstSummary(location.sessionId, position.id, saved.size, fps, warnings.toList(), reason != null))
+        }
+    }
+
+    private fun writeCsv() {
+        val header = mutableListOf("session_id", "position_id", "rx_x_m", "rx_y_m", "frame_id", "timestamp_ns",
+            "exposure_time_s", "iso", "fps", "sensor_width_px", "sensor_height_px", "row_time_us")
+        for (led in 1..4) listOf("detected", "img_x_px", "img_y_px", "freq_est_hz", "stripe_period_rows",
+            "blob_area_px", "peak_level", "touches_border").forEach { header.add("led${led}_$it") }
+        val partial = File(location.directory, "frames.csv.part")
+        partial.bufferedWriter(Charsets.UTF_8).use { csv ->
+            csv.appendLine(header.joinToString(","))
+            saved.values.forEach { f ->
+                val exposure = if (f.isNull("exposure_time_ns")) null else java.math.BigDecimal.valueOf(f.getLong("exposure_time_ns"), 9).toPlainString()
+                val fields = mutableListOf<Any?>(location.sessionId, position.id, position.x, position.y,
+                    f.getInt("frame_id"), f.getLong("timestamp_ns"), exposure,
+                    f.opt("iso"), f.opt("fps"), f.getInt("width"), f.getInt("height"), location.mounting.opt("row_time_us"))
+                repeat(32) { fields.add(null) } // LED values are unknown until CV is implemented.
+                csv.appendLine(fields.joinToString(",") { if (it == null || it == JSONObject.NULL) "" else it.toString() })
+            }
+        }
+        check(partial.renameTo(File(location.directory, "frames.csv"))) { "Cannot finish frames.csv." }
+    }
+
+    companion object {
+        const val FRAME_COUNT = 30
+        fun prepare(context: Context, profile: CameraProfile, position: Position, mounting: JSONObject,
+                    cameraInfo: JSONObject, progress: (Int) -> Unit, completed: (BurstSummary) -> Unit,
+                    prepared: (BurstWriter?, String?) -> Unit) {
+            SessionFiles.io.execute {
+                try {
+                    val required = YuvFrame.byteCount(profile.stream.size.width, profile.stream.size.height) * FRAME_COUNT + 32L * 1024 * 1024
+                    check(StatFs(context.filesDir.absolutePath).availableBytes >= required) { "Not enough free storage for this 30-frame capture." }
+                    val writer = BurstWriter(SessionFiles.createBurst(context, position, mounting), profile,
+                        position, cameraInfo, progress, completed)
+                    SessionFiles.writeJson(File(writer.location.directory, "burst.json"), writer.manifest("preparing"))
+                    prepared(writer, null)
+                } catch (e: Exception) {
+                    prepared(null, e.message ?: "Could not prepare session storage.")
+                }
+            }
+        }
+    }
+}

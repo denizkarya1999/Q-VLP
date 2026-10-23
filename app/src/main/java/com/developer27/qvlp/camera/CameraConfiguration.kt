@@ -2,6 +2,7 @@ package com.developer27.qvlp.camera
 
 import android.content.SharedPreferences
 import android.graphics.SurfaceTexture
+import android.graphics.ImageFormat
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
 import android.media.MediaCodecInfo
@@ -15,7 +16,8 @@ import kotlin.math.abs
 internal data class StreamOption(
     val size: Size,
     val minFrameDurationNs: Long,
-    val frameRates: List<Int>
+    val frameRates: List<Int>,
+    val videoFrameRates: List<Int>
 ) {
     val key: String get() = "${size.width}x${size.height}"
     val label: String get() = "${size.width} × ${size.height}"
@@ -38,7 +40,7 @@ private fun videoBitRate(size: Size, fps: Int): Int =
     (size.width.toLong() * size.height * fps * 15 / 100)
         .coerceIn(2_000_000L, 60_000_000L).toInt()
 
-/** Capabilities for ordinary Camera2 sessions, shared by preview and H.264 recording. */
+/** Preview/YUV capabilities; MP4 support is tracked separately from research capture. */
 internal data class CameraCapabilities(
     val cameraId: String,
     val exposureRangeNs: Range<Long>,
@@ -92,29 +94,32 @@ internal data class CameraCapabilities(
             }
             val previews = map.getOutputSizes(SurfaceTexture::class.java)?.toSet().orEmpty()
             val videos = map.getOutputSizes(MediaRecorder::class.java).orEmpty()
+            val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888).orEmpty()
             val codecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
             // Use normal-session AE ranges only as a conservative ceiling for the menu.
             // The manual request itself controls timing through SENSOR_FRAME_DURATION.
             val normalMaxFps = characteristics[CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES]
                 ?.maxOfOrNull { it.upper } ?: 30
             val candidateRates = listOf(1, 5, 10, 15, 24, 25, 30, 50, 60)
-            val streams = videos.filter { it in previews }.mapNotNull { size ->
+            val streams = yuvSizes.filter { it in previews }.mapNotNull { size ->
                 val previewMin = map.getOutputMinFrameDuration(SurfaceTexture::class.java, size)
-                val videoMin = map.getOutputMinFrameDuration(MediaRecorder::class.java, size)
+                val yuvMin = map.getOutputMinFrameDuration(ImageFormat.YUV_420_888, size)
                 // A zero duration is unknown, not evidence that an arbitrary rate is supported.
-                if (previewMin <= 0L || videoMin <= 0L) return@mapNotNull null
-                val minDuration = maxOf(previewMin, videoMin)
+                if (previewMin <= 0L || yuvMin <= 0L) return@mapNotNull null
+                val minDuration = maxOf(previewMin, yuvMin)
                 val rates = candidateRates.filter { fps ->
                     val requestedDuration = CaptureSettings.frameDurationNanos(fps)
                     val duration = maxOf(requestedDuration, minDuration)
                     fps <= normalMaxFps && minDuration <= requestedDuration * 1.001 &&
-                        duration <= maxDuration && exposure.lower <= duration &&
-                        supportsEncoding(codecs, size, fps)
+                        duration <= maxDuration && exposure.lower <= duration
                 }
-                if (rates.isEmpty()) null else StreamOption(size, minDuration, rates)
+                val videoMin = if (size in videos) map.getOutputMinFrameDuration(MediaRecorder::class.java, size) else 0L
+                val videoRates = rates.filter { videoMin > 0L &&
+                    videoMin <= CaptureSettings.frameDurationNanos(it) * 1.001 && supportsEncoding(codecs, size, it) }
+                if (rates.isEmpty()) null else StreamOption(size, minDuration, rates, videoRates)
             }.distinctBy { it.key }.sortedByDescending { it.size.width.toLong() * it.size.height }
             require(streams.isNotEmpty()) {
-                "No compatible manual preview/video configuration was reported by this camera. Try another camera."
+                "No compatible preview/YUV configuration was reported by this camera. Try another camera."
             }
             val sensor = characteristics[CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE]
             val aspect = sensor?.let { it.width().toDouble() / it.height() } ?: 4.0 / 3.0

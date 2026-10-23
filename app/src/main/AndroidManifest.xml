@@ -6,6 +6,7 @@
 
     <!-- Permission to access the camera for taking photos and videos -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Permission to record audio, required for video recording with sound -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -37,5 +38,13 @@
 
         <activity android:name=".AboutQvlpActivity" />
         <activity android:name=".SettingsActivity" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.sessionfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/session_file_paths" />
+        </provider>
     </application>
 </manifest>

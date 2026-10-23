@@ -81,6 +81,15 @@
                 android:textColor="@color/darkBlue"
                 android:elevation="2dp" />
 
+            <Button
+                android:id="@+id/sessionsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/sessions"
+                android:layout_margin="4dp"
+                android:backgroundTint="@color/yellow"
+                android:textColor="@color/darkBlue" />
+
             <!-- About Button with right margin of 16dp -->
             <Button
                 android:id="@+id/aboutButton"
@@ -148,34 +157,66 @@
     <!-- Bottom Controls -->
     <LinearLayout
         android:id="@+id/button_container"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:gravity="center"
         android:layout_gravity="center_horizontal|bottom"
-        android:layout_marginBottom="50dp">
+        android:layout_margin="12dp"
+        android:padding="10dp"
+        android:background="#E600274C">
+
+        <Button android:id="@+id/positionButton"
+            android:layout_width="match_parent" android:layout_height="48dp"
+            android:text="@string/position_id" android:textAllCaps="false"
+            android:backgroundTint="@color/yellow" android:textColor="@color/darkBlue" />
+        <TextView android:id="@+id/burstStatus"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:padding="6dp" android:gravity="center"
+            android:text="@string/capture_workflow" android:textColor="@android:color/white"
+            android:textSize="14sp" android:maxLines="3" android:ellipsize="end" />
+        <Button android:id="@+id/startCaptureButton"
+            android:layout_width="match_parent" android:layout_height="52dp"
+            android:text="@string/start_capture" android:backgroundTint="@color/green"
+            android:textColor="@android:color/white" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/repeatCaptureButton"
+                android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp"
+                android:text="@string/repeat_capture" android:backgroundTint="@color/yellow"
+                android:textColor="@color/darkBlue" />
+            <Button android:id="@+id/nextPositionButton"
+                android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp"
+                android:text="@string/next_position" android:backgroundTint="@color/yellow"
+                android:textColor="@color/darkBlue" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
 
         <!-- Start Recording Button (green) -->
         <Button
             android:id="@+id/startRecordingButton"
-            android:layout_width="110dp"
-            android:layout_height="110dp"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="48dp"
             android:backgroundTint="@color/green"
             android:elevation="2dp"
             android:text="@string/capture_video"
             android:textColor="@android:color/white"
-            android:layout_marginEnd="16dp" />
+            android:layout_marginEnd="4dp" />
 
 <!-- Switch Camera Button -->
         <Button
             android:id="@+id/switchCameraButton"
-            android:layout_width="110dp"
-            android:layout_height="110dp"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="48dp"
             android:text="@string/switch_camera"
             android:textColor="@color/darkBlue"
             android:textSize="16sp"
             android:backgroundTint="@color/yellow"
             android:elevation="2dp" />
+        </LinearLayout>
     </LinearLayout>
 
 </FrameLayout>
