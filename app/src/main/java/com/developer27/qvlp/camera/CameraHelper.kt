@@ -486,8 +486,8 @@ class CameraHelper(
     }
 
     internal fun startBurst(position: Position, mounting: JSONObject, length: CaptureLength, progress: (Int, Long) -> Unit,
-                            completed: (BurstSummary) -> Unit, failed: (String) -> Unit) {
-        if (dispatch { startBurst(position, mounting, length, progress, completed, failed) }) return
+                            publishing: () -> Unit, completed: (BurstSummary) -> Unit, failed: (String) -> Unit) {
+        if (dispatch { startBurst(position, mounting, length, progress, publishing, completed, failed) }) return
         if (burstRequested) { failed("A capture is already running."); return }
         val device = cameraDevice
         val session = cameraCaptureSession
@@ -518,7 +518,7 @@ class CameraHelper(
             return
         }
         BurstWriter.prepare(activity.applicationContext, profile, length, position, mounting, cameraInfo,
-            progress, completed) { writer, error ->
+            progress, publishing, completed) { writer, error ->
             val posted = handler.post {
                 if (generation != burstGeneration || cameraDevice !== device || cameraCaptureSession !== session) {
                     writer?.finish("Capture interrupted before frames started.")

@@ -162,6 +162,7 @@ class MainActivity : AppCompatActivity() {
         cameraHelper.startBackgroundThread()
         openCameraWhenReady()
         updateControls()
+        if (!captureBusy && !fileBusy) sessions.resumeSaving()
     }
 
     @SuppressLint("MissingPermission")
@@ -221,6 +222,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun beginCountdown(position: Position) {
         if (captureBusy || fileBusy) return
+        if (!sessions.readyForCapture()) return
         if (position.x == null || position.y == null) { positions.show(); return }
         if (!cameraPermissionGranted()) { cameraPermissionLauncher.launch(Manifest.permission.CAMERA); return }
         cameraHelper.recordingBlockReason()?.let {
@@ -255,6 +257,11 @@ class MainActivity : AppCompatActivity() {
                                 else elapsedMs.toInt().coerceAtMost(viewBinding.captureProgress.max)
                         }
                     } },
+                    publishing = { runOnUiThread { if (!isDestroyed) {
+                        fileBusy = true
+                        viewBinding.burstStatus.text = "Saving to Pictures/Q-VLP…"
+                        updateControls()
+                    } } },
                     completed = { summary -> runOnUiThread { if (!isDestroyed) finishFrameCapture(summary) } },
                     failed = { error -> runOnUiThread {
                         if (!isDestroyed) {
@@ -285,6 +292,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun finishFrameCapture(summary: BurstSummary) {
         captureBusy = false
+        fileBusy = false
         requestedOrientation = orientationBeforeCapture
         val fps = summary.fps?.let { String.format(java.util.Locale.getDefault(), "%.2f", it) } ?: "—"
         val savedDescription = if (summary.length.mode == CaptureLengthMode.FRAMES)
@@ -293,6 +301,10 @@ class MainActivity : AppCompatActivity() {
         val description = getString(R.string.capture_summary, summary.positionId, savedDescription, fps)
         resultDetails = description + "\n\n" + (if (summary.warnings.isEmpty()) getString(R.string.capture_no_warnings)
             else summary.warnings.joinToString("\n\n"))
+        val storageMessage = summary.publicSaveError?.let {
+            "Could not save to Pictures/Q-VLP: $it\nYour capture is safe in the app. Open Sessions → Storage → Save now to retry."
+        } ?: "Saved to Pictures/Q-VLP/${summary.sessionId}"
+        resultDetails += "\n\n$storageMessage"
         viewBinding.burstStatus.text = savedDescription + "\n" + when {
             summary.interrupted -> getString(R.string.capture_interrupted_short)
             summary.warnings.isNotEmpty() -> getString(R.string.capture_warning_short, summary.warnings.size)
@@ -300,6 +312,8 @@ class MainActivity : AppCompatActivity() {
         }
         viewBinding.burstStatus.append("\n" + getString(
             if (summary.warnings.isEmpty()) R.string.tap_capture_details else R.string.tap_capture_warnings))
+        viewBinding.burstStatus.append(if (summary.publicSaveError == null) "\nSaved to Pictures/Q-VLP"
+            else "\nFolder save failed · Open Sessions → Storage")
         updateControls()
         if (!summary.interrupted) {
             runCatching {
@@ -348,8 +362,8 @@ class MainActivity : AppCompatActivity() {
         val hasResult = resultDetails != null
         viewBinding.startCaptureButton.visibility = if (hasResult && !busy) View.GONE else View.VISIBLE
         viewBinding.startCaptureButton.setText(when {
-            captureBusy -> R.string.cancel_capture
             fileBusy -> R.string.files_working
+            captureBusy -> R.string.cancel_capture
             !cameraReady -> R.string.camera_wait_button
             else -> R.string.start_capture
         })

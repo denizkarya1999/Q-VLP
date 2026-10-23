@@ -117,7 +117,7 @@
     <string name="capture_summary">Position %1$d · %2$s\nMeasured frame rate: %3$s fps</string>
     <string name="capture_interrupted">Capture Interrupted</string>
     <string name="capture_finished">Capture Complete</string>
-    <string name="capture_no_warnings">No capture warnings. Open Sessions to save or share these files. LED analysis has not run.</string>
+    <string name="capture_no_warnings">No capture warnings. Open Sessions to browse or share these files. LED analysis has not run.</string>
     <string name="next_position_ready">Move the lens over this floor mark, then tap Start Capture.</string>
     <string name="mounting_setup">Mounting Setup</string>
     <string name="mounting_setup_summary">Lens height, offsets, notes and known row time</string>
@@ -147,7 +147,7 @@
     <string name="review_warnings">Review Warnings</string>
     <string name="last_position">End of List</string>
     <string name="how_to_capture">How to Capture</string>
-    <string name="capture_help">1. Measure your floor positions. Import positions.csv from Choose Position, or enter a position and both coordinates.\n\n2. Set lens height, offsets and notes once in Mounting Setup. Add row time only when known for this camera and resolution. Keep the lens above the floor mark.\n\n3. Align the preview with the ceiling LEDs. Wait for Camera ready, tap Start Capture and step away. Choose a frame count or duration in Settings → Recording. After a 3-second countdown, the app captures the selected length, then beeps and vibrates.\n\n4. Review any warnings. Repeat keeps the previous attempt. Next Position follows the imported file order. Move the mount before starting again.\n\n5. Open Sessions to share the data or save a file for USB transfer.\n\nThis version saves camera frames and measurements. LED identification and location estimates come later.</string>
+    <string name="capture_help">1. Measure your floor positions. Import positions.csv from Choose Position, or enter a position and both coordinates.\n\n2. Set lens height, offsets and notes once in Mounting Setup. Add row time only when known for this camera and resolution. Keep the lens above the floor mark.\n\n3. Align the preview with the ceiling LEDs. Wait for Camera ready, tap Start Capture and step away. Choose a frame count or duration in Settings → Recording. After a 3-second countdown, the app captures the selected length, then beeps and vibrates.\n\n4. Review any warnings. Repeat keeps the previous attempt. Next Position follows the imported file order. Move the mount before starting again.\n\n5. Choose Pictures or its Q-VLP folder once in Sessions → Storage. Existing and future sessions save automatically to Pictures/Q-VLP. Browse the folder in Files or over USB. Share and Save ZIP provide compressed copies.\n\nThis version saves camera frames and measurements. LED identification and location estimates come later.</string>
     <string name="tap_capture_details">Tap this result for details.</string>
     <string name="tap_capture_warnings">Tap this result to review warnings.</string>
     <string name="switch_camera">Switch Camera</string>

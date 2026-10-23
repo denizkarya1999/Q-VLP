@@ -13,6 +13,28 @@ import java.io.File
 internal class SessionBrowser(private val activity: AppCompatActivity, private val busy: (Boolean) -> Unit,
                               private val sessionChanged: () -> Unit) {
     private var pendingZip: File? = null
+    private var saving = false
+    private val chooseFolder = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            saving = true
+            busy(true)
+            message("Saving sessions to Pictures/Q-VLP…")
+            SessionFiles.io.execute {
+                val result = runCatching {
+                    PublicSessionStorage.select(activity.applicationContext, uri)
+                    PublicSessionStorage.syncAll(activity.applicationContext, verify = true).getOrThrow()
+                }
+                ui {
+                    saving = false
+                    busy(false)
+                    if (result.isSuccess) message("${result.getOrNull()} session(s) saved to Pictures/Q-VLP.")
+                    else AlertDialog.Builder(activity).setTitle("Folder save needs attention")
+                        .setMessage("${result.exceptionOrNull()?.message}\n\nYour original files are safe in the app. Open Sessions → Storage to retry.")
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        }
+    }
     private val saveFile = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         val source = pendingZip
         pendingZip = null
@@ -42,6 +64,51 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
     }
     fun save(state: Bundle) { pendingZip?.let { state.putString("pending_session_zip", it.absolutePath) } }
 
+    fun readyForCapture(): Boolean {
+        if (PublicSessionStorage.configured(activity)) return true
+        storage()
+        return false
+    }
+
+    /** Retry interrupted publication when the app returns; the capture worker uses the same queue. */
+    fun resumeSaving() {
+        if (PublicSessionStorage.configured(activity) && !saving) saveSessions(announce = false)
+    }
+
+    private fun storage() {
+        val configured = PublicSessionStorage.configured(activity)
+        val error = PublicSessionStorage.error(activity)
+        AlertDialog.Builder(activity).setTitle("Session Storage")
+            .setMessage("Sessions save automatically to Internal storage → Pictures → Q-VLP after each capture. Raw frames, measurements and repeated attempts keep their own folders.\n\n" +
+                (if (configured) "Your existing sessions are also copied there. The app keeps a recovery copy. Save now verifies all public files and retries unfinished copies."
+                else "Choose Pictures or its Q-VLP folder, then tap Use this folder and Allow. Your existing sessions will be copied there too.") +
+                (if (error == null) "" else "\n\nLast save needs attention: $error\nYour original files are safe in the app."))
+            .setPositiveButton(if (configured) "Save now" else "Choose folder") { _, _ ->
+                if (configured) saveSessions(verify = true, announce = true) else chooseFolder.launch(PublicSessionStorage.initialUri)
+            }
+            .apply { if (configured) setNeutralButton("Choose folder") { _, _ -> chooseFolder.launch(PublicSessionStorage.initialUri) } }
+            .setNegativeButton("Close", null).show()
+    }
+
+    private fun saveSessions(verify: Boolean = false, announce: Boolean) {
+        if (saving) return
+        saving = true
+        busy(true)
+        if (announce) message("Saving sessions to Pictures/Q-VLP…")
+        SessionFiles.io.execute {
+            val result = PublicSessionStorage.syncAll(activity.applicationContext, verify)
+            ui {
+                saving = false
+                busy(false)
+                result.exceptionOrNull()?.let {
+                    AlertDialog.Builder(activity).setTitle("Folder save needs attention")
+                        .setMessage("${it.message}\n\nYour original files are safe in the app. Open Sessions → Storage to retry.")
+                        .setPositiveButton(android.R.string.ok, null).show()
+                } ?: if (announce) message("${result.getOrNull()} session(s) saved to Pictures/Q-VLP.") else Unit
+            }
+        }
+    }
+
     fun show() {
         busy(true)
         SessionFiles.io.execute {
@@ -51,6 +118,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
                 val sessions = result.getOrElse { message("Cannot list sessions: ${it.message}"); return@ui }
                 val dialog = AlertDialog.Builder(activity).setTitle("Saved Sessions")
                     .setNegativeButton("Close", null)
+                    .setNeutralButton("Storage") { _, _ -> storage() }
                     .setPositiveButton("New Session") { _, _ ->
                         SessionFiles.newSession(activity.applicationContext)
                         sessionChanged()
@@ -65,10 +133,10 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
 
     private fun actions(session: SavedSession) {
         AlertDialog.Builder(activity).setTitle("Session")
-            .setMessage("${session.label}\n\nAll frames, measurements and warnings are included. Choose Save to Files, then Downloads, to copy the session to a computer by USB." +
+            .setMessage("${session.label}\n\nBrowse raw session folders in Internal storage → Pictures → Q-VLP, or use Share / Save ZIP for a compressed copy. Open Storage to set up or retry automatic saving." +
                 if (session.warnings.isBlank()) "" else "\n\n${session.warnings}")
             .setPositiveButton("Share") { _, _ -> export(session, share = true) }
-            .setNeutralButton("Save to Files") { _, _ -> export(session, share = false) }
+            .setNeutralButton("Save ZIP") { _, _ -> export(session, share = false) }
             .setNegativeButton("Close", null).show()
     }
 

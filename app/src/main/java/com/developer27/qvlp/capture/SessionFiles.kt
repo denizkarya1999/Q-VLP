@@ -24,6 +24,9 @@ internal object SessionFiles {
     private fun root(context: Context) = File(context.filesDir, "sessions").apply { mkdirs() }
     private fun validId(id: String) = id.matches(Regex("session_[0-9a-f-]+"))
 
+    fun directories(context: Context): List<File> = root(context).listFiles().orEmpty()
+        .filter { it.isDirectory && validId(it.name) }
+
     fun newSession(context: Context) {
         PreferenceManager.getDefaultSharedPreferences(context).edit().remove(ACTIVE).apply()
     }
@@ -84,8 +87,7 @@ internal object SessionFiles {
         return BurstLocation(session.name, directory, mounting)
     }
 
-    fun list(context: Context): List<SavedSession> = root(context).listFiles().orEmpty()
-        .filter { it.isDirectory && validId(it.name) }
+    fun list(context: Context): List<SavedSession> = directories(context)
         .sortedByDescending { File(it, "session.json").lastModified() }
         .map { dir ->
             val info = runCatching { readJson(File(dir, "session.json")) }.getOrNull()
@@ -107,7 +109,8 @@ internal object SessionFiles {
             }.getOrDefault("Saved session")
             SavedSession(dir.name, "$date\n${captures.size} captures · $count frames" +
                 (if (pending > 0) " · $pending interrupted/incomplete" else "") +
-                (if (issues.isNotEmpty()) " · ${issues.size} warnings" else ""),
+                (if (issues.isNotEmpty()) " · ${issues.size} warnings" else "") +
+                "\n${PublicSessionStorage.status(context, dir)}",
                 issues.take(20).joinToString("\n\n") + if (issues.size > 20) "\n\nMore warnings are included in the ZIP." else "")
         }
 
