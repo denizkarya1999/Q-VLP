@@ -22,11 +22,11 @@ This camera foundation provides preview, exposure/ISO controls, camera switching
 
 ## Camera settings
 
-Open **Settings** from the camera screen. Tap **Exposure time (µs)** or **ISO** to enter a value, and tap **Resolution** or **Target frame rate** to choose a device-reported option. Return to the camera screen to apply the saved profile. Each camera has its own settings; changes are disabled during recording.
+Open **Settings** from the camera screen. Under **Camera Settings**, tap **Exposure Time (µs)** or **ISO Rate** to enter a value, and tap **Resolution** or **Target Frame Rate** to choose a device-reported option. Return to the camera screen to apply the saved profile. Each camera has its own settings; changes are disabled during recording.
 
 - Exposure is expressed in microseconds (100 µs = 0.1 ms), with up to three decimal places. It is validated against the sensor range and the selected frame interval. ISO uses the selected camera's reported sensitivity range.
 - Resolution choices are shared by preview and MediaRecorder. Ordinary session frame rates are filtered using stream minimum durations, the reported normal-session FPS ceiling, the maximum frame duration, and an available H.264 surface encoder. High-speed sessions are excluded. A resolution change that requires a different rate displays a message; an exposure too long for a requested rate must be shortened first.
-- The recommended profile requests 100 µs, minimum ISO, 1280 × 960 and 30 fps where supported. Otherwise it chooses an available resolution near that size, preferring the sensor aspect ratio, and a usable rate. Exposure is bounded by the camera range. Existing manual exposure/ISO preferences are imported once. Use **Restore recommended settings** to replace those imported values.
+- The recommended profile requests 100 µs, minimum ISO, 1280 × 960 and 30 fps where supported. Otherwise it chooses an available resolution near that size, preferring the sensor aspect ratio, and a usable rate. Exposure is bounded by the camera range. Existing manual exposure/ISO preferences are imported once. Use **Restore Recommended Settings** to replace those imported values.
 - Exposure and ISO are always manual (`CONTROL_AE_MODE_OFF`); `SENSOR_FRAME_DURATION` requests the cadence. Preview and recording use the same profile and recording FPS. Cameras without the required manual controls show an explanation instead of silently enabling automatic exposure.
 - The preview shows requested values separately from reported exposure/ISO and cadence measured over roughly one second of sensor timestamps. Cadence is the rate of received capture results, not a count of encoded MP4 frames. These readings are not saved yet.
 
