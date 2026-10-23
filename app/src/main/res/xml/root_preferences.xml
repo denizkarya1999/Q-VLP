@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
     <PreferenceCategory
+        android:key="modes"
+        android:title="@string/modes"
+        android:layout="@layout/preference_category_layout">
+        <Preference
+            android:key="data_collection_mode"
+            android:title="@string/data_collection_mode"
+            android:summary="@string/data_collection_mode_summary"
+            android:selectable="false"
+            android:layout="@layout/preference_list_layout" />
+        <Preference
+            android:key="inference_mode"
+            android:title="@string/inference_mode"
+            android:summary="@string/inference_mode_summary"
+            android:enabled="false"
+            android:selectable="false"
+            android:layout="@layout/preference_list_layout" />
+    </PreferenceCategory>
+    <PreferenceCategory
         android:title="@string/camera_settings"
         android:layout="@layout/preference_category_layout">
         <Preference

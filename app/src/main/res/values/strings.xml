@@ -4,8 +4,8 @@
     <string name="project_website_unavailable">No web browser is available to open the project website.</string>
     <string name="about_qvlp">About Q-VLP</string>
     <string name="project_description">Q-VLP Research Project</string>
-    <string name="project_version"><b>Version:</b> 1.0</string>
-    <string name="project_release_date"><b>Release Date:</b> TBD</string>
+    <string name="project_version"><b>Version:</b> 1.0.0</string>
+    <string name="project_release_date"><b>Release Date:</b> October 23, 2026</string>
     <string name="project_developers_label"><b>Developer(s):</b></string>
     <string name="project_developers">Thuy-Anh Nguyen\nDeniz K. Acikbas</string>
     <string name="project_authors_label"><b>Authors:</b></string>
@@ -16,6 +16,11 @@
     <string name="university_logo_description">University of Michigan logo</string>
     <string name="app_logo_description">Q-VLP logo</string>
     <string name="settings">Settings</string>
+    <string name="modes">Modes</string>
+    <string name="data_collection_mode">Data Collection Mode</string>
+    <string name="data_collection_mode_summary">Active · Record camera frames and save sessions for model training.</string>
+    <string name="inference_mode">Inference Mode</string>
+    <string name="inference_mode_summary">Not implemented yet · Computer vision and model predictions.</string>
     <string name="save_setting">Save</string>
     <string name="about">About</string>
     <string name="camera_settings">Camera Settings</string>

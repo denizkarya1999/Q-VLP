@@ -6,8 +6,8 @@ The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplat
 
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
-- Version: 1.0
-- Release date: TBD
+- Version: 1.0.0
+- Release date: October 23, 2026
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
 **Topics:** `android` · `kotlin` · `camera2` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
@@ -19,6 +19,8 @@ Thuy-Anh Nguyen, Shahed Alabdulrahman, Deniz Karya Acikbas, Christian Nwobu, Cla
 Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · University of Michigan-Dearborn.
 
 ## Using Q-VLP
+
+**Settings → Modes** appears first. **Data Collection Mode** is the active mode for the existing recording and session workflow. **Inference Mode** is visibly marked **Not implemented yet** and cannot be selected; CV and model predictions will be added later.
 
 1. Tap **Choose Position**. Import your surveyed `positions.csv`, or enter the floor mark ID and its measured X/Y coordinates. Coordinates are required before capture and are never estimated by the phone.
 2. Open **Settings → Mounting Setup** once to record lens height, offsets and notes. Enter row time only if it is known for this camera and resolution. Keep the camera lens over the surveyed mark.
@@ -140,3 +142,7 @@ Use JDK 17 or 21 and the included Gradle wrapper. JDK 25 cannot run this project
 The existing build targets Android SDK 34 with minimum SDK 26. Configure the Android SDK location in the ignored `local.properties` file if necessary. Build with `./gradlew :app:assembleDebug` and run existing unit tests with `./gradlew :app:testDebugUnitTest`.
 
 Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the university logo used on the About screen are retained, together with original developer and lab attribution. CV dependencies can be added when LED analysis is implemented.
+
+## Installable release
+
+The GitHub release includes **Install Q-VLP.apk** and screenshots from the Pixel 8a. The APK uses the release build type and the project's existing development signing certificate so it can update the installed research app without deleting its sessions or settings. It is intended for direct installation on research devices. A public store release would need its own release-signing and distribution setup.
