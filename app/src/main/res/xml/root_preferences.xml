@@ -6,7 +6,6 @@
         <Preference
             android:key="camera_status"
             android:layout="@layout/preference_list_layout"
-            android:title="@string/camera_settings"
             android:selectable="false" />
         <EditTextPreference
             android:key="exposure_us"

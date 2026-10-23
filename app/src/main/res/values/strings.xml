@@ -20,7 +20,6 @@
     <string name="save_setting">Save</string>
     <string name="about">About</string>
     <string name="camera_settings">Camera settings</string>
-    <string name="selected_camera">Camera %1$s · manual capture</string>
     <string name="manual_camera_summary">Changes are saved for this camera and applied when you return to preview. Exposure and ISO remain manual. Choices use the device’s reported capabilities; actual values appear on the camera screen.</string>
     <string name="camera_settings_unavailable">Manual camera settings unavailable</string>
     <string name="exposure_time">Exposure time (µs)</string>

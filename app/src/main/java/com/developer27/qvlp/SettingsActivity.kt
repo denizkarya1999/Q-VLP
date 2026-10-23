@@ -55,7 +55,6 @@ class SettingsActivity : AppCompatActivity() {
                 capabilities = CameraCapabilities.read(id, manager.getCameraCharacteristics(id))
                 store = CameraSettingsStore(PreferenceManager.getDefaultSharedPreferences(requireContext()), id)
                 profile = store.load(capabilities)
-                status.title = getString(R.string.selected_camera, id)
                 status.summary = getString(R.string.manual_camera_summary)
             } catch (error: Exception) {
                 status.title = getString(R.string.camera_settings_unavailable)
