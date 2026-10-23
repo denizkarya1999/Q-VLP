@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dialog_surface">#182635</color>
+    <color name="dialog_input_surface">#101B27</color>
+    <color name="dialog_text_primary">#F5F7FA</color>
+    <color name="dialog_text_secondary">#C3CED9</color>
+    <color name="dialog_outline">#91A3B5</color>
+    <color name="dialog_accent">#FFCB05</color>
+    <color name="dialog_disabled">#8090A0</color>
+    <color name="dialog_selection">#66FFCB05</color>
+</resources>

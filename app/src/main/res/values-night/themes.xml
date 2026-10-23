@@ -3,5 +3,6 @@
     <style name="Base.Theme.QVLP" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Customize your dark theme here. -->
         <item name="colorPrimary">@color/darkBlue</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.QVLP.PreferenceDialog</item>
     </style>
 </resources>

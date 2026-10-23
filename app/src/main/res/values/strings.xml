@@ -17,6 +17,7 @@
     <string name="capture_video">Capture Video</string>
     <string name="stop_video">Stop Video</string>
     <string name="settings">Settings</string>
+    <string name="save_setting">Save</string>
     <string name="about">About</string>
     <string name="camera_settings">Camera settings</string>
     <string name="selected_camera">Camera %1$s · manual capture</string>

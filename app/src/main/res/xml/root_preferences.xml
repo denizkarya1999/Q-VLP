@@ -13,12 +13,18 @@
             android:layout="@layout/preference_list_layout"
             android:title="@string/exposure_time"
             android:dialogTitle="@string/exposure_time"
+            android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting"
+            android:negativeButtonText="@android:string/cancel"
             android:persistent="false" />
         <EditTextPreference
             android:key="iso"
             android:layout="@layout/preference_list_layout"
             android:title="@string/iso"
             android:dialogTitle="@string/iso"
+            android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting"
+            android:negativeButtonText="@android:string/cancel"
             android:persistent="false" />
         <ListPreference
             android:key="resolution"
