@@ -89,8 +89,8 @@
     <string name="mount_measurement_help">Enter the measured height of the camera lens above the floor. Leave empty if unknown. Changing mounting details starts a new session.</string>
     <string name="mount_offset_help">Enter the measured lens offset from your mount reference point, in meters. Describe the reference point and axis directions in Mounting Notes. Leave empty if unknown.</string>
     <string name="row_time">Row Time (µs)</string>
-    <string name="row_time_help">Enter a known calibrated time between sensor rows for this camera and resolution. Leave empty if unknown; it is not estimated automatically.</string>
-    <string name="row_time_unknown_profile">Not set for this camera and resolution</string>
+    <string name="row_time_help">Enter a known calibrated time between sensor rows for this camera, resolution and zoom. Leave empty if unknown; it is not estimated automatically.</string>
+    <string name="row_time_unknown_profile">Not set for this camera, resolution and zoom</string>
     <string name="mount_notes">Mounting Notes</string>
     <string name="mount_notes_help">Record the mount, phone orientation, reference point and measurement notes (up to 2000 characters).</string>
     <string name="not_provided">Not provided</string>
@@ -142,4 +142,13 @@
     <string name="capture_help">1. Measure your floor positions. Import positions.csv from Choose Position, or enter a position and both coordinates.\n\n2. Set lens height, offsets and notes once in Mounting Setup. Add row time only when known for this camera and resolution. Keep the lens above the floor mark.\n\n3. Align the preview with the ceiling LEDs. Wait for Camera ready, tap Start Capture and step away. After 3 seconds, the app captures 30 frames, then beeps and vibrates.\n\n4. Review any warnings. Repeat keeps the previous attempt. Next Position follows the imported file order. Move the mount before starting again.\n\n5. Open Sessions to share the data or save a file for USB transfer.\n\nThis version saves camera frames and measurements. LED identification and location estimates come later.</string>
     <string name="tap_capture_details">Tap this result for details.</string>
     <string name="tap_capture_warnings">Tap this result to review warnings.</string>
+    <string name="switch_camera">Switch Camera</string>
+    <string name="maximize_camera">Maximize (zoom in)</string>
+    <string name="minimize_camera">Minimize (zoom out)</string>
+    <string name="default_zoom">1.0×</string>
+    <string name="zoom_value">%1$.1f×</string>
+    <string name="other_camera_missing">No camera is available on the other side of this phone.</string>
+    <string name="other_camera_unsupported">The other camera does not support the manual settings needed for frame capture. Your current camera is still selected.</string>
+    <string name="camera_switch_failed">Could not switch cameras. Try again.</string>
+    <string name="zoom_unavailable">This camera could not apply the selected zoom.</string>
 </resources>

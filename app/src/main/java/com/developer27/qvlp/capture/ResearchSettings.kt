@@ -24,7 +24,8 @@ internal object ResearchSettings {
     )
 
     private fun rowTimeMatches(p: SharedPreferences, key: Pair<String, String>?): Boolean = key != null &&
-        p.getString("row_time_camera_id", null) == key.first && p.getString("row_time_resolution", null) == key.second
+        p.getString("row_time_camera_id", null) == key.first && p.getString("row_time_resolution", null) == key.second &&
+        p.getFloat("row_time_zoom", 1f) == p.getFloat("camera_${key.first}_zoom", 1f)
 
     fun mounting(p: SharedPreferences, key: Pair<String, String>?) = JSONObject().apply {
         listOf("lens_height_m", "lens_offset_x_m", "lens_offset_y_m").forEach {
@@ -35,6 +36,7 @@ internal object ResearchSettings {
         put("row_time_source", if (rowTime != null) "user_entered" else "unknown")
         put("row_time_camera_id", if (rowTime != null) key?.first else JSONObject.NULL)
         put("row_time_resolution", if (rowTime != null) key?.second else JSONObject.NULL)
+        put("row_time_zoom", if (rowTime != null) p.getFloat("row_time_zoom", 1f).toDouble() else JSONObject.NULL)
         put("notes", p.getString("mount_notes", "").orEmpty())
     }
 
@@ -69,7 +71,8 @@ internal object ResearchSettings {
                     val profile = profileKey()
                     if (raw.isNotEmpty() && profile == null) return@setOnPreferenceChangeListener false
                     prefs.edit().putString("row_time_camera_id", profile?.first)
-                        .putString("row_time_resolution", profile?.second).apply()
+                        .putString("row_time_resolution", profile?.second)
+                        .putFloat("row_time_zoom", prefs.getFloat("camera_${profile?.first}_zoom", 1f)).apply()
                 }
                 if (!valid) Toast.makeText(fragment.requireContext(),
                     fragment.getString(R.string.session_value_invalid), Toast.LENGTH_LONG).show()

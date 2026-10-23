@@ -47,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private var fileBusy = false
     private var cameraReady = false
     private var cameraDetails = ""
+    private var currentZoom = 1f
+    private var maximumZoom = 1f
     private var countdown: CountDownTimer? = null
     private var orientationBeforeCapture = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var lastPosition: Position? = null
@@ -101,6 +103,14 @@ class MainActivity : AppCompatActivity() {
         }
         viewBinding.titleContainer.setOnClickListener { openProjectWebsite() }
         viewBinding.settingsButton.setOnClickListener { openSettings() }
+        viewBinding.switchCameraButton.setOnClickListener {
+            if (!captureBusy && !fileBusy) {
+                if (cameraPermissionGranted()) cameraHelper.switchCamera()
+                else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+        viewBinding.zoomInButton.setOnClickListener { if (!captureBusy && !fileBusy) cameraHelper.changeZoom(0.1f) }
+        viewBinding.zoomOutButton.setOnClickListener { if (!captureBusy && !fileBusy) cameraHelper.changeZoom(-0.1f) }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutQvlpActivity::class.java))
         }
@@ -188,6 +198,14 @@ class MainActivity : AppCompatActivity() {
             ready -> R.string.camera_ready
             else -> R.string.camera_preparing
         })
+        updateControls()
+    }
+
+    internal fun showZoomState(level: Float, maximum: Float) {
+        if (isDestroyed) return
+        currentZoom = level
+        maximumZoom = maximum
+        viewBinding.zoomLevel.text = getString(R.string.zoom_value, level.toDouble())
         updateControls()
     }
 
@@ -293,6 +311,9 @@ class MainActivity : AppCompatActivity() {
         val busy = captureBusy || fileBusy
         viewBinding.titleContainer.isEnabled = !busy
         viewBinding.settingsButton.isEnabled = !busy
+        viewBinding.switchCameraButton.isEnabled = !busy
+        viewBinding.zoomInButton.isEnabled = !busy && cameraReady && currentZoom < maximumZoom - 0.001f
+        viewBinding.zoomOutButton.isEnabled = !busy && cameraReady && currentZoom > 1.001f
         viewBinding.aboutButton.isEnabled = !busy
         viewBinding.sessionsButton.isEnabled = !busy
         viewBinding.positionButton.isEnabled = !busy

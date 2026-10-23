@@ -114,10 +114,54 @@
                 android:clickable="true"
                 android:foreground="?android:attr/selectableItemBackground" />
 
-            <Space
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="96dp"
-                android:layout_weight="1" />
+                android:layout_height="176dp"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="end|center_vertical"
+                android:paddingEnd="16dp"
+                android:paddingStart="16dp">
+                <LinearLayout
+                    android:layout_width="60dp"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <Button
+                        android:id="@+id/zoomInButton"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:text="+"
+                        android:textSize="24sp"
+                        android:contentDescription="@string/maximize_camera"
+                        android:backgroundTint="@color/yellow"
+                        android:textColor="@color/darkBlue" />
+                    <TextView
+                        android:id="@+id/zoomLevel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="28dp"
+                        android:gravity="center"
+                        android:background="#CC00274C"
+                        android:text="@string/default_zoom"
+                        android:textColor="@android:color/white"
+                        android:textSize="14sp"
+                        android:accessibilityLiveRegion="polite" />
+                    <Button
+                        android:id="@+id/zoomOutButton"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:text="−"
+                        android:textSize="24sp"
+                        android:contentDescription="@string/minimize_camera"
+                        android:backgroundTint="@color/yellow"
+                        android:textColor="@color/darkBlue" />
+                </LinearLayout>
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/button_container"
@@ -165,16 +209,34 @@
                     android:max="30"
                     android:visibility="gone"
                     android:progressTint="@color/yellow" />
-                <Button
-                    android:id="@+id/startCaptureButton"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="52dp"
-                    android:text="@string/start_capture"
-                    android:textAllCaps="false"
-                    android:textSize="16sp"
-                    android:backgroundTint="@color/green"
-                    android:textColor="@android:color/white" />
+                    android:orientation="horizontal">
+                    <Button
+                        android:id="@+id/startCaptureButton"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:minHeight="52dp"
+                        android:text="@string/start_capture"
+                        android:textAllCaps="false"
+                        android:textSize="16sp"
+                        android:backgroundTint="@color/green"
+                        android:textColor="@android:color/white" />
+                    <Button
+                        android:id="@+id/switchCameraButton"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:minHeight="52dp"
+                        android:layout_marginStart="4dp"
+                        android:text="@string/switch_camera"
+                        android:textAllCaps="false"
+                        android:textSize="16sp"
+                        android:backgroundTint="@color/yellow"
+                        android:textColor="@color/darkBlue" />
+                </LinearLayout>
                 <LinearLayout
                     android:id="@+id/resultActions"
                     android:layout_width="match_parent"

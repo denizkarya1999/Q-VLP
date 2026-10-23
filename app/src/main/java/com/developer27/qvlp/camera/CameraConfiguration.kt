@@ -68,7 +68,7 @@ internal data class CameraCapabilities(
             val requiredKeys = listOf(CaptureRequest.SENSOR_EXPOSURE_TIME,
                 CaptureRequest.SENSOR_SENSITIVITY, CaptureRequest.SENSOR_FRAME_DURATION)
             require(manual && characteristics.availableCaptureRequestKeys.containsAll(requiredKeys)) {
-                "This camera does not support manual exposure, ISO and frame duration. Use a device with manual rear-camera controls."
+                "This camera does not support manual exposure, ISO and frame duration. Choose a camera with manual controls."
             }
             val exposure = requireNotNull(characteristics[CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE]) {
                 "This camera does not report its exposure range."
@@ -104,7 +104,7 @@ internal data class CameraCapabilities(
                 if (rates.isEmpty()) null else StreamOption(size, minDuration, rates)
             }.distinctBy { it.key }.sortedByDescending { it.size.width.toLong() * it.size.height }
             require(streams.isNotEmpty()) {
-                "No compatible preview/YUV configuration was reported by this camera. Use a device with compatible manual rear-camera controls."
+                "No compatible preview/YUV configuration was reported by this camera. Choose a camera with compatible manual controls."
             }
             val sensor = characteristics[CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE]
             val aspect = sensor?.let { it.width().toDouble() / it.height() } ?: 4.0 / 3.0

@@ -34,10 +34,11 @@ import com.developer27.qvlp.capture.BurstRequestTag
 import com.developer27.qvlp.capture.BurstSummary
 import com.developer27.qvlp.capture.FrameMetadata
 import com.developer27.qvlp.capture.Position
+import com.developer27.qvlp.capture.SessionFiles
 import org.json.JSONObject
 import java.util.Locale
 
-/** Owns the rear-camera preview and uncompressed research capture. */
+/** Owns the selected camera preview and uncompressed research capture. */
 class CameraHelper(
     private val activity: MainActivity,
     private val viewBinding: ActivityMainBinding,
@@ -77,6 +78,9 @@ class CameraHelper(
         private set
 
     private var cameraCharacteristics: CameraCharacteristics? = null
+    @Volatile private var selectedCameraId: String? = null
+    private var zoomLevel = 1f
+    private var maxZoom = 1f
     @Volatile
     private var isOpeningCamera = false
     @Volatile
@@ -147,6 +151,12 @@ class CameraHelper(
 
             cameraCharacteristics = characteristics
             sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            maxZoom = if (CaptureRequest.SCALER_CROP_REGION in characteristics.availableCaptureRequestKeys && sensorArraySize != null)
+                (characteristics[CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM] ?: 1f)
+                    .takeIf { it.isFinite() && it >= 1f } ?: 1f else 1f
+            zoomLevel = sharedPreferences.getFloat("camera_${cameraId}_zoom", 1f)
+                .takeIf { it.isFinite() }?.coerceIn(1f, maxZoom) ?: 1f
+            reportZoom()
 
             val capabilities = CameraCapabilities.read(cameraId, characteristics)
             val profile = CameraSettingsStore(sharedPreferences, cameraId).load(capabilities)
@@ -293,19 +303,84 @@ class CameraHelper(
         }
     }
 
-    // Keep one rear camera selected across launches. Never fall back to a front camera.
+    // Start on the rear camera; retain a camera explicitly chosen by the operator.
     fun getCameraId(): String {
-        val rear = cameraManager.cameraIdList.filter { id ->
-            cameraManager.getCameraCharacteristics(id)[CameraCharacteristics.LENS_FACING] == CameraCharacteristics.LENS_FACING_BACK
+        selectedCameraId?.let { return it }
+        val ids = cameraManager.cameraIdList.toList()
+        val saved = sharedPreferences.getString("selected_capture_camera",
+            sharedPreferences.getString("research_rear_camera", null))
+        val selected = saved?.takeIf { it in ids } ?: ids.firstOrNull {
+            cameraManager.getCameraCharacteristics(it)[CameraCharacteristics.LENS_FACING] == CameraCharacteristics.LENS_FACING_BACK
+        } ?: ids.firstOrNull() ?: error("No camera is available on this device.")
+        selectedCameraId = selected
+        return selected
+    }
+
+    @SuppressLint("MissingPermission")
+    fun switchCamera() {
+        if (dispatch { switchCamera() }) return
+        if (burstRequested || isOpeningCamera) return
+        try {
+            val current = getCameraId()
+            val facing = cameraManager.getCameraCharacteristics(current)[CameraCharacteristics.LENS_FACING]
+            val targetFacing = if (facing == CameraCharacteristics.LENS_FACING_BACK)
+                CameraCharacteristics.LENS_FACING_FRONT else CameraCharacteristics.LENS_FACING_BACK
+            val targets = cameraManager.cameraIdList.filter {
+                cameraManager.getCameraCharacteristics(it)[CameraCharacteristics.LENS_FACING] == targetFacing
+            }
+            if (targets.isEmpty()) {
+                message(activity.getString(R.string.other_camera_missing))
+                return
+            }
+            // Check the destination before closing the working camera. A camera lacking
+            // manual sensor/YUV support cannot provide the same research capture controls.
+            val target = targets.firstOrNull { id ->
+                runCatching { CameraCapabilities.read(id, cameraManager.getCameraCharacteristics(id)) }.isSuccess
+            }
+            if (target == null) {
+                message(activity.getString(R.string.other_camera_unsupported))
+                return
+            }
+            closeCamera()
+            selectedCameraId = target
+            zoomLevel = 1f
+            sharedPreferences.edit().putString("selected_capture_camera", target)
+                .putFloat("camera_${target}_zoom", 1f).apply()
+            SessionFiles.newSession(activity.applicationContext)
+            openCamera()
+        } catch (error: Exception) {
+            message(error.message ?: activity.getString(R.string.camera_switch_failed))
         }
-        val selected = sharedPreferences.getString("research_rear_camera", null)
-        if (selected != null) {
-            check(selected in rear) { "The selected rear camera is unavailable. Restart the app to reconnect it." }
-            return selected
+    }
+
+    fun changeZoom(step: Float) {
+        if (dispatch { changeZoom(step) }) return
+        if (burstRequested || isOpeningCamera || cameraDevice == null || activeProfile == null) return
+        val next = (kotlin.math.round((zoomLevel + step) * 10f) / 10f).coerceIn(1f, maxZoom)
+        if (next == zoomLevel) return
+        val previous = zoomLevel
+        try {
+            zoomLevel = next
+            applyResearchGeometry()
+            updatePreview()
+            sharedPreferences.edit().putFloat("camera_${getCameraId()}_zoom", zoomLevel).apply()
+            SessionFiles.newSession(activity.applicationContext)
+        } catch (error: Exception) {
+            zoomLevel = previous
+            runCatching { applyResearchGeometry(); updatePreview() }
+            message(error.message ?: activity.getString(R.string.zoom_unavailable))
         }
-        val id = rear.firstOrNull() ?: error("Q-VLP needs a rear camera with manual controls.")
-        sharedPreferences.edit().putString("research_rear_camera", id).apply()
-        return id
+        reportZoom()
+    }
+
+    private fun reportZoom() {
+        val level = zoomLevel
+        val maximum = maxZoom
+        activity.runOnUiThread { activity.showZoomState(level, maximum) }
+    }
+
+    private fun message(text: String) {
+        activity.runOnUiThread { Toast.makeText(activity, text, Toast.LENGTH_LONG).show() }
     }
 
     /** Apply the capture profile; locks may briefly meter before restoring manual AE. */
@@ -382,8 +457,8 @@ class CameraHelper(
             JSONObject().put("camera_id", getCameraId())
                 .put("sensor_orientation_degrees", characteristics[CameraCharacteristics.SENSOR_ORIENTATION])
                 .put("lens_facing", characteristics[CameraCharacteristics.LENS_FACING])
-                .put("digital_zoom", 1.0)
-                .put("lens_selection", "fixed rear camera ID; physical lens pinning not yet implemented")
+                .put("digital_zoom", zoomLevel.toDouble())
+                .put("lens_selection", "operator-selected camera ID; physical lens pinning not yet implemented")
         } catch (e: Exception) {
             burstRequested = false
             failed(e.message ?: "Camera information is unavailable.")
@@ -579,12 +654,12 @@ class CameraHelper(
         }.also { activeCaptureCallback = it }
     }
 
-    /** No user zoom; request stable geometry where the device exposes the controls. */
+    /** Apply digital crop zoom while keeping the remaining geometry controls fixed. */
     private fun applyResearchGeometry() {
         val builder = captureRequestBuilder ?: return
         val c = cameraCharacteristics ?: return
         val keys = c.availableCaptureRequestKeys
-        sensorArraySize?.let { builder.set(CaptureRequest.SCALER_CROP_REGION, it) }
+        var cropBase = sensorArraySize
         if (Build.VERSION.SDK_INT >= 30 && CaptureRequest.CONTROL_ZOOM_RATIO in keys)
             builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, 1f)
         if (CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE in keys)
@@ -597,8 +672,16 @@ class CameraHelper(
             c[CameraCharacteristics.DISTORTION_CORRECTION_AVAILABLE_MODES]?.contains(CaptureRequest.DISTORTION_CORRECTION_MODE_OFF) == true) {
             builder.set(CaptureRequest.DISTORTION_CORRECTION_MODE, CaptureRequest.DISTORTION_CORRECTION_MODE_OFF)
             c[CameraCharacteristics.SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE]?.let {
-                builder.set(CaptureRequest.SCALER_CROP_REGION, it)
+                cropBase = it
             }
+        }
+        if (CaptureRequest.SCALER_CROP_REGION in keys) cropBase?.let { sensor ->
+            // Round up so the crop never exceeds the device's maximum digital zoom.
+            val width = kotlin.math.ceil(sensor.width() / zoomLevel.toDouble()).toInt().coerceIn(1, sensor.width())
+            val height = kotlin.math.ceil(sensor.height() / zoomLevel.toDouble()).toInt().coerceIn(1, sensor.height())
+            val left = sensor.left + (sensor.width() - width) / 2
+            val top = sensor.top + (sensor.height() - height) / 2
+            builder.set(CaptureRequest.SCALER_CROP_REGION, Rect(left, top, left + width, top + height))
         }
         if (Build.VERSION.SDK_INT >= 31 && CaptureRequest.SCALER_ROTATE_AND_CROP in keys &&
             c[CameraCharacteristics.SCALER_AVAILABLE_ROTATE_AND_CROP_MODES]?.contains(CaptureRequest.SCALER_ROTATE_AND_CROP_NONE) == true)
