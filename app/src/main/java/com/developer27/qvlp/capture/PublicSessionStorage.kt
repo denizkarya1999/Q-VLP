@@ -87,7 +87,7 @@ internal object PublicSessionStorage {
         fun read(directory: File): SessionFolder {
             val entries = directory.listFiles() ?: error("Cannot read ${directory.name}.")
             val files = entries.filter { it.isFile && publishable(it) }
-            val children = entries.filter { it.isDirectory && it != SessionFiles.activeCapture }.map(::read)
+            val children = entries.filter { it.isDirectory && !SessionFiles.isActive(it) }.map(::read)
             return SessionFolder(directory, files, children, signature(files, directory))
         }
         val root = read(session)
@@ -209,7 +209,8 @@ internal object PublicSessionStorage {
             else "Auto-save pending · $PATH"
     }
 
-    private fun publishable(file: File) = !file.name.endsWith(".part") && !file.name.endsWith(".bak") && !file.name.endsWith(".new")
+    /** Only the session's own files are copied out; the app's bookkeeping and temporary files stay private. */
+    private fun publishable(file: File) = SessionLayout.isOutput(file)
 
     private fun signature(files: List<File>, root: File): String = digest(
         files.sortedBy { it.relativeTo(root).invariantSeparatorsPath }.joinToString("\n") {
@@ -228,7 +229,7 @@ internal object PublicSessionStorage {
             checkpoint()
             val existing = target.children().associateBy { it.name }
             source.files.sortedWith(compareBy<File> {
-                when (it.name) { "burst.json", "session.json" -> 2; "frames.csv" -> 1; else -> 0 }
+                if (it.name == SessionLayout.FINAL) 1 else 0
             }.thenBy { it.name }).forEach { file ->
                 control.check()
                 target.publish(file, existing[file.name], existing[".${file.name}.qvlp-part"])

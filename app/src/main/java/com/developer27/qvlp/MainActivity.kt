@@ -7,14 +7,8 @@ import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.CountDownTimer
-import android.os.Handler
-import android.os.Looper
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.view.KeyEvent
 import android.view.TextureView
 import android.view.View
@@ -24,6 +18,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.preference.PreferenceManager
@@ -31,7 +26,7 @@ import com.developer27.qvlp.camera.CameraChoice
 import com.developer27.qvlp.camera.CameraHelper
 import com.developer27.qvlp.capture.CaptureTrigger
 import com.developer27.qvlp.capture.CaptureLength
-import com.developer27.qvlp.capture.CaptureLengthMode
+import com.developer27.qvlp.capture.CaptureProcessing
 import com.developer27.qvlp.capture.CaptureLengthPreferences
 import com.developer27.qvlp.capture.BurstSummary
 import com.developer27.qvlp.capture.Position
@@ -39,6 +34,8 @@ import com.developer27.qvlp.capture.PositionCatalog
 import com.developer27.qvlp.capture.PositionPicker
 import com.developer27.qvlp.capture.ResearchSettings
 import com.developer27.qvlp.capture.SessionBrowser
+import com.developer27.qvlp.capture.SessionCsv
+import com.developer27.qvlp.capture.SessionFiles
 import com.developer27.qvlp.capture.SessionPublisher
 import com.developer27.qvlp.databinding.ActivityMainBinding
 import org.json.JSONObject
@@ -59,6 +56,9 @@ class MainActivity : AppCompatActivity() {
     private var cameraDetails = ""
     private var currentZoom = 1f
     private var maximumZoom = 1f
+    private var switchIconToRear: Boolean? = null
+    private var capturedPositions: Set<Int> = emptySet()
+    private var cameraNeedsAttention = false
     private var countdown: CountDownTimer? = null
     private var orientationBeforeCapture = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var lastPosition: Position? = null
@@ -92,16 +92,7 @@ class MainActivity : AppCompatActivity() {
             Position(saved.getInt("position_id"), if (saved.isNull("rx_x_m")) null else saved.getDouble("rx_x_m"),
                 if (saved.isNull("rx_y_m")) null else saved.getDouble("rx_y_m"), saved.optString("source", "manual"))
         }.getOrNull()
-        sessions = SessionBrowser(this, ::setFileBusy) { resetPosition ->
-            clearResult()
-            lastPosition = null
-            preferences.edit().remove("last_capture_position").apply()
-            if (resetPosition) {
-                val first = PositionCatalog.read(preferences).firstOrNull() ?: Position(0, null, null)
-                PositionCatalog.select(preferences, first)
-            }
-            updateControls()
-        }
+        sessions = SessionBrowser(this, ::setFileBusy) { resetPosition -> sessionChanged(resetPosition) }
         sessions.restore(savedInstanceState)
         viewBinding.storageStatus.setOnClickListener { sessions.storage(retry = storageState.needsAttention) }
         stopObservingStorage = SessionPublisher.observe { state ->
@@ -116,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) openCameraWhenReady() else {
                 cameraReady = false
-                viewBinding.captureStatus.setText(R.string.camera_permission_help)
+                showCameraNotice(R.string.camera_permission_help)
                 updateControls()
             }
         }
@@ -141,19 +132,29 @@ class MainActivity : AppCompatActivity() {
         viewBinding.repeatCaptureButton.setOnClickListener {
             lastPosition?.let { PositionCatalog.select(preferences, it); beginCountdown(it) }
         }
+        viewBinding.infoButton.setOnClickListener { showInformation() }
+        TooltipCompat.setTooltipText(viewBinding.infoButton, getString(R.string.information))
+        viewBinding.previousPositionButton.setOnClickListener {
+            PositionCatalog.previous(preferences)?.let(::selectForCapture)
+        }
+        viewBinding.replacePositionButton.setOnClickListener {
+            positions.replace(capturedPositions, lastPosition?.id, ::selectForCapture)
+        }
+        viewBinding.endSessionButton.setOnClickListener {
+            AlertDialog.Builder(this).setTitle(R.string.end_session_title).setMessage(R.string.end_session_message)
+                .setPositiveButton(R.string.end_session) { _, _ ->
+                    SessionFiles.newSession(applicationContext)
+                    sessionChanged(resetPosition = true)
+                    viewBinding.burstStatus.setText(R.string.session_ended)
+                }
+                .setNegativeButton(android.R.string.cancel, null).show()
+        }
         viewBinding.nextPositionButton.setOnClickListener {
             PositionCatalog.next(preferences)?.let {
                 PositionCatalog.select(preferences, it)
                 clearResult()
                 viewBinding.burstStatus.setText(R.string.next_position_ready)
                 updateControls()
-                if (it.x == null || it.y == null) positions.show()
-            }
-        }
-        viewBinding.burstStatus.setOnClickListener {
-            resultDetails?.let {
-                AlertDialog.Builder(this).setTitle(R.string.capture_details).setMessage(it)
-                    .setPositiveButton(android.R.string.ok, null).show()
             }
         }
         resultDetails = savedInstanceState?.getString("result_details")
@@ -170,6 +171,7 @@ class MainActivity : AppCompatActivity() {
         openCameraWhenReady()
         updateControls()
         if (!captureBusy && !fileBusy) sessions.resumeSaving()
+        refreshCapturedPositions()
     }
 
     @SuppressLint("MissingPermission")
@@ -226,8 +228,8 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.camera_wait_button, Toast.LENGTH_SHORT).show()
             return
         }
-        val position = ResearchSettings.position(preferences)
-        if (position.x == null || position.y == null) positions.show() else beginCountdown(position)
+        if (!ResearchSettings.hasPosition(preferences)) positions.show()
+        else beginCountdown(ResearchSettings.position(preferences))
     }
 
     private fun switchCamera() {
@@ -236,6 +238,54 @@ class MainActivity : AppCompatActivity() {
         cameraReady = false // Capture waits for the other camera to confirm its settings.
         cameraHelper.switchCamera()
         updateControls()
+    }
+
+    /** Everything the camera screen no longer shows all the time: camera, saving and the last capture. */
+    private fun showInformation() {
+        val camera = getString(when {
+            !cameraPermissionGranted() -> R.string.camera_permission_help
+            cameraNeedsAttention -> R.string.camera_attention
+            cameraReady -> R.string.camera_ready
+            else -> R.string.camera_preparing
+        })
+        val sections = listOf(
+            getString(R.string.info_camera) to listOf(camera, cameraDetails).filter { it.isNotBlank() }.joinToString("\n"),
+            getString(R.string.info_saving) to storageState.message,
+            getString(R.string.info_last_capture) to (resultDetails ?: getString(R.string.info_no_capture))
+        )
+        AlertDialog.Builder(this).setTitle(R.string.information)
+            .setMessage(sections.joinToString("\n\n") { (title, text) -> "${title.uppercase()}\n$text" })
+            .setPositiveButton(android.R.string.ok, null).show()
+    }
+
+    /** A session ended or another became current: the last result and position no longer apply. */
+    private fun sessionChanged(resetPosition: Boolean) {
+        clearResult()
+        lastPosition = null
+        preferences.edit().remove("last_capture_position").apply()
+        if (resetPosition) {
+            val first = PositionCatalog.read(preferences).firstOrNull()
+            if (first != null) PositionCatalog.select(preferences, first) else PositionCatalog.clear(preferences)
+        }
+        refreshCapturedPositions()
+        updateControls()
+    }
+
+    /** Going back to a position: the next capture there replaces the earlier one in final.csv. */
+    private fun selectForCapture(position: Position) {
+        PositionCatalog.select(preferences, position)
+        clearResult()
+        viewBinding.burstStatus.text = getString(
+            if (position.id in capturedPositions) R.string.replacing_position else R.string.position_not_captured, position.id)
+        updateControls()
+    }
+
+    private fun refreshCapturedPositions() {
+        val app = applicationContext
+        SessionFiles.io.execute {
+            val captured = runCatching { SessionFiles.capturedPositions(app) }.getOrDefault(emptySet())
+            runOnUiThread { if (!isDestroyed) capturedPositions = captured }
+        }
     }
 
     private fun openSettings() {
@@ -249,12 +299,15 @@ class MainActivity : AppCompatActivity() {
         if (isDestroyed) return
         cameraReady = ready
         cameraDetails = details
-        viewBinding.captureStatus.setText(when {
-            error -> R.string.camera_attention
-            ready -> R.string.camera_ready
-            else -> R.string.camera_preparing
-        })
+        cameraNeedsAttention = error
+        showCameraNotice(if (error) R.string.camera_attention else null)
         updateControls()
+    }
+
+    /** The camera box appears only when the operator has to do something; a working camera shows nothing. */
+    private fun showCameraNotice(text: Int?) {
+        viewBinding.captureStatus.visibility = if (text == null) View.GONE else View.VISIBLE
+        if (text != null) viewBinding.captureStatus.setText(text)
     }
 
     internal fun showZoomState(level: Float, maximum: Float) {
@@ -273,7 +326,6 @@ class MainActivity : AppCompatActivity() {
     private fun beginCountdown(position: Position) {
         if (captureBusy || fileBusy) return
         if (!sessions.readyForCapture()) return
-        if (position.x == null || position.y == null) { positions.show(); return }
         if (!cameraPermissionGranted()) { cameraPermissionLauncher.launch(Manifest.permission.CAMERA); return }
         cameraHelper.recordingBlockReason()?.let {
             Toast.makeText(this, it, Toast.LENGTH_LONG).show()
@@ -286,7 +338,9 @@ class MainActivity : AppCompatActivity() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
         lastPosition = position
         preferences.edit().putString("last_capture_position", position.json().toString()).apply()
-        viewBinding.captureProgress.max = length.frameCount ?: (requireNotNull(length.durationSeconds) * 1000)
+        // The countdown is idle time: use it so the frame processing code is already compiled when frames arrive.
+        CaptureProcessing.warmUp()
+        viewBinding.captureProgress.max = length.frames
         viewBinding.captureProgress.progress = 0
         updateControls()
         countdown = object : CountDownTimer(CaptureLength.COUNTDOWN_SECONDS * 1000L, 1000L) {
@@ -296,16 +350,15 @@ class MainActivity : AppCompatActivity() {
             override fun onFinish() {
                 countdown = null
                 viewBinding.burstStatus.setText(R.string.capture_starting)
-                val key = cameraHelper.activeProfile?.let { cameraHelper.getCameraId() to it.stream.key }
-                cameraHelper.startBurst(position, ResearchSettings.mounting(preferences, key), length,
-                    progress = { count, elapsedMs -> runOnUiThread {
+                cameraHelper.startBurst(position, length,
+                    progress = { count -> runOnUiThread {
                         if (!isDestroyed && captureBusy) {
-                            viewBinding.burstStatus.text = if (length.mode == CaptureLengthMode.FRAMES)
-                                getString(R.string.capture_progress, count, length.value)
-                            else getString(R.string.capture_duration_progress, count, elapsedMs / 1000.0, length.value)
-                            viewBinding.captureProgress.progress = if (length.mode == CaptureLengthMode.FRAMES) count
-                                else elapsedMs.toInt().coerceAtMost(viewBinding.captureProgress.max)
+                            viewBinding.burstStatus.text = getString(R.string.capture_progress, count, length.frames)
+                            viewBinding.captureProgress.progress = count
                         }
+                    } },
+                    analyzing = { done, total -> runOnUiThread {
+                        if (!isDestroyed && captureBusy) viewBinding.burstStatus.text = getString(R.string.finding_leds, done, total)
                     } },
                     completed = { summary -> runOnUiThread { if (!isDestroyed) finishFrameCapture(summary) } },
                     failed = { error -> runOnUiThread {
@@ -340,35 +393,22 @@ class MainActivity : AppCompatActivity() {
     private fun finishFrameCapture(summary: BurstSummary) {
         triggerBusy = false
         captureBusy = false
+        refreshCapturedPositions()
         requestedOrientation = orientationBeforeCapture
         val fps = summary.fps?.let { String.format(java.util.Locale.getDefault(), "%.2f", it) } ?: "—"
-        val savedDescription = if (summary.length.mode == CaptureLengthMode.FRAMES)
-            getString(R.string.capture_saved, summary.saved, summary.length.value)
-        else getString(R.string.capture_duration_saved, summary.saved, summary.length.value)
-        val description = getString(R.string.capture_summary, summary.positionId, savedDescription, fps)
+        val savedDescription = getString(R.string.capture_saved, summary.saved, summary.length.frames)
+        val leds = summary.ledsDetected?.let { found ->
+            if (found.isEmpty()) getString(R.string.leds_detected_none, SessionCsv.LEDS)
+            else getString(R.string.leds_detected, found.size, SessionCsv.LEDS, found.joinToString(", "))
+        }
+        val description = getString(R.string.capture_summary, summary.positionId, savedDescription, fps) +
+            (leds?.let { "\n$it" } ?: "")
         resultDetails = description + "\n\n" + (if (summary.warnings.isEmpty()) getString(R.string.capture_no_warnings)
             else summary.warnings.joinToString("\n\n"))
         resultDetails += "\n\nSession folder: Pictures/Q-VLP/${summary.sessionId}. This position saves there automatically. A recovery copy is kept in the app."
-        viewBinding.burstStatus.text = savedDescription + "\n" + when {
-            summary.interrupted -> getString(R.string.capture_interrupted_short)
-            summary.warnings.isNotEmpty() -> getString(R.string.capture_warning_short, summary.warnings.size)
-            else -> getString(R.string.capture_success_short)
-        }
-        viewBinding.burstStatus.append("\n" + getString(
-            if (summary.warnings.isEmpty()) R.string.tap_capture_details else R.string.tap_capture_warnings))
+        // Nothing is written on the result screen. Warnings and details are behind the information button.
+        viewBinding.burstStatus.text = ""
         updateControls()
-        if (!summary.interrupted) {
-            runCatching {
-                val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
-                tone.startTone(ToneGenerator.TONE_PROP_BEEP, 250)
-                Handler(Looper.getMainLooper()).postDelayed({ tone.release() }, 500)
-            }
-            runCatching {
-                @Suppress("DEPRECATION")
-                val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
-                if (vibrator.hasVibrator()) vibrator.vibrate(VibrationEffect.createOneShot(250, VibrationEffect.DEFAULT_AMPLITUDE))
-            }
-        }
     }
 
     private fun clearResult() {
@@ -378,14 +418,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun showCapturePlan() {
         val length = CaptureLengthPreferences.read(preferences)
-        val label = resources.getQuantityString(if (length.mode == CaptureLengthMode.FRAMES) R.plurals.capture_length_frames
-            else R.plurals.capture_length_seconds, length.value, length.value)
+        val label = resources.getQuantityString(R.plurals.capture_length_frames, length.frames, length.frames)
         viewBinding.burstStatus.text = getString(R.string.capture_workflow, CaptureLength.COUNTDOWN_SECONDS, label)
     }
 
     private fun showStorageStatus() {
-        viewBinding.storageStatus.text = if (captureBusy && storageState.running)
-            "Auto-save continues after this capture." else storageState.message
+        // Routine saving is silent; the box appears only when auto-save needs setting up or has failed.
+        viewBinding.storageStatus.visibility = if (storageState.needsAttention) View.VISIBLE else View.GONE
+        viewBinding.storageStatus.text = storageState.message
         val actionable = storageState.needsAttention && !captureBusy && !fileBusy
         viewBinding.storageStatus.isClickable = actionable
         viewBinding.storageStatus.isFocusable = actionable
@@ -402,20 +442,34 @@ class MainActivity : AppCompatActivity() {
         val switchTo = cameraHelper.switchTarget()
         viewBinding.switchCameraButton.visibility = if (switchTo == null) View.GONE else View.VISIBLE
         viewBinding.switchCameraButton.isEnabled = !busy
-        viewBinding.switchCameraButton.setText(
-            if (switchTo == CameraChoice.Facing.REAR) R.string.switch_to_rear else R.string.switch_to_front)
+        val toRear = switchTo == CameraChoice.Facing.REAR
+        if (toRear != switchIconToRear) {
+            switchIconToRear = toRear
+            // The icon shows the camera a tap selects: a camera for rear, a person for front.
+            viewBinding.switchCameraButton.setIconResource(
+                if (toRear) R.drawable.ic_switch_to_rear else R.drawable.ic_switch_to_front)
+            val label = getString(if (toRear) R.string.switch_to_rear else R.string.switch_to_front)
+            viewBinding.switchCameraButton.contentDescription = label
+            TooltipCompat.setTooltipText(viewBinding.switchCameraButton, label)
+        }
         viewBinding.aboutButton.isEnabled = !busy
         viewBinding.sessionsButton.isEnabled = !busy
         viewBinding.storageStatus.isEnabled = !busy
         viewBinding.positionButton.isEnabled = !busy
         viewBinding.captureStatus.isEnabled = !busy
         val position = ResearchSettings.position(preferences)
-        val hasPosition = position.x != null && position.y != null
+        val hasPosition = ResearchSettings.hasPosition(preferences)
         viewBinding.positionButton.text = if (hasPosition) getString(R.string.position_button, position.id)
             else getString(R.string.choose_position)
-        viewBinding.positionCoordinates.text = if (hasPosition)
-            getString(R.string.position_coordinates, position.x.toString(), position.y.toString())
-            else getString(R.string.position_required)
+        // Coordinates are shown only when an imported survey supplies them.
+        viewBinding.positionCoordinates.text = when {
+            !hasPosition -> getString(R.string.position_required)
+            position.x != null && position.y != null ->
+                getString(R.string.position_coordinates, position.x.toString(), position.y.toString())
+            else -> ""
+        }
+        viewBinding.positionCoordinates.visibility =
+            if (viewBinding.positionCoordinates.text.isEmpty()) View.GONE else View.VISIBLE
         val hasResult = resultDetails != null
         viewBinding.startCaptureButton.visibility = if (hasResult && !busy) View.GONE else View.VISIBLE
         viewBinding.startCaptureButton.setText(when {
@@ -426,12 +480,15 @@ class MainActivity : AppCompatActivity() {
         })
         viewBinding.startCaptureButton.isEnabled = !fileBusy && (captureBusy || (hasPosition && cameraReady))
         viewBinding.resultActions.visibility = if (hasResult && !busy) View.VISIBLE else View.GONE
-        viewBinding.burstStatus.isClickable = hasResult && !busy
-        viewBinding.burstStatus.isFocusable = hasResult && !busy
+        viewBinding.burstStatus.visibility = if (viewBinding.burstStatus.text.isEmpty()) View.GONE else View.VISIBLE
         viewBinding.repeatCaptureButton.isEnabled = !busy && cameraReady && lastPosition != null
         val hasNext = if (hasResult && !busy) PositionCatalog.next(preferences) != null else false
         viewBinding.nextPositionButton.isEnabled = !busy && hasNext
         viewBinding.nextPositionButton.setText(if (hasNext) R.string.next_position else R.string.last_position)
+        viewBinding.previousPositionButton.isEnabled = !busy && hasResult && PositionCatalog.previous(preferences) != null
+        viewBinding.infoButton.isEnabled = !busy
+        viewBinding.replacePositionButton.isEnabled = !busy
+        viewBinding.endSessionButton.isEnabled = !busy
         viewBinding.captureProgress.visibility = if (captureBusy) View.VISIBLE else View.GONE
     }
 

@@ -153,7 +153,7 @@ internal class SessionBrowser(private val activity: AppCompatActivity, private v
         AlertDialog.Builder(activity).setTitle("Session details")
             .setMessage("${session.label}\n\nFolder: Pictures/Q-VLP/${session.id}/\n" +
                 if (session.deleting) "Deletion is pending. Close these details, select the session and tap Delete to retry."
-                else "frames.csv combines the latest completed attempt for each position. Earlier and interrupted attempts stay in their original folders. Share / Save ZIP creates an optional compressed copy." +
+                else "final.csv has one row per position, from its latest completed capture. A position captured again is replaced there; the earlier capture stays in its own folder. Share / Save ZIP creates an optional compressed copy." +
                     if (session.warnings.isBlank()) "" else "\n\n${session.warnings}")
             .apply {
                 if (!session.deleting) {

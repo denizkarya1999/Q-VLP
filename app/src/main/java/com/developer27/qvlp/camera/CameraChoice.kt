@@ -21,15 +21,11 @@ internal object CameraChoice {
 
     /** Keep the operator's choice; otherwise front, then rear, then any camera. */
     fun initial(cameras: Map<String, Facing>, saved: String?): String? =
-        saved?.takeIf { it in cameras } ?: resetOrder(cameras, null).firstOrNull()
+        saved?.takeIf { it in cameras } ?: cameras.keys.minByOrNull { cameras.getValue(it).ordinal }
 
     /** The first camera facing the other way, or null when the device has none. */
     fun opposite(cameras: Map<String, Facing>, current: String?): String? {
         val wanted = if (cameras[current] == Facing.FRONT) Facing.REAR else Facing.FRONT
         return cameras.entries.firstOrNull { it.value == wanted && it.key != current }?.key
     }
-
-    /** Factory Reset tries the selected camera first, then front, rear and any other camera. */
-    fun resetOrder(cameras: Map<String, Facing>, selected: String?): List<String> =
-        cameras.keys.sortedBy { if (it == selected) -1 else cameras.getValue(it).ordinal }
 }

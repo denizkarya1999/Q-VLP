@@ -4,19 +4,20 @@
         android:key="modes"
         android:title="@string/modes"
         android:layout="@layout/preference_category_layout">
-        <Preference
+        <!-- One mode at a time: SettingsActivity keeps exactly one of these checked. -->
+        <CheckBoxPreference
             android:key="data_collection_mode"
             android:title="@string/data_collection_mode"
             android:summary="@string/data_collection_mode_summary"
-            android:selectable="false"
-            android:layout="@layout/preference_list_layout" />
-        <Preference
+            android:persistent="false"
+            android:layout="@layout/preference_radio_layout" />
+        <CheckBoxPreference
             android:key="inference_mode"
             android:title="@string/inference_mode"
             android:summary="@string/inference_mode_summary"
             android:enabled="false"
-            android:selectable="false"
-            android:layout="@layout/preference_list_layout" />
+            android:persistent="false"
+            android:layout="@layout/preference_radio_layout" />
     </PreferenceCategory>
     <PreferenceCategory
         android:title="@string/camera_settings"
@@ -25,16 +26,11 @@
             android:key="camera_status"
             android:layout="@layout/preference_list_layout"
             android:selectable="false" />
-        <Preference android:key="fixed_lens" android:title="@string/fixed_lens"
-            android:selectable="false" android:layout="@layout/preference_list_layout" />
-        <EditTextPreference
-            android:key="exposure_us"
+        <ListPreference
+            android:key="shutter_rate"
             android:layout="@layout/preference_list_layout"
-            android:title="@string/exposure_time"
-            android:dialogTitle="@string/exposure_time"
-            android:dialogLayout="@layout/dialog_camera_value"
-            android:positiveButtonText="@string/save_setting"
-            android:negativeButtonText="@android:string/cancel"
+            android:title="@string/shutter_rate"
+            android:dialogTitle="@string/shutter_rate"
             android:persistent="false" />
         <EditTextPreference
             android:key="iso"
@@ -45,74 +41,12 @@
             android:positiveButtonText="@string/save_setting"
             android:negativeButtonText="@android:string/cancel"
             android:persistent="false" />
-        <ListPreference
-            android:key="resolution"
-            android:layout="@layout/preference_list_layout"
-            android:title="@string/resolution"
-            android:dialogTitle="@string/resolution"
-            android:persistent="false" />
-        <ListPreference
-            android:key="preview_display_size"
-            android:layout="@layout/preference_list_layout"
-            android:title="@string/preview_size"
-            android:dialogTitle="@string/preview_size"
-            android:defaultValue="original" />
-        <ListPreference
-            android:key="frame_rate"
-            android:layout="@layout/preference_list_layout"
-            android:title="@string/frame_rate"
-            android:dialogTitle="@string/frame_rate"
-            android:persistent="false" />
-        <ListPreference
-            android:key="focus_mode"
-            android:layout="@layout/preference_list_layout"
-            android:title="@string/focus_mode"
-            android:dialogTitle="@string/focus_mode"
-            android:persistent="false" />
-        <EditTextPreference
-            android:key="focus_distance"
-            android:layout="@layout/preference_list_layout"
-            android:title="@string/focus_distance"
-            android:dialogTitle="@string/focus_distance"
-            android:dialogLayout="@layout/dialog_camera_value"
-            android:positiveButtonText="@string/save_setting"
-            android:negativeButtonText="@android:string/cancel"
-            android:persistent="false" />
-        <ListPreference
-            android:key="white_balance_mode"
-            android:layout="@layout/preference_list_layout"
-            android:title="@string/white_balance"
-            android:dialogTitle="@string/white_balance"
-            android:persistent="false" />
-        <Preference
-            android:key="reset_camera"
-            android:layout="@layout/preference_list_layout"
-            android:title="@string/reset_camera"
-            android:summary="@string/reset_camera_summary" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/recording_settings"
         android:layout="@layout/preference_category_layout">
-        <ListPreference android:key="capture_length_mode" android:title="@string/capture_length_mode"
-            android:dialogTitle="@string/capture_length_mode" android:defaultValue="frames"
-            android:layout="@layout/preference_list_layout" />
         <EditTextPreference android:key="capture_frame_count" android:title="@string/capture_frame_count"
             android:dialogTitle="@string/capture_frame_count" android:defaultValue="30"
             android:dialogLayout="@layout/dialog_camera_value" android:positiveButtonText="@string/save_setting"
             android:negativeButtonText="@android:string/cancel" android:layout="@layout/preference_list_layout" />
-        <EditTextPreference android:key="capture_duration_seconds" android:title="@string/capture_duration_seconds"
-            android:dialogTitle="@string/capture_duration_seconds" android:defaultValue="5"
-            android:dialogLayout="@layout/dialog_camera_value" android:positiveButtonText="@string/save_setting"
-            android:negativeButtonText="@android:string/cancel" android:layout="@layout/preference_list_layout" />
-        <Preference android:key="mounting_setup" android:title="@string/mounting_setup"
-            android:summary="@string/mounting_setup_summary" android:layout="@layout/preference_list_layout" />
-    </PreferenceCategory>
-    <PreferenceCategory android:title="@string/help_title"
-        android:layout="@layout/preference_category_layout">
-        <Preference android:key="capture_help" android:title="@string/how_to_capture"
-            android:summary="@string/recording_help_summary" android:layout="@layout/preference_list_layout" />
-        <Preference android:key="positions_csv_help" android:title="@string/positions_csv_help_title"
-            android:summary="@string/positions_csv_help_summary" android:layout="@layout/preference_list_layout" />
-        <Preference android:key="mounted_camera_check" android:title="@string/mounted_camera_check"
-            android:layout="@layout/preference_list_layout" />
     </PreferenceCategory>
 </PreferenceScreen>

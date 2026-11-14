@@ -7,6 +7,7 @@ import androidx.preference.PreferenceManager
 import org.json.JSONObject
 import java.io.File
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -15,12 +16,17 @@ import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-internal data class BurstLocation(val sessionId: String, val directory: File, val mounting: JSONObject)
+internal data class BurstLocation(val sessionId: String, val directory: File)
 internal data class SavedSession(val id: String, val label: String, val warnings: String, val deleting: Boolean = false)
 
 internal object SessionFiles {
     val io = Executors.newSingleThreadExecutor()
     @Volatile var activeCapture: File? = null
+
+    /** A capture still being written, or the processed folder that belongs to it. Neither may be published yet. */
+    fun isActive(folder: File): Boolean = activeCapture.let { active ->
+        active != null && (folder == active || folder == SessionLayout.processedFolder(active))
+    }
     private const val ACTIVE = "active_research_session"
     private fun root(context: Context) = File(context.filesDir, "sessions").apply { mkdirs() }
     fun validId(id: String) = id.matches(Regex("session_[0-9a-f-]+"))
@@ -63,69 +69,47 @@ internal object SessionFiles {
     fun activeSessionId(context: Context): String? =
         PreferenceManager.getDefaultSharedPreferences(context).getString(ACTIVE, null)
 
+    /** The positions that already have a capture in the session now being recorded. */
+    fun capturedPositions(context: Context): Set<Int> {
+        val id = activeSessionId(context)?.takeIf(::validId) ?: return emptySet()
+        return File(root(context), id).list().orEmpty().mapNotNull(SessionLayout::positionId).toSet()
+    }
+
     fun newSession(context: Context) {
         PreferenceManager.getDefaultSharedPreferences(context).edit().remove(ACTIVE).apply()
         SessionPublisher.sessionChanged()
     }
 
-    /** Called on the capture I/O worker. Mount changes create a new session automatically. */
-    fun createBurst(context: Context, position: Position, mounting: JSONObject): BurstLocation {
+    /** Called on the capture I/O worker. */
+    fun createBurst(context: Context, position: Position): BurstLocation {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val prior = prefs.getString(ACTIVE, null)?.takeIf(::validId)
         var session = prior?.takeUnless { isDeleting(context, it) }?.let { File(root(context), it) }
-        val previousMount = session?.let { runCatching { readJson(File(it, "session.json")).getJSONObject("mounting") }.getOrNull() }
-        if (session == null || previousMount?.toString() != mounting.toString()) {
+        if (session == null || !session.isDirectory) {
             session = File(root(context), "session_${UUID.randomUUID()}")
             check(session.mkdirs()) { "Cannot create the session folder." }
             writeJson(File(session, "session.json"), JSONObject().apply {
                 put("schema_version", 1)
-                put("processing_stage", "pre_cv")
+                put("processing_stage", "led_detection")
                 put("session_id", session.name)
                 put("created_at", Instant.now().toString())
                 put("device_manufacturer", Build.MANUFACTURER)
                 put("device_model", Build.MODEL)
                 put("android_api", Build.VERSION.SDK_INT)
                 put("app_version", context.packageManager.getPackageInfo(context.packageName, 0).versionName)
-                put("mounting", mounting)
                 put("survey", PositionCatalog.snapshot(prefs))
-                put("image_format", "I420: 8-bit Y, then U, then V; no row padding or compression")
+                put("image_format", "PNG: lossless 8-bit RGB, converted from the camera's YUV 4:2:0 with full-range BT.601")
                 put("image_orientation", "sensor-native; no pixel rotation or rescaling")
                 put("unknown_values", "CSV empty cells; JSON null")
             })
-            val survey = PositionCatalog.read(prefs)
-            if (survey.isNotEmpty()) File(session, "positions.csv").bufferedWriter(Charsets.UTF_8).use { csv ->
-                csv.appendLine("position_id,rx_x_m,rx_y_m")
-                survey.forEach { csv.appendLine("${it.id},${it.x},${it.y}") }
-            }
             prefs.edit().putString(ACTIVE, session.name).apply()
             SessionPublisher.sessionChanged()
-            File(session, "README.txt").writeText("""
-                Q-VLP pre-CV capture session
-
-                session.json records mounting details and the device. Each position_* folder
-                is a separate capture attempt. Repeat preserves earlier attempts.
-                The session-level frames.csv selects the latest completed attempt per position.
-                Interrupted attempts never replace a completed attempt. session.json frame_export
-                lists selected and excluded attempt folders. All original files remain available.
-                burst.json records requested settings, actual per-frame metadata and warnings.
-                frames.csv uses sensor timestamps; exposure_time_s is in seconds and fps is
-                measured from consecutive saved-frame timestamps. The first fps cell is empty.
-                LED columns are empty because no CV processing has run. Empty is not zero.
-
-                frame_00000.yuv corresponds to frame_id 0 in that folder's CSV/JSON.
-                Files are uncompressed I420: width*height Y bytes, followed by U then V,
-                each ceil(width/2)*ceil(height/2) bytes. Dimensions are recorded per frame.
-                Android row padding and interleaving have been removed. Pixels have not
-                been rotated, scaled or JPEG encoded. Source crop/strides are in burst.json.
-
-                Unknown mounting measurements and row time are null in JSON and empty in CSV.
-                Row time is user-supplied for a specific camera and resolution, not estimated.
-                A non-complete state indicates an interrupted attempt; saved frames remain usable.
-            """.trimIndent() + "\n")
         }
-        val directory = File(session, "position_${position.id}_${UUID.randomUUID()}")
-        check(directory.mkdirs()) { "Cannot create the capture folder." }
-        return BurstLocation(session.name, directory, mounting)
+        // Captures a second apart can never collide; anything closer gets a suffix.
+        val name = SessionLayout.captureName(position.id, LocalDateTime.now())
+        val directory = generateSequence(0) { it + 1 }.map { File(session, if (it == 0) name else "$name-$it") }.first { !it.exists() }
+        check(File(directory, SessionLayout.FRAMES).mkdirs()) { "Cannot create the capture folder." }
+        return BurstLocation(session.name, directory)
     }
 
     fun list(context: Context): List<SavedSession> = (directories(context) +
@@ -135,8 +119,12 @@ internal object SessionFiles {
             if (isDeleting(context, dir.name)) return@map SavedSession(dir.name,
                 "Deletion pending · Select to retry\n${dir.name}", "", deleting = true)
             val info = runCatching { readJson(File(dir, "session.json")) }.getOrNull()
-            val captures = dir.listFiles().orEmpty().filter { it.isDirectory }
-            val count = captures.sumOf { it.listFiles()?.count { f -> f.extension == "yuv" } ?: 0 }
+            val captures = dir.listFiles().orEmpty().filter { it.isDirectory && SessionLayout.isCapture(it) }
+            val count = captures.sumOf { capture ->
+                File(capture, SessionLayout.FRAMES).list().orEmpty().count { it.endsWith(".png") }.takeIf { it > 0 }
+                    // Captures recorded by earlier versions keep their frames beside burst.json.
+                    ?: capture.list().orEmpty().count { it.startsWith("frame_") && (it.endsWith(".png") || it.endsWith(".yuv")) }
+            }
             val pending = captures.count { runCatching { readJson(File(it, "burst.json")).optString("state") != "complete" }.getOrDefault(true) }
             val issues = captures.flatMap { capture ->
                 runCatching {
@@ -169,8 +157,7 @@ internal object SessionFiles {
         val partial = File(exports, "${file.name}.part")
         try {
             ZipOutputStream(partial.outputStream().buffered()).use { zip ->
-                session.walkTopDown().filter { it.isFile && !it.name.endsWith(".part") &&
-                    !it.name.endsWith(".bak") && !it.name.endsWith(".new") }.forEach { source ->
+                session.walkTopDown().filter { it.isFile && SessionLayout.isOutput(it) }.forEach { source ->
                     zip.putNextEntry(ZipEntry("$id/${source.relativeTo(session).invariantSeparatorsPath}"))
                     source.inputStream().buffered().use { it.copyTo(zip) }
                     zip.closeEntry()

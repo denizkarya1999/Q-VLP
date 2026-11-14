@@ -218,11 +218,11 @@ class SessionDeletionTest {
         } finally { clean(first); clean(second); clean(sibling) }
     }
 
-    @Test fun csvHelpExampleImportsWithoutChangingTheUsersPositions() {
+    @Test fun aPositionsFileImportsWithoutChangingTheUsersPositions() {
         val name = "csv_help_test_${UUID.randomUUID()}"
         val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
         try {
-            val example = context.getString(com.developer27.qvlp.R.string.positions_csv_example)
+            val example = "position_id,rx_x_m,rx_y_m\n0,0.00,0.00\n1,0.50,0.00\n2,0.50,0.50\n"
             assertEquals(3, PositionCatalog.import(example.byteInputStream(), prefs))
             val positions = PositionCatalog.read(prefs)
             assertEquals(listOf(0, 1, 2), positions.map { it.id })

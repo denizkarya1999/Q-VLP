@@ -7,6 +7,7 @@ import android.view.View
 import android.text.InputType
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
@@ -14,23 +15,17 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import com.developer27.qvlp.camera.FixedCamera
 import com.developer27.qvlp.camera.CameraCapabilities
-import com.developer27.qvlp.camera.CameraChoice
 import com.developer27.qvlp.camera.CameraProfile
 import com.developer27.qvlp.camera.CameraSettingsStore
 import com.developer27.qvlp.camera.CaptureSettings
-import com.developer27.qvlp.camera.FocusMode
-import com.developer27.qvlp.camera.FocusWhiteBalanceCapabilities
-import com.developer27.qvlp.camera.PreviewDisplaySize
-import com.developer27.qvlp.camera.ResearchCameraReset
+import com.developer27.qvlp.camera.ResearchCapturePolicy
 import com.developer27.qvlp.capture.CaptureLengthPreferences
-import com.developer27.qvlp.capture.ResearchSettings
 
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.settings_activity)
-        findViewById<android.widget.TextView>(R.id.settingsTitle).setText(
-            if (intent.getBooleanExtra(EXTRA_MOUNTING, false)) R.string.mounting_setup else R.string.settings)
+        findViewById<android.widget.TextView>(R.id.settingsTitle).setText(R.string.settings)
         findViewById<android.widget.Button>(R.id.settingsDone).setOnClickListener { finish() }
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
@@ -41,7 +36,9 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_CAMERA_ID = "camera_id"
         const val EXTRA_PREFERENCE_KEY = "preference_key"
-        const val EXTRA_MOUNTING = "mounting"
+        const val MODE_PREFERENCE = "app_mode"
+        /** Data Collection is the default and, until inference exists, the only mode that can be chosen. */
+        val MODE_KEYS = listOf("data_collection_mode", "inference_mode")
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
@@ -52,105 +49,16 @@ class SettingsActivity : AppCompatActivity() {
         private lateinit var capabilities: CameraCapabilities
         private lateinit var store: CameraSettingsStore
         private lateinit var profile: CameraProfile
-        private lateinit var exposure: EditTextPreference
+        private lateinit var shutterRate: ListPreference
         private lateinit var iso: EditTextPreference
-        private lateinit var resolution: ListPreference
-        private lateinit var fps: ListPreference
-        private lateinit var focus: ListPreference
-        private lateinit var focusDistance: EditTextPreference
-        private lateinit var whiteBalance: ListPreference
-        private lateinit var previewDisplaySize: ListPreference
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            val mounting = requireActivity().intent.getBooleanExtra(EXTRA_MOUNTING, false)
-            setPreferencesFromResource(if (mounting) R.xml.mount_preferences else R.xml.root_preferences, rootKey)
-            if (mounting) {
-                runCatching {
-                    val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                    val id = requireNotNull(requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))
-                    val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    val fixed = FixedCamera.resolve(manager, id, prefs.getString(FixedCamera.preferenceKey(id), null))
-                    capabilities = fixed.capabilities
-                    store = CameraSettingsStore(PreferenceManager.getDefaultSharedPreferences(requireContext()), id)
-                    profile = store.load(capabilities)
-                }
-                ResearchSettings.bind(this) {
-                    if (::capabilities.isInitialized && ::profile.isInitialized) capabilities.cameraId to profile.stream.key else null
-                }
-                if (::capabilities.isInitialized && ::profile.isInitialized)
-                    ResearchSettings.refreshRowTime(this, capabilities.cameraId to profile.stream.key)
-                return
-            }
+            setPreferencesFromResource(R.xml.root_preferences, rootKey)
+            bindModes()
             CaptureLengthPreferences.bind(this)
-            previewDisplaySize = requireNotNull(findPreference(PreviewDisplaySize.PREFERENCE_KEY))
-            previewDisplaySize.entries = PreviewDisplaySize.values().map { getString(it.label) }.toTypedArray()
-            previewDisplaySize.entryValues = PreviewDisplaySize.values().map { it.key }.toTypedArray()
-            previewDisplaySize.value = PreviewDisplaySize.read(
-                PreferenceManager.getDefaultSharedPreferences(requireContext())).key
-            previewDisplaySize.summaryProvider = Preference.SummaryProvider<ListPreference> {
-                getString(R.string.preview_size_summary, it.entry)
-            }
-            previewDisplaySize.setOnPreferenceChangeListener { _, value ->
-                PreviewDisplaySize.values().any { it.key == value }
-            }
-            findPreference<Preference>("capture_help")?.setOnPreferenceClickListener {
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                    .setTitle(R.string.how_to_capture).setMessage(R.string.capture_help)
-                    .setPositiveButton(android.R.string.ok, null).show()
-                true
-            }
-            findPreference<Preference>("mounted_camera_check")?.setOnPreferenceClickListener {
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                    .setTitle(R.string.mounted_camera_check).setMessage(R.string.mounted_camera_check_help)
-                    .setPositiveButton(android.R.string.ok, null).show()
-                true
-            }
-            findPreference<Preference>("positions_csv_help")?.setOnPreferenceClickListener {
-                val example = getString(R.string.positions_csv_example)
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                    .setTitle(R.string.positions_csv_help_title)
-                    .setMessage(getString(R.string.positions_csv_help, example))
-                    .setNeutralButton(R.string.copy_csv_example) { _, _ ->
-                        val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("positions.csv", example))
-                        Toast.makeText(requireContext(), R.string.csv_example_copied, Toast.LENGTH_SHORT).show()
-                    }
-                    .setPositiveButton(android.R.string.ok, null).show()
-                true
-            }
-            findPreference<Preference>("mounting_setup")?.setOnPreferenceClickListener {
-                startActivity(android.content.Intent(requireContext(), SettingsActivity::class.java)
-                    .putExtra(EXTRA_CAMERA_ID, requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID))
-                    .putExtra(EXTRA_MOUNTING, true))
-                true
-            }
-            exposure = requireNotNull(findPreference("exposure_us"))
+            shutterRate = requireNotNull(findPreference("shutter_rate"))
             iso = requireNotNull(findPreference("iso"))
-            resolution = requireNotNull(findPreference("resolution"))
-            fps = requireNotNull(findPreference("frame_rate"))
-            focus = requireNotNull(findPreference("focus_mode"))
-            focusDistance = requireNotNull(findPreference("focus_distance"))
-            whiteBalance = requireNotNull(findPreference("white_balance_mode"))
             val status = requireNotNull(findPreference<Preference>("camera_status"))
-            val reset = requireNotNull(findPreference<Preference>("reset_camera"))
-            // This must remain available even when the currently selected camera is unsupported.
-            reset.setOnPreferenceClickListener {
-                try {
-                    val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                    val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    val selection = ResearchCameraReset.select(manager, prefs.getString(CameraChoice.PREFERENCE_KEY, null), prefs)
-                    ResearchCameraReset.apply(requireContext(), prefs, selection)
-                    requireActivity().intent.putExtra(EXTRA_CAMERA_ID, selection.cameraId)
-                    message(getString(R.string.camera_defaults_restored, selection.profile.stream.label, selection.profile.fps))
-                    requireActivity().recreate()
-                } catch (error: Exception) {
-                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                        .setTitle(R.string.factory_reset_unavailable)
-                        .setMessage(error.message ?: getString(R.string.camera_settings_unavailable))
-                        .setPositiveButton(android.R.string.ok, null).show()
-                }
-                true
-            }
             try {
                 val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
                 val id = requireNotNull(requireActivity().intent.getStringExtra(EXTRA_CAMERA_ID)) {
@@ -159,7 +67,6 @@ class SettingsActivity : AppCompatActivity() {
                 val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
                 val fixed = FixedCamera.resolve(manager, id, prefs.getString(FixedCamera.preferenceKey(id), null))
                 capabilities = fixed.capabilities
-                requireNotNull(findPreference<Preference>("fixed_lens")).summary = fixed.description
                 store = CameraSettingsStore(PreferenceManager.getDefaultSharedPreferences(requireContext()), id)
                 profile = store.load(capabilities)
                 status.isVisible = false
@@ -167,53 +74,18 @@ class SettingsActivity : AppCompatActivity() {
                 status.isVisible = true
                 status.title = getString(R.string.camera_settings_unavailable)
                 status.summary = error.message ?: getString(R.string.camera_settings_unavailable)
-                listOf(exposure, iso, resolution, fps, focus, focusDistance, whiteBalance)
-                    .forEach { it.isEnabled = false }
+                listOf(shutterRate, iso).forEach { it.isEnabled = false }
                 return
             }
 
-            exposure.setOnBindEditTextListener {
-                it.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                it.selectAll()
-            }
             iso.setOnBindEditTextListener {
                 it.inputType = InputType.TYPE_CLASS_NUMBER
                 it.selectAll()
             }
-            focusDistance.setOnBindEditTextListener {
-                it.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                it.selectAll()
-            }
-            focus.setOnPreferenceChangeListener { _, value ->
-                capabilities.controls.focusModes.firstOrNull { it.name == value }?.let { mode ->
-                    save(profile.copy(controls = profile.controls.copy(focusMode = mode)))
-                }
-                false
-            }
-            focusDistance.setOnPreferenceChangeListener { _, value ->
-                val distance = (value as? String)?.trim()?.replace(',', '.')?.toFloatOrNull()
-                if (distance == null || !distance.isFinite() || distance !in 0f..capabilities.controls.maxFocusDistance) {
-                    message(focusRangeMessage())
-                } else if (profile.controls.focusMode == FocusMode.MANUAL && capabilities.controls.manualFocus) {
-                    save(profile.copy(controls = profile.controls.copy(focusDistance = distance)))
-                }
-                false
-            }
-            whiteBalance.setOnPreferenceChangeListener { _, value ->
-                val mode = (value as? String)?.toIntOrNull()
-                if (capabilities.controls.whiteBalanceOptions.any { it.mode == mode }) {
-                    save(profile.copy(controls = profile.controls.copy(whiteBalanceMode = requireNotNull(mode))))
-                }
-                false
-            }
-            exposure.setOnPreferenceChangeListener { _, value ->
-                val nanos = CaptureSettings.parseExposureMicros(value as? String)
-                val max = capabilities.maximumExposureNs(profile.stream, profile.fps)
-                if (nanos == null || nanos !in capabilities.exposureRangeNs.lower..max) {
-                    message(exposureRangeMessage())
-                } else {
-                    save(profile.copy(exposureNs = nanos))
-                }
+            shutterRate.setOnPreferenceChangeListener { _, value ->
+                // The exposure is one period of the rate. Only rates this camera supports are listed.
+                (value as? String)?.toIntOrNull()?.takeIf { it in shutterRates() }
+                    ?.let { save(profile.copy(exposureNs = CaptureSettings.exposureNanos(it))) }
                 false // Persist the validated profile together, not the raw preference value.
             }
             iso.setOnPreferenceChangeListener { _, value ->
@@ -225,35 +97,26 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 false
             }
-            resolution.setOnPreferenceChangeListener { _, value ->
-                val stream = capabilities.streams.firstOrNull { it.key == value }
-                if (stream != null) {
-                    val rate = profile.fps.takeIf { it in stream.frameRates }
-                        ?: capabilities.defaultFrameRate(stream)
-                    val maxExposure = capabilities.maximumExposureNs(stream, rate)
-                    if (profile.exposureNs > maxExposure) {
-                        message(getString(R.string.shorten_exposure, CaptureSettings.exposureMicros(maxExposure)))
-                    } else {
-                        val rateChanged = rate != profile.fps
-                        save(profile.copy(stream = stream, fps = rate))
-                        if (rateChanged) message(getString(R.string.fps_adjusted, rate))
-                    }
-                }
-                false
-            }
-            fps.setOnPreferenceChangeListener { _, value ->
-                val rate = (value as? String)?.toIntOrNull()
-                if (rate != null && rate in profile.stream.frameRates) {
-                    val maxExposure = capabilities.maximumExposureNs(profile.stream, rate)
-                    if (profile.exposureNs > maxExposure) {
-                        message(getString(R.string.shorten_exposure, CaptureSettings.exposureMicros(maxExposure)))
-                    } else {
-                        save(profile.copy(fps = rate))
-                    }
-                }
-                false
-            }
             refresh()
+        }
+
+        /** The modes behave as radio buttons: choosing one clears the other, and the choice is remembered. */
+        private fun bindModes() {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            val modes = MODE_KEYS.map { requireNotNull(findPreference<CheckBoxPreference>(it)) }
+            fun show(selected: String) = modes.forEach { it.isChecked = it.key == selected }
+            modes.forEach { mode ->
+                mode.setOnPreferenceChangeListener { _, checked ->
+                    // Tapping the selected mode leaves it selected; a mode is only left by choosing another.
+                    if (checked == true) {
+                        prefs.edit().putString(MODE_PREFERENCE, mode.key).apply()
+                        show(mode.key)
+                    }
+                    false
+                }
+            }
+            // A mode that cannot be chosen yet is never restored as the selection.
+            show(modes.firstOrNull { it.isEnabled && it.key == prefs.getString(MODE_PREFERENCE, null) }?.key ?: MODE_KEYS.first())
         }
 
         private fun save(value: CameraProfile) {
@@ -262,75 +125,22 @@ class SettingsActivity : AppCompatActivity() {
             refresh()
         }
 
-        private fun exposureRangeMessage(): String = getString(
-            R.string.exposure_range,
-            CaptureSettings.exposureMicros(capabilities.exposureRangeNs.lower),
-            CaptureSettings.exposureMicros(capabilities.maximumExposureNs(profile.stream, profile.fps)),
-            profile.fps
-        )
+        private fun shutterRates(): List<Int> = CaptureSettings.shutterRates(
+            capabilities.exposureRangeNs.lower, capabilities.maximumExposureNs(profile.stream, profile.fps))
 
         private fun refresh() {
-            exposure.text = CaptureSettings.exposureMicros(profile.exposureNs)
-            exposure.summary = getString(R.string.exposure_summary, exposure.text)
-            exposure.dialogMessage = exposureRangeMessage()
+            val rates = shutterRates()
+            val rate = CaptureSettings.shutterRateHz(profile.exposureNs)
+            shutterRate.entries = rates.map { getString(R.string.shutter_rate_value, it) }.toTypedArray()
+            shutterRate.entryValues = rates.map { it.toString() }.toTypedArray()
+            // An exposure saved before this setting existed may fall between two listed rates.
+            shutterRate.value = rates.firstOrNull { CaptureSettings.exposureNanos(it) == profile.exposureNs }?.toString()
+            shutterRate.summary = getString(R.string.shutter_rate_value, rate) +
+                if (profile.exposureNs > ResearchCapturePolicy.MAX_EXPOSURE_NS)
+                    "\n" + getString(R.string.shutter_rate_too_slow, ResearchCapturePolicy.MIN_SHUTTER_RATE_HZ) else ""
             iso.text = profile.iso.toString()
             iso.summary = getString(R.string.iso_summary, profile.iso)
             iso.dialogMessage = getString(R.string.iso_range, capabilities.isoRange.lower, capabilities.isoRange.upper)
-            resolution.entries = capabilities.streams.map { it.label }.toTypedArray()
-            resolution.entryValues = capabilities.streams.map { it.key }.toTypedArray()
-            resolution.value = profile.stream.key
-            resolution.summary = getString(R.string.resolution_summary, profile.stream.label)
-            fps.entries = profile.stream.frameRates.map { getString(R.string.fps_value, it) }.toTypedArray()
-            fps.entryValues = profile.stream.frameRates.map { it.toString() }.toTypedArray()
-            fps.value = profile.fps.toString()
-            fps.summary = getString(R.string.fps_summary, profile.fps)
-            refreshFocusAndWhiteBalance()
-            ResearchSettings.refreshRowTime(this, capabilities.cameraId to profile.stream.key)
-        }
-
-        private fun focusRangeMessage(): String = getString(
-            if (capabilities.controls.focusCalibrated) R.string.focus_distance_range else R.string.focus_position_range,
-            capabilities.controls.maxFocusDistance.toBigDecimal().stripTrailingZeros().toPlainString()
-        )
-
-        private fun refreshFocusAndWhiteBalance() {
-            val controls = capabilities.controls
-            val selected = profile.controls
-            focus.entries = controls.focusModes.map { getString(it.label) }.toTypedArray()
-            focus.entryValues = controls.focusModes.map { it.name }.toTypedArray()
-            focus.value = selected.focusMode.name
-            focus.isEnabled = controls.focusModes.size > 1
-            focus.summary = when (selected.focusMode) {
-                FocusMode.LOCK -> getString(R.string.focus_lock_summary)
-                FocusMode.AUTO -> getString(R.string.focus_auto_summary)
-                FocusMode.MANUAL -> getString(R.string.focus_manual_summary)
-                FocusMode.FIXED -> getString(R.string.focus_fixed_summary)
-                FocusMode.DEVICE -> getString(R.string.focus_unavailable_summary)
-            }
-            if (!controls.focusLock && !controls.fixedFocus) {
-                focus.summary = "${focus.summary}\n${getString(R.string.focus_lock_unavailable)}"
-            }
-            focusDistance.isVisible = controls.manualFocus && selected.focusMode == FocusMode.MANUAL
-            focusDistance.isEnabled = selected.focusMode == FocusMode.MANUAL
-            focusDistance.title = getString(if (controls.focusCalibrated) R.string.focus_distance else R.string.focus_position)
-            focusDistance.dialogTitle = focusDistance.title
-            focusDistance.text = selected.focusDistance.toBigDecimal().stripTrailingZeros().toPlainString()
-            focusDistance.dialogMessage = focusRangeMessage()
-            focusDistance.summary = if (focusDistance.isEnabled)
-                focusDistance.text else getString(R.string.focus_distance_disabled)
-            whiteBalance.entries = controls.whiteBalanceOptions.map { getString(it.label) }.toTypedArray()
-            whiteBalance.entryValues = controls.whiteBalanceOptions.map { it.mode.toString() }.toTypedArray()
-            whiteBalance.value = selected.whiteBalanceMode.toString()
-            whiteBalance.isEnabled = controls.whiteBalanceOptions.size > 1
-            whiteBalance.summary = when (selected.whiteBalanceMode) {
-                FocusWhiteBalanceCapabilities.WB_LOCK -> getString(R.string.wb_lock_summary)
-                FocusWhiteBalanceCapabilities.WB_DEVICE -> getString(R.string.wb_unavailable_summary)
-                android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO -> getString(R.string.wb_auto_summary)
-                else -> getString(R.string.wb_preset_summary, whiteBalance.entry)
-            }
-            if (!controls.whiteBalanceLock) {
-                whiteBalance.summary = "${whiteBalance.summary}\n${getString(R.string.wb_lock_unavailable)}"
-            }
         }
 
         private fun message(text: String) {

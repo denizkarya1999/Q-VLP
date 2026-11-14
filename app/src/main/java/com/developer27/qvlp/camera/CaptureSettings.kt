@@ -16,6 +16,27 @@ internal object CaptureSettings {
         null
     }
 
+    /**
+     * Rolling shutter rates in Hz, as RoTemplate and LiFind list them, extended to the short exposures
+     * that keep LED stripes sharp. The exposure time is one period of the rate: 10000 Hz is 100 µs.
+     */
+    val SHUTTER_RATES_HZ = listOf(5, 10, 15, 50, 100, 200, 250, 500, 650, 750, 800, 900, 950, 1000, 2000, 3000, 4000,
+        5000, 6000, 8000, 10000, 12000, 15000, 20000, 25000, 30000, 40000, 50000)
+
+    fun exposureNanos(rateHz: Int): Long {
+        require(rateHz > 0)
+        return 1_000_000_000L / rateHz
+    }
+
+    fun shutterRateHz(exposureNs: Long): Int {
+        require(exposureNs > 0)
+        return Math.round(1_000_000_000.0 / exposureNs).toInt()
+    }
+
+    /** The listed rates whose exposure the camera can actually use. */
+    fun shutterRates(minExposureNs: Long, maxExposureNs: Long): List<Int> =
+        SHUTTER_RATES_HZ.filter { exposureNanos(it) in minExposureNs..maxExposureNs }
+
     fun exposureMicros(nanos: Long): String =
         BigDecimal.valueOf(nanos, 3).stripTrailingZeros().toPlainString()
 

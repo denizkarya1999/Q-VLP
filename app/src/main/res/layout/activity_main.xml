@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/preview_frame"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -100,6 +101,7 @@
 
             <TextView
                 android:id="@+id/captureStatus"
+                android:visibility="gone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
@@ -116,6 +118,7 @@
 
             <TextView
                 android:id="@+id/storageStatus"
+                android:visibility="gone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
@@ -130,26 +133,12 @@
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="176dp"
+                android:layout_height="316dp"
                 android:layout_weight="1"
                 android:orientation="horizontal"
                 android:gravity="end|center_vertical"
                 android:paddingEnd="16dp"
                 android:paddingStart="16dp">
-                <Button
-                    android:id="@+id/switchCameraButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:text="@string/switch_to_rear"
-                    android:textAllCaps="false"
-                    android:textSize="14sp"
-                    android:backgroundTint="@color/yellow"
-                    android:textColor="@color/darkBlue" />
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:layout_weight="1" />
                 <LinearLayout
                     android:layout_width="60dp"
                     android:layout_height="wrap_content"
@@ -188,6 +177,34 @@
                         android:contentDescription="@string/minimize_camera"
                         android:backgroundTint="@color/yellow"
                         android:textColor="@color/darkBlue" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/switchCameraButton"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:layout_marginTop="12dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:contentDescription="@string/switch_to_rear"
+                        android:backgroundTint="@color/yellow"
+                        app:icon="@drawable/ic_switch_to_rear"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconSize="32dp"
+                        app:iconTint="@color/darkBlue" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/infoButton"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:layout_marginTop="12dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:contentDescription="@string/information"
+                        android:backgroundTint="@color/yellow"
+                        app:icon="@drawable/ic_info"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconSize="32dp"
+                        app:iconTint="@color/darkBlue" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -226,7 +243,6 @@
                     android:padding="6dp"
                     android:textColor="@android:color/white"
                     android:textSize="14sp"
-                    android:foreground="?android:attr/selectableItemBackground"
                     android:accessibilityLiveRegion="polite" />
                 <ProgressBar
                     android:id="@+id/captureProgress"
@@ -245,33 +261,76 @@
                     android:textSize="16sp"
                     android:backgroundTint="@color/green"
                     android:textColor="@android:color/white" />
+                <!-- Shown after a capture: capture again, move on, go back and replace, or end the session. -->
                 <LinearLayout
                     android:id="@+id/resultActions"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
+                    android:orientation="vertical"
                     android:visibility="gone">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <Button
+                            android:id="@+id/repeatCaptureButton"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/repeat_capture"
+                            android:textAllCaps="false"
+                            android:backgroundTint="@color/yellow"
+                            android:textColor="@color/darkBlue" />
+                        <Button
+                            android:id="@+id/replacePositionButton"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:layout_marginStart="4dp"
+                            android:text="@string/replace_position"
+                            android:textAllCaps="false"
+                            android:backgroundTint="@color/yellow"
+                            android:textColor="@color/darkBlue" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <Button
+                            android:id="@+id/previousPositionButton"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:text="@string/previous_position"
+                            android:textAllCaps="false"
+                            android:backgroundTint="@color/yellow"
+                            android:textColor="@color/darkBlue" />
+                        <Button
+                            android:id="@+id/nextPositionButton"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:layout_marginStart="4dp"
+                            android:text="@string/next_position"
+                            android:textAllCaps="false"
+                            android:backgroundTint="@color/yellow"
+                            android:textColor="@color/darkBlue" />
+                    </LinearLayout>
                     <Button
-                        android:id="@+id/repeatCaptureButton"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
+                        android:id="@+id/endSessionButton"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
-                        android:text="@string/repeat_capture"
+                        android:text="@string/end_session"
                         android:textAllCaps="false"
-                        android:backgroundTint="@color/yellow"
-                        android:textColor="@color/darkBlue" />
-                    <Button
-                        android:id="@+id/nextPositionButton"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginStart="4dp"
-                        android:text="@string/next_position"
-                        android:textAllCaps="false"
-                        android:backgroundTint="@color/yellow"
-                        android:textColor="@color/darkBlue" />
+                        android:backgroundTint="@color/darkBlue"
+                        android:textColor="@color/yellow"
+                        app:strokeColor="@color/yellow"
+                        app:strokeWidth="2dp" />
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>

@@ -52,63 +52,70 @@ class PublicSessionStorageTest {
         val root = PublicSessionStorage.requireDestination(context)
         val source = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
         val first = File(source, "position_999999_first").apply { mkdirs() }
+        val firstFrames = File(first, SessionLayout.FRAMES).apply { mkdirs() }
         val bytes = ByteArray(131_073) { (it * 31).toByte() }
         File(source, "session.json").writeText("{\"test\":true}")
-        File(first, "frame_00000.yuv").writeBytes(bytes)
+        File(firstFrames, "frame_00000.png").writeBytes(bytes)
         File(first, "burst.json").writeText("{\"state\":\"interrupted\"}")
-        File(first, "frames.csv.part").writeText("unfinished")
+        File(firstFrames, "frame_00001.png.part").writeText("unfinished")
         try {
             PublicSessionStorage.syncSession(context, source).getOrThrow()
             val publicSession = requireNotNull(find(root, source.name))
             val publicFirst = requireNotNull(find(publicSession, first.name))
-            assertNull(find(publicFirst, "frames.csv.part"))
-            val frameUri = requireNotNull(find(publicFirst, "frame_00000.yuv"))
+            val publicFrames = requireNotNull(find(publicFirst, SessionLayout.FRAMES))
+            assertNull(find(publicFrames, "frame_00001.png.part"))
+            // The app's own bookkeeping stays in its private storage.
+            assertNull(find(publicSession, "session.json"))
+            assertNull(find(publicFirst, "burst.json"))
+            val frameUri = requireNotNull(find(publicFrames, "frame_00000.png"))
             assertArrayEquals(bytes, context.contentResolver.openInputStream(frameUri)!!.use { it.readBytes() })
             // A second save must preserve the existing attempt and URI, without duplicate folders.
             PublicSessionStorage.syncSession(context, source).getOrThrow()
             assertEquals(publicFirst, find(publicSession, first.name))
-            assertEquals(frameUri, find(publicFirst, "frame_00000.yuv"))
-            File(first, "burst.json").writeText("{\"state\":\"complete\",\"frames_saved\":1}")
-            File(first, "frames.csv").writeText("frame_id\n0\n")
+            assertEquals(frameUri, find(publicFrames, "frame_00000.png"))
+            File(first, SessionLayout.MAPPING).writeText(SessionLayout.mapping(listOf(0)))
             val second = File(source, "position_999999_repeat").apply { mkdirs() }
-            File(second, "frame_00000.yuv").writeBytes(byteArrayOf(7, 8, 9))
+            File(File(second, SessionLayout.FRAMES).apply { mkdirs() }, "frame_00000.png").writeBytes(byteArrayOf(7, 8, 9))
             PublicSessionStorage.syncSession(context, source).getOrThrow()
             assertNotNull(find(publicSession, second.name))
-            assertEquals(File(first, "burst.json").readText(), context.contentResolver.openInputStream(
-                requireNotNull(find(publicFirst, "burst.json")))!!.bufferedReader().use { it.readText() })
+            assertEquals(File(first, SessionLayout.MAPPING).readText(), context.contentResolver.openInputStream(
+                requireNotNull(find(publicFirst, SessionLayout.MAPPING)))!!.bufferedReader().use { it.readText() })
             // Repair corruption of the same size and a missing file during explicit verification.
             context.contentResolver.openOutputStream(frameUri, "wt")!!.use { it.write(ByteArray(bytes.size)) }
-            DocumentsContract.deleteDocument(context.contentResolver, requireNotNull(find(publicFirst, "frames.csv")))
+            DocumentsContract.deleteDocument(context.contentResolver, requireNotNull(find(publicFirst, SessionLayout.MAPPING)))
             PublicSessionStorage.syncSession(context, source, verify = true).getOrThrow()
             assertArrayEquals(bytes, context.contentResolver.openInputStream(
-                requireNotNull(find(publicFirst, "frame_00000.yuv")))!!.use { it.readBytes() })
-            assertNotNull(find(publicFirst, "frames.csv"))
+                requireNotNull(find(publicFrames, "frame_00000.png")))!!.use { it.readBytes() })
+            assertNotNull(find(publicFirst, SessionLayout.MAPPING))
             assertNull(PublicSessionStorage.error(context))
-            assertArrayEquals(bytes, File(first, "frame_00000.yuv").readBytes())
+            assertArrayEquals(bytes, File(firstFrames, "frame_00000.png").readBytes())
             // A missing public attempt is recreated during automatic recovery as well.
             DocumentsContract.deleteDocument(context.contentResolver, publicFirst)
             PublicSessionStorage.syncSession(context, source).getOrThrow()
-            assertNotNull(find(requireNotNull(find(publicSession, first.name)), "frame_00000.yuv"))
-            // A failed frame copy must not publish a misleading 'complete' capture manifest.
+            assertNotNull(find(requireNotNull(find(requireNotNull(find(publicSession, first.name)), SessionLayout.FRAMES)), "frame_00000.png"))
+            // A failed frame copy must not publish a mapping that lists the frame as present.
             val failed = File(source, "position_999999_failed").apply { mkdirs() }
-            File(failed, "burst.json").writeText("{\"state\":\"complete\"}")
-            File(failed, "frame_00000.yuv").writeBytes(bytes)
+            val failedFrames = File(failed, SessionLayout.FRAMES).apply { mkdirs() }
+            File(failed, SessionLayout.MAPPING).writeText(SessionLayout.mapping(listOf(0)))
+            File(failedFrames, "frame_00000.png").writeBytes(bytes)
             val publicFailed = requireNotNull(DocumentsContract.createDocument(context.contentResolver,
                 publicSession, DocumentsContract.Document.MIME_TYPE_DIR, failed.name))
+            val publicFailedFrames = requireNotNull(DocumentsContract.createDocument(context.contentResolver,
+                publicFailed, DocumentsContract.Document.MIME_TYPE_DIR, SessionLayout.FRAMES))
             val obstacle = requireNotNull(DocumentsContract.createDocument(context.contentResolver,
-                publicFailed, DocumentsContract.Document.MIME_TYPE_DIR, "frame_00000.yuv"))
+                publicFailedFrames, DocumentsContract.Document.MIME_TYPE_DIR, "frame_00000.png"))
             assertTrue(PublicSessionStorage.syncSession(context, source).isFailure)
-            assertNull(find(publicFailed, "burst.json"))
+            assertNull(find(publicFailed, SessionLayout.MAPPING))
             assertNotNull(PublicSessionStorage.error(context))
-            assertArrayEquals(bytes, File(failed, "frame_00000.yuv").readBytes())
+            assertArrayEquals(bytes, File(failedFrames, "frame_00000.png").readBytes())
             DocumentsContract.deleteDocument(context.contentResolver, obstacle)
             // Simulate a process stopping while a public temporary file was being written.
             val partial = requireNotNull(DocumentsContract.createDocument(context.contentResolver,
-                publicFailed, "application/octet-stream", ".frame_00000.yuv.qvlp-part"))
+                publicFailedFrames, "application/octet-stream", ".frame_00000.png.qvlp-part"))
             context.contentResolver.openOutputStream(partial)!!.use { it.write(byteArrayOf(1)) }
             PublicSessionStorage.syncSession(context, source).getOrThrow()
-            assertNotNull(find(publicFailed, "burst.json"))
-            assertNull(find(publicFailed, ".frame_00000.yuv.qvlp-part"))
+            assertNotNull(find(publicFailed, SessionLayout.MAPPING))
+            assertNull(find(publicFailedFrames, ".frame_00000.png.qvlp-part"))
             assertNull(PublicSessionStorage.error(context))
         } finally {
             find(root, source.name)?.let { DocumentsContract.deleteDocument(context.contentResolver, it) }
@@ -120,18 +127,21 @@ class PublicSessionStorageTest {
     @Test fun snapshotsExcludeActiveCapturesAndDoNotGrowWhileBeingPublished() {
         val session = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
         val active = File(session, "position_active").apply { mkdirs() }
-        File(active, "frame_00000.yuv").writeBytes(byteArrayOf(1))
+        File(active, "frame_00000.png").writeBytes(byteArrayOf(1))
+        // The processed folder of a capture still being written is not ready either.
+        File(SessionLayout.processedFolder(active).apply { mkdirs() }, "frame_00000.png").writeBytes(byteArrayOf(1))
         File(session, "session.json").writeText("{}")
+        File(session, SessionLayout.FINAL).writeText("position_id\n")
         try {
             SessionFiles.activeCapture = active
             val before = PublicSessionStorage.snapshot(session)
-            assertEquals(listOf("session.json"), before.root.allFiles.map { it.name })
+            assertEquals(listOf(SessionLayout.FINAL), before.root.allFiles.map { it.name })
             SessionFiles.activeCapture = null
             val closed = PublicSessionStorage.snapshot(session)
-            assertEquals(2, closed.root.allFiles.size)
-            File(active, "later.yuv").writeBytes(byteArrayOf(2))
-            assertEquals(2, closed.root.allFiles.size)
-            assertEquals(3, PublicSessionStorage.snapshot(session).root.allFiles.size)
+            assertEquals(3, closed.root.allFiles.size)
+            File(active, "frame_00001.png").writeBytes(byteArrayOf(2))
+            assertEquals(3, closed.root.allFiles.size)
+            assertEquals(4, PublicSessionStorage.snapshot(session).root.allFiles.size)
         } finally {
             SessionFiles.activeCapture = null
             session.deleteRecursively()
@@ -206,10 +216,6 @@ class PublicSessionStorageTest {
             File(attempt, "burst.json").writeText(org.json.JSONObject().put("state", "complete")
                 .put("position", org.json.JSONObject().put("position_id", position))
                 .put("frames_saved", 1).put("finished_at", java.time.Instant.now().toString()).toString())
-            val row = MutableList(SessionCsv.columns.size) { "" }.apply {
-                this[0] = source.name; this[1] = position.toString(); this[4] = "0"
-            }
-            File(attempt, "frames.csv").writeText(SessionCsv.header + "\n" + row.joinToString(",") + "\n")
             val before = PublicSessionStorage.snapshot(source)
             assertTrue(PublicSessionStorage.needsSave(context, before))
             SessionFiles.io.submit { SessionPublisher.captureReady(context, source, position) }
@@ -246,26 +252,26 @@ class PublicSessionStorageTest {
         val root = PublicSessionStorage.requireDestination(context)
         val source = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
         File(source, "session.json").writeText("generation one")
-        File(source, "frames.csv").writeText("first index")
+        File(source, SessionLayout.FINAL).writeText("first index")
         val attempt = File(source, "position_first").apply { mkdirs() }
         File(attempt, "frame.yuv").writeBytes(byteArrayOf(1, 2, 3))
         val frozen = PublicSessionStorage.freeze(context, PublicSessionStorage.snapshot(source))
         try {
             File(source, "session.json").writeText("generation two")
-            File(source, "frames.csv").writeText("second index")
+            File(source, SessionLayout.FINAL).writeText("second index")
             PublicSessionStorage.syncSession(context, frozen) { done, _ ->
                 if (done == 1) {
                     val target = requireNotNull(find(root, source.name))
                     assertNotNull(find(requireNotNull(find(target, attempt.name)), "frame.yuv"))
-                    assertNull("Index must follow its frames", find(target, "frames.csv"))
+                    assertNull("Index must follow its frames", find(target, SessionLayout.FINAL))
                 }
             }.getOrThrow()
             val target = requireNotNull(find(root, source.name))
-            assertEquals("first index", context.contentResolver.openInputStream(requireNotNull(find(target, "frames.csv")))!!.bufferedReader().use { it.readText() })
-            assertEquals("generation one", context.contentResolver.openInputStream(requireNotNull(find(target, "session.json")))!!.bufferedReader().use { it.readText() })
+            assertEquals("first index", context.contentResolver.openInputStream(requireNotNull(find(target, SessionLayout.FINAL)))!!.bufferedReader().use { it.readText() })
+            assertNull("Bookkeeping stays private", find(target, "session.json"))
             assertTrue(PublicSessionStorage.needsSave(context, PublicSessionStorage.snapshot(source)))
             PublicSessionStorage.syncSession(context, source).getOrThrow()
-            assertEquals("second index", context.contentResolver.openInputStream(requireNotNull(find(target, "frames.csv")))!!.bufferedReader().use { it.readText() })
+            assertEquals("second index", context.contentResolver.openInputStream(requireNotNull(find(target, SessionLayout.FINAL)))!!.bufferedReader().use { it.readText() })
         } finally {
             frozen.discard()
             find(root, source.name)?.let { DocumentsContract.deleteDocument(context.contentResolver, it) }

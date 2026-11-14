@@ -53,8 +53,6 @@ class FixedCameraTest {
             prefs.edit().putString("active_research_session", "new-session").commit()
             fixed.remember(prefs)
             assertEquals("new-session", prefs.getString("active_research_session", null))
-            val reset = ResearchCameraReset.select(manager, fixed.cameraId, prefs)
-            assertEquals(fixed.physicalId, reset.physicalId)
         } finally { prefs.edit().clear().commit() }
     }
 }

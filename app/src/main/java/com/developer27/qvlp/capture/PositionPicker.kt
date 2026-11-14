@@ -59,17 +59,45 @@ internal class PositionPicker(private val activity: AppCompatActivity, private v
         }
     }
 
+    /** Asks which already captured position to capture again. [chosen] receives it; nothing is selected otherwise. */
+    fun replace(captured: Set<Int>, suggested: Int?, chosen: (Position) -> Unit) {
+        val builder = AlertDialog.Builder(activity)
+        val view = android.view.LayoutInflater.from(builder.context).inflate(R.layout.dialog_position, null)
+        val id = view.findViewById<EditText>(R.id.positionIdInput)
+        val error = view.findViewById<TextView>(R.id.positionError)
+        view.findViewById<TextView>(R.id.positionHelp).text = activity.getString(R.string.replace_position_help) +
+            if (captured.isEmpty()) "" else "\n\n" + activity.getString(R.string.replace_position_captured, captured.sorted().joinToString(", "))
+        suggested?.let { id.setText(it.toString()) }
+        val dialog = builder.setTitle(R.string.replace_position).setView(view)
+            .setPositiveButton(R.string.replace_position_confirm, null)
+            .setNegativeButton(android.R.string.cancel, null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val number = id.text.toString().trim().toIntOrNull()
+                val problem = when {
+                    number == null || number !in 0..999999 -> activity.getString(R.string.position_invalid)
+                    number !in captured -> activity.getString(R.string.replace_position_missing, number)
+                    else -> null
+                }
+                if (problem != null) {
+                    error.text = problem
+                    error.visibility = android.view.View.VISIBLE
+                } else {
+                    chosen(PositionCatalog.position(prefs, requireNotNull(number)))
+                    dialog.dismiss()
+                }
+            }
+        }
+        dialog.show()
+    }
+
     private fun manual() {
         val builder = AlertDialog.Builder(activity)
         val view = android.view.LayoutInflater.from(builder.context).inflate(R.layout.dialog_position, null)
         val id = view.findViewById<EditText>(R.id.positionIdInput)
-        val x = view.findViewById<EditText>(R.id.positionXInput)
-        val y = view.findViewById<EditText>(R.id.positionYInput)
         val error = view.findViewById<TextView>(R.id.positionError)
         val current = ResearchSettings.position(prefs)
-        id.setText(current.id.toString())
-        x.setText(current.x?.toString().orEmpty())
-        y.setText(current.y?.toString().orEmpty())
+        if (ResearchSettings.hasPosition(prefs)) id.setText(current.id.toString())
         val dialog = builder.setTitle(R.string.choose_position).setView(view)
             .setPositiveButton(R.string.use_position, null)
             .setNeutralButton(R.string.import_positions) { _, _ -> importFile() }
@@ -77,13 +105,12 @@ internal class PositionPicker(private val activity: AppCompatActivity, private v
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val number = id.text.toString().trim().toIntOrNull()
-                val px = x.text.toString().trim().replace(',', '.').toDoubleOrNull()
-                val py = y.text.toString().trim().replace(',', '.').toDoubleOrNull()
-                if (number == null || number !in 0..999999 || px == null || py == null || !px.isFinite() || !py.isFinite()) {
+                if (number == null || number !in 0..999999) {
                     error.setText(R.string.position_invalid)
                     error.visibility = android.view.View.VISIBLE
                 } else {
-                    PositionCatalog.select(prefs, Position(number, px, py))
+                    // Only the ID is typed. An imported survey still supplies its coordinates for that ID.
+                    PositionCatalog.select(prefs, PositionCatalog.position(prefs, number))
                     changed(false)
                     dialog.dismiss()
                 }

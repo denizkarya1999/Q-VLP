@@ -79,6 +79,11 @@ internal object PositionCatalog {
             .putString("position_source", position.source).apply()
     }
 
+    /** No position is selected until the operator enters or picks one. */
+    fun clear(prefs: SharedPreferences) {
+        prefs.edit().remove("position_id").remove("rx_x_m").remove("rx_y_m").remove("position_source").apply()
+    }
+
     fun next(prefs: SharedPreferences): Position? {
         val current = ResearchSettings.position(prefs)
         val rows = read(prefs)
@@ -88,6 +93,20 @@ internal object PositionCatalog {
         }
         return if (current.id < 999999) Position(current.id + 1, null, null) else null
     }
+
+    /** The position before the selected one: the previous row of an imported list, or the previous ID. */
+    fun previous(prefs: SharedPreferences): Position? {
+        val current = ResearchSettings.position(prefs)
+        val rows = read(prefs)
+        if (current.source == "positions.csv" && rows.isNotEmpty()) {
+            val index = rows.indexOfFirst { it.id == current.id }
+            return rows.getOrNull(index - 1)
+        }
+        return if (current.id > 0) Position(current.id - 1, null, null) else null
+    }
+
+    /** A typed ID keeps the coordinates of an imported position with that ID. */
+    fun position(prefs: SharedPreferences, id: Int): Position = read(prefs).firstOrNull { it.id == id } ?: Position(id, null, null)
 
     fun snapshot(prefs: SharedPreferences): JSONObject = JSONObject()
         .put("source", "researcher-supplied; never estimated by the phone")

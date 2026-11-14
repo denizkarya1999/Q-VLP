@@ -1,13 +1,13 @@
 # Q-VLP — Quantum-based Location Estimation
 
-Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. The current implementation provides the camera capture foundation; computer vision and location-estimation algorithms are planned.
+Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. This version records frames of the ceiling LEDs at surveyed positions, detects the LEDs in every frame and builds the fingerprint file `final.csv`. Location estimation is planned.
 
 The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplate). Open this directory in Android Studio; `app` is the application module.
 
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
 - Version: 1.0.0
-- Release date: October 23, 2026
+- Release date: November 14, 2026
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
 **Topics:** `android` · `kotlin` · `camera2` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
@@ -20,19 +20,46 @@ Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · Un
 
 ## Using Q-VLP
 
-**Settings → Modes** appears first. **Data Collection Mode** is the active mode for the existing recording and session workflow. **Inference Mode** is visibly marked **Not implemented yet** and cannot be selected; CV and model predictions will be added later.
+**Settings** has three groups. **Modes** is two radio buttons: **Data Collection Mode** is selected and runs the recording workflow; **Inference Mode** is faded, marked **Not implemented yet** and cannot be selected. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. There is no Help section.
 
-1. Tap **Choose Position**. Import your surveyed `positions.csv`, or enter the floor mark ID and its measured X/Y coordinates. Coordinates are required before capture and are never estimated by the phone.
-2. Open **Settings → Mounting Setup** once to record lens height, offsets and notes. Enter row time only if it is known for this camera and resolution. Keep the camera lens over the surveyed mark.
-3. Align the ceiling LEDs in the preview and wait for **Camera ready**. Tap **Start Capture**, then step away. Choose **Settings → Recording → Capture Length**: **Number of frames** (1–1000, default 30) or **Duration** (1–60 whole seconds, initially 5). The app waits 3 seconds, captures the selected length, saves a private recovery copy, then beeps and vibrates. Public folder copying continues in the background; its status appears below Camera ready. Device sound/vibration settings apply.
-4. Read the result on the same screen. Tap the result to open capture details and warnings. **Repeat** keeps the earlier attempt; **Next Position** follows the imported file order. Move the mount to that mark before starting again. Manual positions advance the ID and ask for new coordinates.
-5. Once, tap the **auto-save status on the camera screen → Choose folder** and select **Internal storage → Pictures** (or its **Q-VLP** folder), then **Use this folder → Allow**. Existing sessions are copied into **Pictures/Q-VLP**, and future captures save there automatically. The first capture also prompts for this setup if needed. Browse that folder in Files or over USB. **Share** and **Save ZIP** still export a compressed copy. **New Session** groups later captures separately; it does not delete previous data.
+1. Tap **Position** and enter the position ID. Only the ID is typed; X/Y coordinates are not needed. A `positions.csv` can be imported from the same dialog to step through a surveyed list instead.
+2. Mount the phone with the camera lens over the mark, at the same height for every position.
+3. Align the ceiling LEDs in the preview and tap **Start Capture** (or press a volume key), then step away. The app waits 3 seconds, captures **Settings → Recording → Number of Frames** frames (1–1000, default 30), and processes them. There is no beep or vibration.
+4. When processing ends, the buttons below replace Start Capture. Nothing is written on the result screen: no result line, no warning line and no status boxes.
 
-**Settings** shows the Fixed Camera Lens and contains Exposure Time, ISO Rate, Resolution, Preview Size, Target Frame Rate, Focus Mode, White Balance and Factory Reset. Only the selected values appear in the list; entry dialogs explain valid ranges. Mounting details have a separate page. Numeric entry works in light and dark mode. Tap the camera status for requested settings, reported measurements and lock status.
+   | | |
+   |---|---|
+   | **Repeat** | **Replace Position** |
+   | **Previous Position** | **Next Position** |
+   | **End Session** | |
 
-The original full-screen preview, centered title, top button row and bottom capture panel are restored. **Sessions**, **Settings** and **About** are across the top; **Position** and a full-width green **Start Capture** button are at the bottom. **+ / −** on the right of the preview increase or decrease digital zoom, with the current magnification shown between them. After a capture, **Repeat** and **Next Position** replace Start Capture. Results open their details when tapped, so there is no separate details button. **Settings → Help → How to Record** opens the instructions. Legacy MP4 recording and audio/storage permissions remain removed. Zoom uses the camera’s supported digital crop range in 0.1× steps, from 1× to its maximum. The app opens the **front camera** by default. **Switch to rear** / **Switch to front** on the left of the preview changes camera; the button is hidden when the device has only one facing. Each camera keeps its own settings and zoom, and switching starts a new session on the next capture. Camera selection and zoom are remembered, and controls are disabled throughout countdown/capture. A change of zoom starts a new session on the next capture; requested zoom and actual crop metadata are saved. The preview defaults to **Full screen (original)**, matching RoTemplate’s full-screen display mapping. **Settings → Preview Size** also offers **Fit entire frame**, **Medium**, and **Small**. Fit shows the whole sensor-native frame at its original proportions; Medium and Small use 75% and 50% of that fitted size, centered on a black background. The chosen display size is remembered across app restarts. Factory Reset also restores the original full-screen preview size. Preview size only changes the on-screen view; it does not change camera zoom, frame resolution, row-time calibration or saved pixels. Screen orientation is held during a burst; raw frames are not rotated. Cancel or leaving the app preserves any frames already saved and marks the attempt as interrupted.
+   - **Repeat** captures the same position again.
+   - **Next Position** and **Previous Position** select the next or previous position (ID ± 1, or the neighbouring row of an imported list). Capturing a position that already has a capture replaces it.
+   - **Replace Position** asks for the ID of the position to capture again. It lists the IDs captured in this session and rejects an ID that has no capture.
+   - **End Session** can be tapped after any position. Captured positions stay saved, and the next capture starts a new session.
 
-### Survey file
+   "Replace" means the latest completed capture of a position is the one used in `final.csv`. The earlier capture's folders are kept in the session.
+5. Once, choose where sessions are saved: when auto-save needs setting up, a notice appears on the camera screen; tap it, then **Choose folder → Internal storage → Pictures → Use this folder → Allow**. After that every position saves to **Pictures/Q-VLP** automatically and the notice stays hidden.
+
+### The information button
+
+The **i** button under the camera-switch button opens everything the screen no longer shows:
+
+- **Camera** — whether the camera is ready, and the requested and reported settings.
+- **Saving** — the auto-save progress of the session folder.
+- **Last capture** — frames saved, measured fps, which LEDs were detected, any warnings, and the session folder.
+
+The camera and saving notices appear on the camera screen only when something needs attention, such as a camera error, a missing permission or a failed save.
+
+### Camera screen
+
+**Sessions**, **Settings** and **About** are across the top; **Position** and a full-width **Start Capture** button are at the bottom. On the right of the preview, from top to bottom: **+**, the zoom level, **−**, the **switch-camera** button and the **i** button. Zoom uses the camera's digital crop range in 0.1× steps. The app opens the **front camera** by default; the switch button's icon shows the camera a tap selects (a camera for rear, a person for front) and is hidden when the device has one facing. Each camera keeps its own settings and zoom, and switching camera or changing zoom starts a new session on the next capture.
+
+The preview always fills the screen at the camera image's true proportions, on both cameras, and crops what does not fit; there is no preview size setting. It is display-only: it does not change zoom, resolution or saved pixels. Screen orientation is held during a capture and frames are not rotated. Cancelling or leaving the app keeps the frames already saved and marks the capture as interrupted.
+
+**Settings → Camera Settings** has two options. **Rolling Shutter Rate** is a list in Hz, as in RoTemplate and LiFind; the exposure time is one period of the rate (10000 Hz, the default, is 100 µs). Only rates the camera supports are listed, and research capture needs 10000 Hz or higher. **ISO Rate** is typed within the camera's range. Everything else is fixed by the app and has no setting: the lens, the resolution (1280 × 960 on a Pixel 8a, front and rear), 30 fps, focus and white balance.
+
+### Survey file (optional)
 
 Use UTF-8 CSV with exactly these columns (column order may vary):
 
@@ -42,57 +69,104 @@ position_id,rx_x_m,rx_y_m
 1,0.6,0.3
 ```
 
-These are examples; use measurements from the real room. Decimal points, LF/CRLF, an optional UTF-8 BOM and quoted numeric cells are supported. IDs must be unique nonnegative integers up to 999999, and coordinates must be finite numbers. Files are limited to 1 MB / 10,000 positions. Invalid files leave the existing list untouched. Import preserves file order, so researchers can prepare a snake path. The last position shows **End of List**; this is not a claim that every position was captured.
-
-A successful import selects the first position and starts a new session on the next capture. The app keeps the imported list locally. Session metadata includes the input file hash and surveyed positions; a normalized `positions.csv` is included in new sessions. Manual entries record their source separately. Existing attempts are never relabeled when the list changes.
+These are examples; use measurements from the real room. IDs must be unique nonnegative integers up to 999999, and coordinates must be finite numbers. Files are limited to 1 MB / 10,000 positions. Invalid files leave the existing list untouched. Import preserves file order, so Next and Previous follow the prepared path; the last position shows **End of List**. A successful import selects the first position and starts a new session on the next capture. The coordinates are kept by the app for reference only: they are not written into the session folder.
 
 ## Camera and saved data
 
-- Manual exposure and ISO use device-reported limits. Frame cadence is requested through `SENSOR_FRAME_DURATION`. Recommended settings request 100 µs, minimum ISO, 1280 × 960 at 30 fps and automatic focus/white-balance locking where supported; fallbacks use available capabilities. Settings remain adjustable for device setup. For the document's research protocol, use the selected camera (front by default) at 1× and select exposure at most 100 µs, at least 30 fps, full sensor aspect ratio, and locked or fixed focus/white balance. Unlocked modes and slower profiles remain available for setup, but research capture is blocked until the required settings are selected and confirmed.
-- Automatic focus/white-balance preparation briefly uses AE, freezes supported lens/color values or native locks, restores manual exposure, and requires matching camera results before capture. Returning from Settings reacquires the locks. Use manual focus and a fixed white-balance preset for values that must remain identical across camera reopenings.
-- Requests disable electronic/optical stabilization and scene effects where exposed, apply the operator-selected digital crop (full sensor at 1×), disable distortion correction where supported, and disable rotate-and-crop where supported. Actual geometry-related result fields are logged; unavailable results stay unknown. On the rear camera, both preview and YUV outputs are pinned to the same physical rear lens; the front camera is used directly. Physical-stream metadata confirms readiness and supplies the saved exposure, ISO and timestamps; missing physical metadata blocks or interrupts capture.
-- Each frame is saved as tightly packed **I420 YUV**: 8-bit Y, then U, then V, with Android row padding/interleaving removed. It is uncompressed and sensor-native, without pixel rotation or rescaling.
-- Camera images and metadata are paired by sensor timestamp. Actual exposure, ISO, timestamp, resolution and measured cadence are saved. Requested values are never substituted for missing actual measurements.
-- Missing frames, a frame-rate drop greater than 10%, exposure/ISO changes, lost camera locks, missing metadata and storage errors remain visible in capture details and exported metadata.
+- Manual exposure and ISO use device-reported limits. The defaults are a 10000 Hz rolling shutter rate (100 µs) and minimum ISO; the app fixes 1280 × 960 at 30 fps. A 4:3 size also qualifies when the sensor is slightly wider than 4:3, as on the Pixel 8a front camera (4208 × 3072): such frames keep every sensor row and crop under 3% of the width.
+- Focus and white balance are fixed or locked by the app before capture. Returning from Settings reacquires the locks.
+- Requests disable stabilization and scene effects where exposed, apply the selected digital crop (full sensor at 1×) and disable distortion correction and rotate-and-crop where supported. On the rear camera, preview and capture are pinned to the same physical lens; the front camera is used directly.
+- Camera images and their results are paired by sensor timestamp. Actual exposure, ISO, timestamp, resolution and measured cadence are saved. Requested values are never substituted for missing measurements.
+- Frames are copied off the camera in bulk and up to 12 wait in memory for their capture result (within a 32 MB budget). On a Pixel 8a, 30 of 30 frames are saved at 1280 × 960 and 30 fps.
+- Missing frames, a frame-rate drop greater than 10%, exposure/ISO changes, lost camera locks and storage errors are listed as warnings under **i → Last capture** and in **Sessions**.
 
-Each finished position **auto-saves to Internal storage/Pictures/Q-VLP/session_<id>/**. There is no Save button or pause/verification menu: finish a capture and continue with Repeat or Next Position. Each attempt has its own `position_<id>_<unique-id>/` folder containing YUV frames, `frames.csv` and `burst.json`. Repeat preserves earlier attempts in the same session. The camera screen shows “Saving position …” followed by “Position … saved”; saved is shown only after publication succeeds. Sessions shows the folder path; Share / Save ZIP remains optional.
+### What a session contains
 
-Open **Sessions**, press and hold a row to begin selection, tap other rows to select or deselect them, then tap **Delete (count)** to remove all their attempts from both the app and `Pictures/Q-VLP`. Outside selection mode, tap a row for details, Share and Save ZIP. **New Session** sits beside **Delete** and starts a separate group on the next capture. It clears the previous saved-position message; pending saves continue without bringing that old message back. A confirmation lists the selected sessions; Cancel keeps the selection; separately saved/shared ZIPs are kept. Deletion cancels that session’s auto-save and runs in the background. If interrupted or folder access is missing, it remains marked for deletion, cannot be exported or republished, and retries on reopening or through Sessions. Deleting the active session makes the next recording start a new one without changing the selected position or coordinates.
+Each session is one folder in **Internal storage/Pictures/Q-VLP**. It contains exactly this, and nothing else:
 
-**Settings → Help → How to Record**, directly below Recording, gives six short steps covering position selection, recording length, camera readiness, starting, automatic saving and repeating/moving on. **Help → Import Positions CSV** explains the exact headers, metre units, unique IDs and file order, with a Copy example button for a valid CSV template.
+```
+session_<id>/
+  final.csv
+  position_<id>_<attempt_timestamp>/
+    frames/
+      frame_00000.png ...                      the frames, in colour
+    metadata/
+      frame_00000_metadata.json ...            camera settings of each frame
+    frame_and_metadata_mapping.csv
+  processed_position_frames_<id>_<attempt_timestamp>/
+    processed_frames/
+      frame_00000.png ...                      the frames after LED detection
+    processed_frame_metadata/
+      frame_00000_metadata.json ...            LED_k_u_px, LED_k_v_px, LED_k_detected
+    processed_frame_and_metadata_mapping.csv
+```
 
-Android's folder picker grants access once through the **auto-save status on the camera screen**; no broad storage permission is needed. Existing folder access is retained on upgrade, and the previous pause setting is removed so it cannot disable auto-save. A save error shows a Retry action and keeps the original recordings safe. Reopening automatically retries unfinished saves. Completed public folders are not recreated just because they were removed outside the app.
+`<id>` is the position ID and `<attempt_timestamp>` the local time the capture started, as `yyyyMMdd_HHmmss`. Every capture of a position makes one `position_…` folder and its `processed_position_frames_…` twin.
 
-The app first finishes recording in its private recovery store, then publishes a snapshot on a separate worker, verifies each file's SHA-256 and renames temporary files. Previously verified, unchanged attempts are skipped. Newly finished positions take priority over queued recovery work. Copying yields during another capture, and neither saving nor recovery locks the camera controls. The completion beep means recording has finished; the separate save message confirms when the public files are ready. Interrupted attempts are also preserved and auto-saved. Private recovery copies are retained, so storage is needed for both copies. Public files remain accessible outside the app and after uninstalling. Each session also includes `session.json`, a format guide and, for imported surveys, `positions.csv`.
+**Frames.** Each frame is a lossless colour PNG in sensor-native orientation, without rotation, rescaling or lossy compression, so compression cannot blur the stripes. The camera delivers luminance with half-resolution colour (YUV 4:2:0); the app converts it to RGB once with full-range BT.601. No `.yuv` file is kept.
 
+**Frame metadata.** `metadata/frame_00000_metadata.json` holds the camera settings of that one frame only:
 
-`frames.csv` retains the document's exact per-frame column names. Unknown values and unprocessed LED columns are empty. Per-frame FPS is `1e9 / elapsed_timestamp_ns` between consecutive saved frames (the first cell is empty); burst FPS uses `(saved_frames - 1) / elapsed_seconds`. Capture settings, original crop/strides, missing IDs and warnings are in `burst.json`. The journal is updated after each saved frame; interrupted attempts may lack a finalized CSV, but their files and journal remain exportable. Mount changes create a new session. Row time is only reused for its recorded camera, resolution and zoom; changing zoom marks it unknown until the matching calibration is entered or restored.
+- `frame_id`, `frame_file`, `timestamp_ns`.
+- `camera`: front or rear, the lens, zoom and sensor orientation.
+- `requested`: what was selected — `rolling_shutter_rate_hz`, `iso`, size and fps.
+- `reported`: what the camera says it used for that frame — `rolling_shutter_rate_hz`, `exposure_time_ns`, `iso`, `fps`, `width`, `height` and `row_time_us`. The reported rate can differ slightly from the selected one (10000 Hz selected is about 10152 Hz on a Pixel 8a).
+- `capture_result`: the raw camera result.
 
-### Session CSV and repeated positions
+**Mapping files.** Both mapping CSVs have the columns `frame_file,metadata_file` and one row per frame, such as `frame_00000.png,frame_00000_metadata.json`. `frame_and_metadata_mapping.csv` pairs `frames/` with `metadata/`; `processed_frame_and_metadata_mapping.csv` pairs `processed_frames/` with `processed_frame_metadata/`.
 
-Every session has a top-level `frames.csv` with exactly the 44 specified columns, one header and no extra attempt column. It combines the **latest completed attempt per position**, ordered by the imported survey (or position ID for manual positions). Original per-attempt CSV, JSON and YUV files remain unchanged. A cancelled or interrupted Repeat never replaces a completed attempt; a position with only interrupted attempts has no rows in the combined CSV. A completed attempt may still have capture warnings, which remain in its `burst.json`; selection does not mean the attempt passed research quality checks.
+**Processed frames.** `processed_frames/frame_00000.png` is the same frame with the detection drawn on it: a box around every blob (dashed when the blob was rejected), a cross at its centre and a label with the LED number. LEDs 1–4 are drawn in red, blue, green and purple; a blob that matches no LED is yellow.
 
-`session.json` contains `frame_export`: the policy, selected attempt folders and their counts, excluded attempts, and the combined CSV hash. This maps each session row to its original frame without changing the required CSV columns. The index is rebuilt atomically after capture and repaired on reopening/export, including for existing sessions. A malformed selected CSV leaves the previous index intact and reports an error. Publication freezes mutable session files and copies attempts before publishing the combined CSV and metadata, so a later capture cannot change an in-flight index. ZIP exports contain this same layout.
+**Processed frame metadata.** `processed_frame_metadata/frame_00000_metadata.json` holds, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected` (1 or 0; the coordinates are `null` when the LED was not detected). A `details` block adds what the detector measured: background level, closing window, row time and, per LED, the estimated frequency, stripe period, fit quality, blob area and the quality flags.
 
-### Hardware capture and mounted checks
+**final.csv.** One row per position with 13 columns: `position_id` (the typed ID) and, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected`. It is built from the processed frame metadata, read through `processed_frame_and_metadata_mapping.csv`, of the **latest completed capture of each position**. An LED is detected at a position when it was valid in at least 70% of that capture's frames; its coordinates are the median over those valid frames. An LED that is not detected has `0` and empty coordinates. An interrupted capture never replaces a completed one.
 
-On the active camera screen, either volume key or a camera shutter key starts the same countdown as Start Capture. Press again to cancel the countdown or recording; holding a button never repeatedly starts/stops captures. After a result, the shutter repeats the selected position. The same permission, position and research-setting checks apply. Buttons do not trigger capture in Settings, dialogs or while the app is in the background. Android-paired Bluetooth HID shutters that send volume, camera or hardware Enter key events are supported; pairing remains in Android Settings. Other remote protocols are not implemented. Change notification volume outside the camera screen if needed for the completion beep.
+`LED_k_u_px` is the column and `LED_k_v_px` the row of LED k's blob centre, in pixels with sub-pixel precision. The origin is the centre of the top-left pixel; u grows to the right and v grows downward, in sensor-native orientation.
 
-**Settings → Help → Mounted Camera Check** explains lens centring/height, fixed orientation, focus and illumination checks under the real research LEDs. These optical checks require the actual setup and are not marked passed by a bench capture. Hardware key events can be tested by injection, but a physical Bluetooth remote still needs its own pairing/press check.
+The app keeps its own bookkeeping (`session.json` and one `burst.json` per capture, with warnings and the full capture record) in its private storage. Those files are never copied to **Pictures/Q-VLP** or put in a ZIP.
+
+### Saving, sessions and deletion
+
+A capture is first finished in the app's private store, then copied to **Pictures/Q-VLP** on a separate worker; each file is verified by SHA-256 and `final.csv` is published last. Copying yields to a running capture and never locks the camera controls. Interrupted captures are saved too. The private copy is retained, so storage is needed for both copies; the public files stay accessible outside the app and after uninstalling. A failed save shows a notice with Retry, and reopening the app retries unfinished saves.
+
+Open **Sessions** to see each session with its captures, frames and warnings. Tap a row for details, **Share** and **Save ZIP**; the ZIP has the same layout as the folder. Press and hold a row to begin selection, tap other rows to add them, then tap **Delete (count)** to remove those sessions from both the app and `Pictures/Q-VLP`. **New Session** sits beside **Delete** and does the same as **End Session**. Deletion runs in the background; if it is interrupted or folder access is missing, the session stays marked for deletion and is retried on reopening.
+
+### LED detection
+
+After each capture the app finds the LED blobs in every frame. It follows `extract` in the project's simulator and the app description:
+
+1. Background = median of every 8th pixel; Gaussian smoothing (σ = 1 px); closing along rows to join dark stripes; threshold at background + 25 grey levels (8-bit luminance); connected blobs of at least 400 px.
+2. Centre = mean pixel position of the blob mask, sub-pixel.
+3. Identity = stripe frequency. A sinusoid is fitted to the row profile through the blob's central 80% of columns; `f = 1 / (stripe_period_rows × row time)`. The blob is named by the one configured frequency (1.8, 2.8, 3.8, 4.8 kHz) within 5%.
+4. Quality rules: not within 17 px of the image edge, not saturated, roughly round, at least 2 stripe periods with a good fit, and only one blob per LED. A doubtful LED is reported as not detected.
+
+**Row time.** The app uses the camera's own report (rolling-shutter skew ÷ image rows) and writes it as `row_time_us` in both metadata files. There is no way to enter a calibrated value. If the camera reports none, blobs are measured but cannot be named, and the capture carries a warning. A wrong row time makes LEDs go undetected rather than misnamed, because the estimate then falls outside every 5% band.
+
+**Closing window.** The 21-row default suits the simulator's 30 µs rows. With a known row time the window grows to cover 75% of the slowest LED's period in rows, so a faster sensor's longer dark stripes do not split a blob.
+
+**Speed.** Processing starts when the last frame arrives and is built to be short: about 0.75 s for 30 frames on a Pixel 8a.
+
+- During the capture each frame is written raw, because only that keeps up with the camera. Afterwards every frame is read once and turned into its four files; the raw copy is deleted and never published.
+- Frames are processed in parallel on up to 8 cores.
+- Detection looks only at the parts of the frame that hold bright pixels, with a margin wide enough that the result is identical to processing the whole frame.
+- The PNG encoder is written for speed (fast deflate, no row filtering). A processed frame with nothing drawn on it reuses the bytes of the original.
+- The code is warmed up during the countdown so the first capture is as fast as later ones.
+
+Thresholds and frequencies are fixed defaults in this version.
+
+### Hardware capture
+
+On the camera screen, either volume key or a camera shutter key starts the same countdown as Start Capture. Press again to cancel the countdown or recording; holding a button never repeatedly starts or stops captures. After a result, the key repeats the selected position. Buttons do not trigger capture in Settings, dialogs or while the app is in the background. Android-paired Bluetooth shutters that send volume, camera or Enter key events are supported.
 
 ### Capture length
 
-The selected mode and each mode’s last value are remembered. The choice is frozen when Start Capture is tapped and shown on the capture screen; settings are unavailable during countdown and recording. The 3-second countdown is separate from capture duration. Frame mode stops after the selected number of exposures, and missing saved frames are reported rather than silently replaced. Duration mode keeps frames whose sensor timestamps fall within the selected interval starting at the first exposure; it does not convert seconds into a fixed frame count. Camera shutdown and saving may finish after that interval. A single repeating request avoids constructing a large request list, and extra in-flight frames outside the selection are discarded.
+A capture is always a number of frames; there is no duration mode. The number is remembered and frozen when Start Capture is tapped; settings are unavailable during countdown and recording. The 3-second countdown is separate from the capture. The capture stops after the selected number of exposures, and missing frames are reported rather than silently replaced.
 
-Progress, completion details, storage checks, missing-frame accounting and timeouts use the selected length. `burst.json` records `requested.length_mode`, `requested.frames` (null for duration), `requested.duration_seconds` (null for frame mode), `requested.estimated_frames`, `frames_started`, and the measured `saved_frame_span_s`. Estimates are never substituted for actual FPS or timestamps. Timed captures reserve storage using the stream’s fastest reported cadence; the existing CSV columns are unchanged. Cancel or leaving the app preserves saved frames and marks the attempt interrupted.
+### Fixed settings and research checks
 
-### Factory Reset and research checks
+There is no Factory Reset: nothing but the rolling shutter rate and ISO can be changed, so there is nothing else to restore. On each camera the app uses the resolution closest to the planned 1280 × 960 that covers the sensor, at 30 fps, and holds focus and white balance still. Resolution, frame-rate, focus and white-balance values saved by earlier versions are ignored. If a camera cannot meet these fixed values, a notice on the camera screen explains why and the other camera can be selected.
 
-**Settings → Camera Settings → Factory Reset** restores a supported research preset for the selected camera: 1× zoom, a fixed full-sensor-aspect-ratio resolution (closest to 1280 × 960), at least 30 fps, exposure at most 100 µs, minimum ISO, and locked or fixed focus/white balance. It first checks the entire preset. If the selected camera cannot support it, the front camera and then the rear camera are tried; no changes are made if no camera supports it. The button remains available when the current camera is unsupported. Returning to the camera reopens the selected camera and reacquires its locks.
-
-This resets camera settings only. Capture length, surveyed positions, mounting measurements and saved sessions are kept; the next capture starts a new session. A supplied row time is still used only when its recorded camera, resolution and zoom match. The physical rear-lens selection is retained by Factory Reset.
-
-Capture is checked before the countdown and again immediately before camera capture. On the selected camera, 1× zoom, fixed full-aspect-ratio resolution, short exposure, manual ISO, target FPS and fixed/locked focus and white balance must be valid. Camera readiness also requires confirmed focus/white-balance controls and two stable actual exposure/ISO/frame-duration readings with the expected sensor crop. Unknown measurements, exposure above 100 µs, or a reported frame duration longer than 33,350,000 ns prevent capture. Nominal 30 fps allows at most 0.05% sensor-timing rounding; the requested FPS must still be at least 30. Sensor frame duration confirms the reported cadence; sustained delivered FPS still needs measurement on the phone and is logged separately. Later drift generates capture warnings.
+Capture is checked before the countdown and again immediately before camera capture. On the selected camera, 1× zoom, fixed full-aspect-ratio resolution, a rolling shutter rate of 10000 Hz or higher, manual ISO, target FPS and the app-held focus and white balance must be valid. Camera readiness also requires confirmed focus/white-balance controls and two stable actual exposure/ISO/frame-duration readings with the expected sensor crop. Unknown measurements, exposure above 100 µs, or a reported frame duration longer than 33,350,000 ns prevent capture. Nominal 30 fps allows at most 0.05% sensor-timing rounding; the requested FPS must still be at least 30. Sensor frame duration confirms the reported cadence; sustained delivered FPS still needs measurement on the phone and is logged separately. Later drift generates capture warnings.
 
 ### Fixed physical rear lens
 
@@ -103,13 +177,12 @@ target that lens. A missing saved lens, unsupported configuration or missing phy
 capture results prevents capture; the app never silently substitutes another lens.
 Devices exposing a single rear camera use that camera directly.
 
-Settings and Camera Details identify the fixed lens. Capabilities, focus/white-balance
+The information button identifies the fixed lens. Capabilities, focus/white-balance
 checks, exposure/ISO, crop and timestamps come from the selected physical camera.
-Frame-count mode counts all started exposures; duration mode uses the physical
-sensor's timestamps. `burst.json` records the logical and physical IDs, selection
-method and metadata source; each frame also records its metadata camera ID/source.
+The capture counts all started exposures and pairs images by the physical
+sensor's timestamps. Each frame's metadata records the camera and the lens used.
 The first pin starts a fresh session, preserving earlier captures. Reopening
-the camera and Factory Reset retain the same pin.
+the camera retains the same pin.
 
 On the tested Pixel 8a, logical camera 0 is pinned to physical main rear camera 2.
 Android reports both output streams as physical camera 2. This uses Camera2's
@@ -120,18 +193,20 @@ and [physical capture results](https://developer.android.com/reference/android/h
 
 The connected Pixel 8a reports 98.504 µs exposure and a 33,340,371 ns sensor frame duration (approximately 29.994 fps) with the full-frame 1280 × 960, 100 µs, ISO 50, 30 fps preset. Focus, white balance and 1× crop confirm correctly. Its advertised faster modes use a cropped 16:9 stream; the full-frame mode is nominal 30 fps. The selected policy keeps full-frame capture and accepts only tiny sensor-timing rounding (0.05%, maximum 33,350,000 ns). This is nominal 30 fps compatibility, not a claim of mathematically exact ≥30 measured fps. The limit rejects 29.97 fps and larger slowdowns; exposure and the other research checks retain their existing limits.
 
-Camera Details displays measured cadence to three decimal places and explicitly notes when nominal-timing tolerance is used. Saved timestamps and frame durations remain unmodified. No phone-model name is used to bypass validation; the same narrow measured-timing rule applies to supported cameras. The ordinary defaults and Factory Reset continue to select 1×, 1280 × 960 where supported, 100 µs, minimum ISO (50 on this phone), nominal 30 fps and fixed/locked focus and white balance.
+The information button shows the measured cadence to three decimal places and notes when nominal-timing tolerance is used. Saved timestamps and frame durations remain unmodified. No phone-model name is used to bypass validation; the same narrow measured-timing rule applies to supported cameras. The app continues to use 1×, 1280 × 960 where supported, nominal 30 fps and fixed/locked focus and white balance, with defaults of 10000 Hz (100 µs) and minimum ISO (50 on this phone).
 
-On Pixel 8 and Pixel 8a, initial defaults and Factory Reset prefer manual focus at 0.5 dioptres (a 2 m starting distance) and fixed Daylight white balance when supported. This avoids autofocus-lock failures on a blank or dark ceiling and removes white-balance convergence from startup. The focus distance must be adjusted for the real camera-to-LED distance and checked for sharpness; the preset does not certify focus quality. Other phones retain their existing control preferences, and unsupported fixed modes fall back to supported locks. Existing user settings are retained until Factory Reset is tapped.
+Focus and white balance have no settings; the app picks a fixed or locked mode for each camera. On Pixel 8 and Pixel 8a it uses manual focus at 0.5 dioptres (about 2 m) and fixed Daylight white balance when supported, which avoids autofocus-lock failures on a blank or dark ceiling and removes white-balance convergence from startup. A fixed-focus lens, such as the Pixel 8a front camera, needs no focus control. Other phones use automatic focus and white balance that lock once after the camera opens. Check sharpness in a saved frame picture; the app does not certify focus quality. Focus and white-balance values saved by earlier versions are ignored.
 
 ## Remaining requirements
 
-This is the **pre-CV capture workflow**, not full implementation of the application description:
+This is the capture and LED-detection workflow, not a full implementation of the application description:
 
 - Validate actual geometry, fixed settings and sustained capture rate on the mounted target phone. A successful build does not establish device compliance or the PDF's acceptance criteria.
-- Implement LED detection, stripe frequency identification, row-time calibration from an LED, quality filtering, preview overlays and position-level fingerprint aggregation. LED CSV columns remain empty and `fingerprints.csv` is not generated yet.
+- Validate LED detection under the real LEDs: thresholds, the camera-reported row time and centroid repeatability have only been checked on simulated frames.
+- Add a settings screen for the detection thresholds and LED frequencies, a row-time calibration mode, and a live preview overlay of detected blobs. The document's `fingerprints.csv` (with per-LED counts and standard deviations) is not generated; `final.csv` carries the core fingerprint columns.
+- The on-device (instrumented) tests were updated for the new session layout but have not been run on a phone.
 
-The session-level `frames.csv` and repeat selection are implemented. CV still needs to supply LED measurements and generate `fingerprints.csv`. No LED counts or location estimates are presented as measured results in this version.
+`final.csv`, replacing a position and LED detection are implemented. No location estimates are produced in this version.
 
 Android references: [document import/export](https://developer.android.com/training/data-storage/shared/documents-files), [Camera2 capture controls](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest), [YUV planes](https://developer.android.com/reference/android/graphics/ImageFormat#YUV_420_888), and [temporary sharing permissions](https://developer.android.com/training/secure-file-sharing/share-file).
 
@@ -141,7 +216,7 @@ Use JDK 17 or 21 and the included Gradle wrapper. JDK 25 cannot run this project
 
 The existing build targets Android SDK 34 with minimum SDK 26. Configure the Android SDK location in the ignored `local.properties` file if necessary. Build with `./gradlew :app:assembleDebug` and run existing unit tests with `./gradlew :app:testDebugUnitTest`.
 
-Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the university logo used on the About screen are retained, together with original developer and lab attribution. CV dependencies can be added when LED analysis is implemented.
+Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the university logo used on the About screen are retained, together with original developer and lab attribution. LED detection and PNG encoding are written in Kotlin and need no CV library.
 
 ## Installable release
 

@@ -221,7 +221,7 @@ class CameraHelper(
         activeCapabilities = null
         fixedCamera = null
         lensIssue = null
-        selectedCameraId = null // Re-read the selection after a camera switch or Factory Reset.
+        selectedCameraId = null // Re-read the selection after a camera switch.
         requestedResearchCrop = null
         resetResearchConfirmation()
         activeCaptureCallback = null
@@ -287,7 +287,7 @@ class CameraHelper(
                     override fun onConfigureFailed(session: CameraCaptureSession) {
                         session.close()
                         if (cameraDevice === activeCamera) showCameraError(
-                            "The fixed lens rejected this configuration. Choose another resolution or frame rate in Settings. Lens switching remains disabled."
+                            "The camera rejected this configuration. Switch to the other camera."
                         )
                     }
                 },
@@ -321,7 +321,7 @@ class CameraHelper(
         } catch (e: RuntimeException) {
             Log.e(TAG, "Unable to update camera preview", e)
             cameraControls?.fail(activity.getString(R.string.camera_locks_unconfirmed))
-            showCameraError("Camera rejected the requested settings. Try a lower resolution or frame rate in Settings.")
+            showCameraError("Camera rejected the requested settings. Check Rolling Shutter Rate and ISO Rate in Settings, or switch to the other camera.")
         }
     }
 
@@ -443,13 +443,13 @@ class CameraHelper(
         val size = profile.stream.size
         val fixedResolution = previewSize == size && frameReader?.width == size.width && frameReader?.height == size.height &&
             profile.stream in capabilities.streams &&
-            kotlin.math.abs(size.width.toDouble() / size.height - capabilities.sensorAspectRatio) < 0.02
+            ResearchCapturePolicy.coversSensor(size.width, size.height, capabilities.sensorAspectRatio)
         return ResearchCapturePolicy.settingsIssue(
             zoom = zoomLevel, fixedResolution = fixedResolution, exposureNs = profile.exposureNs,
             fixedIso = capabilities.isoRange.contains(profile.iso),
             fps = profile.fps.takeIf { it in profile.stream.frameRates } ?: 0,
             fixedFocus = profile.controls.focusMode in listOf(FocusMode.LOCK, FocusMode.MANUAL, FocusMode.FIXED),
-            fixedWhiteBalance = ResearchCameraReset.isFixedWhiteBalance(profile.controls.whiteBalanceMode)
+            fixedWhiteBalance = ResearchPreset.isFixedWhiteBalance(profile.controls.whiteBalanceMode)
         )
     }
 
@@ -465,9 +465,9 @@ class CameraHelper(
         return true
     }
 
-    internal fun startBurst(position: Position, mounting: JSONObject, length: CaptureLength, progress: (Int, Long) -> Unit,
-                            completed: (BurstSummary) -> Unit, failed: (String) -> Unit) {
-        if (dispatch { startBurst(position, mounting, length, progress, completed, failed) }) return
+    internal fun startBurst(position: Position, length: CaptureLength, progress: (Int) -> Unit,
+                            analyzing: (Int, Int) -> Unit, completed: (BurstSummary) -> Unit, failed: (String) -> Unit) {
+        if (dispatch { startBurst(position, length, progress, analyzing, completed, failed) }) return
         if (burstRequested) { failed("A capture is already running."); return }
         val device = cameraDevice
         val session = cameraCaptureSession
@@ -485,6 +485,12 @@ class CameraHelper(
             val fixed = requireNotNull(fixedCamera)
             val characteristics = fixed.characteristics
             JSONObject().put("camera_id", getCameraId())
+                .put("facing", when (characteristics[CameraCharacteristics.LENS_FACING]) {
+                    CameraCharacteristics.LENS_FACING_FRONT -> "front"
+                    CameraCharacteristics.LENS_FACING_BACK -> "rear"
+                    else -> "external"
+                })
+                .put("lens", fixed.description)
                 .put("sensor_orientation_degrees", characteristics[CameraCharacteristics.SENSOR_ORIENTATION])
                 .put("lens_facing", characteristics[CameraCharacteristics.LENS_FACING])
                 .put("digital_zoom", zoomLevel.toDouble())
@@ -497,8 +503,8 @@ class CameraHelper(
             failed(e.message ?: "Camera information is unavailable.")
             return
         }
-        BurstWriter.prepare(activity.applicationContext, profile, length, position, mounting, cameraInfo,
-            progress, completed) { writer, error ->
+        BurstWriter.prepare(activity.applicationContext, profile, length, position, cameraInfo,
+            progress, analyzing, completed) { writer, error ->
             val posted = handler.post {
                 if (generation != burstGeneration || cameraDevice !== device || cameraCaptureSession !== session) {
                     writer?.finish("Capture interrupted before frames started.")
@@ -533,7 +539,7 @@ class CameraHelper(
                     val window = CaptureWindow(length)
                     var stopped = false
                     fun admit(s: CameraCaptureSession, frameNumber: Long, timestamp: Long): Int? {
-                        val index = window.start(frameNumber, timestamp)
+                        val index = window.start(frameNumber)
                         if (index != null) writer.onStarted(index, timestamp) else writer.exclude(timestamp)
                         if (window.complete && !stopped) {
                             stopped = true
@@ -548,9 +554,8 @@ class CameraHelper(
                     session.setRepeatingRequest(request, object : CameraCaptureSession.CaptureCallback() {
                         override fun onCaptureStarted(s: CameraCaptureSession, request: CaptureRequest, timestamp: Long, frameNumber: Long) {
                             if (burstWriter !== writer) return
-                            // Count every started exposure in frame mode, including failed ones.
-                            // Timed physical streams use their own sensor clock below.
-                            if (!fixed.physicalOutputs || length.frameCount != null) admit(s, frameNumber, timestamp)
+                            // Count every started exposure, including failed ones.
+                            admit(s, frameNumber, timestamp)
                         }
                         override fun onCaptureCompleted(s: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
                             if (burstWriter !== writer) return
@@ -561,9 +566,9 @@ class CameraHelper(
                                 cancelBurst(requireNotNull(lensIssue))
                                 return
                             }
-                            val index = if (fixed.physicalOutputs && length.durationNs != null)
-                                admit(s, result.frameNumber, requireNotNull(timestamp)) else window.frameId(result.frameNumber)
-                            if (fixed.physicalOutputs && length.frameCount != null) {
+                            val index = window.frameId(result.frameNumber)
+                            // A pinned lens stamps its frames with its own sensor clock: pair images by that time.
+                            if (fixed.physicalOutputs) {
                                 if (index != null) writer.onStarted(index, requireNotNull(timestamp))
                                 else writer.exclude(requireNotNull(timestamp))
                             }
@@ -786,22 +791,19 @@ class CameraHelper(
             builder.set(CaptureRequest.SCALER_ROTATE_AND_CROP, CaptureRequest.SCALER_ROTATE_AND_CROP_NONE)
     }
 
-    /** Size only the displayed preview. Capture resolution, crop and saved pixels are unchanged. */
+    /** Fill the screen with the preview at its true proportions. Capture resolution, crop and saved pixels are unchanged. */
     fun fitPreview() {
         val view = viewBinding.viewFinder
         if (view.width == 0 || view.height == 0) return
-        view.isOpaque = false // Reveal the black background around smaller preview sizes.
-        val scale = PreviewDisplaySize.read(sharedPreferences).fittedScale
         val size = previewSize
-        if (scale == null || size == null) {
-            // RoTemplate filled the TextureView without an aspect-ratio transform.
+        if (size == null) {
             view.setTransform(Matrix())
             return
         }
-        val sourceRatio = size.width.toFloat() / size.height
-        val viewRatio = view.width.toFloat() / view.height
-        val sx = scale * if (viewRatio > sourceRatio) sourceRatio / viewRatio else 1f
-        val sy = scale * if (viewRatio < sourceRatio) viewRatio / sourceRatio else 1f
+        // The sensor is mounted sideways on phones, so the image appears on screen with its sides swapped.
+        val sideways = (cameraCharacteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90) % 180 != 0
+        val (sx, sy) = PreviewFill.scale(view.width, view.height,
+            if (sideways) size.height else size.width, if (sideways) size.width else size.height)
         view.setTransform(Matrix().apply { setScale(sx, sy, view.width / 2f, view.height / 2f) })
     }
 

@@ -26,6 +26,24 @@ class ResearchCapturePolicyTest {
         assertEquals(ResearchCapturePolicy.Issue.WHITE_BALANCE, issue(fixedWhiteBalance = false))
     }
 
+    @Test fun acceptsFourByThreeOnTheSlightlyWiderPixel8aFrontSensor() {
+        val front = 4208.0 / 3072
+        assertTrue(ResearchCapturePolicy.coversSensor(4208, 3072, front))
+        assertTrue(ResearchCapturePolicy.coversSensor(1280, 960, front))
+        assertFalse(ResearchCapturePolicy.coversSensor(1920, 1080, front))
+        assertFalse(ResearchCapturePolicy.coversSensor(720, 480, front))
+        assertFalse(ResearchCapturePolicy.coversSensor(1080, 1080, front))
+    }
+
+    @Test fun keepsTheStrictRuleWhenAnOutputWouldCropSensorRows() {
+        val rear = 4624.0 / 3472
+        assertTrue(ResearchCapturePolicy.coversSensor(1280, 960, rear))
+        assertFalse(ResearchCapturePolicy.coversSensor(1920, 1080, rear))
+        // A 4:3 output of a narrower sensor would lose rows, so only the small tolerance applies.
+        assertFalse(ResearchCapturePolicy.coversSensor(1280, 960, 1.30))
+        assertTrue(ResearchCapturePolicy.coversSensor(1280, 960, 1.32))
+    }
+
     private val valid = ResearchCapturePolicy.Reading(99_900L, 50, 33_333_334L, true)
 
     @Test fun waitsForTwoActualReadingsRatherThanAssumingRequestedValues() {

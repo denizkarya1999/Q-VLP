@@ -53,7 +53,7 @@ internal data class CameraCapabilities(
         val stream = fastStreams.firstOrNull { it.size == Size(1280, 960) }
             ?: fastStreams.minWith(compareBy<StreamOption> {
                 // Prefer the native sensor aspect ratio, then a modest capture size.
-                if (abs(it.size.width.toDouble() / it.size.height - sensorAspectRatio) < 0.02) 0 else 1
+                if (ResearchCapturePolicy.coversSensor(it.size.width, it.size.height, sensorAspectRatio)) 0 else 1
             }.thenBy { abs(it.size.width.toLong() * it.size.height - 1280L * 960) })
         val fps = defaultFrameRate(stream)
         return CameraProfile(
@@ -119,16 +119,16 @@ internal data class CameraCapabilities(
     }
 }
 
-/** Each camera keeps its own profile; resolution, cadence and exposure are saved together. */
+/** Each camera keeps its own rolling shutter rate (stored as its exposure) and ISO. Everything else is fixed. */
 internal class CameraSettingsStore(private val preferences: SharedPreferences, private val cameraId: String) {
     private fun key(name: String) = "camera_${cameraId}_$name"
 
     fun load(capabilities: CameraCapabilities): CameraProfile {
-        val defaults = capabilities.defaults()
-        val stream = capabilities.streams.firstOrNull { it.key == preferences.getString(key("resolution"), null) }
-            ?: defaults.stream
-        val fps = preferences.getInt(key("fps"), capabilities.defaultFrameRate(stream))
-            .takeIf { it in stream.frameRates } ?: capabilities.defaultFrameRate(stream)
+        // Resolution, frame rate, focus and white balance come from the preset, never from saved settings.
+        // A camera that cannot meet the preset still previews, and the capture gate explains what is missing.
+        val defaults = runCatching { ResearchPreset.defaults(capabilities) }.getOrElse { capabilities.defaults() }
+        val stream = defaults.stream
+        val fps = defaults.fps
         val firstProfile = !preferences.contains(key("exposure_ns"))
         // Import existing manual choices once. New installations start with the Q-VLP defaults.
         val importLegacy = firstProfile && !preferences.getBoolean("camera_settings_migrated", false) &&
@@ -139,28 +139,15 @@ internal class CameraSettingsStore(private val preferences: SharedPreferences, p
         val exposure = preferences.getLong(key("exposure_ns"), oldExposure ?: defaults.exposureNs)
             .coerceIn(capabilities.exposureRangeNs.lower, capabilities.maximumExposureNs(stream, fps))
         val iso = preferences.getInt(key("iso"), oldIso ?: defaults.iso).coerceIn(capabilities.isoRange.lower, capabilities.isoRange.upper)
-        val focusMode = capabilities.controls.focusModes.firstOrNull {
-            it.name == preferences.getString(key("focus_mode"), null)
-        } ?: defaults.controls.focusMode
-        val distance = preferences.getFloat(key("focus_distance"), defaults.controls.focusDistance)
-            .takeIf { it.isFinite() }?.coerceIn(0f, capabilities.controls.maxFocusDistance)
-            ?: defaults.controls.focusDistance
-        val wbMode = preferences.getInt(key("white_balance_mode"), defaults.controls.whiteBalanceMode)
-            .takeIf { mode -> capabilities.controls.whiteBalanceOptions.any { it.mode == mode } }
-            ?: defaults.controls.whiteBalanceMode
-        return CameraProfile(exposure, iso, stream, fps,
-            FocusWhiteBalanceProfile(focusMode, distance, wbMode)).also { save(it) }
+        return CameraProfile(exposure, iso, stream, fps, defaults.controls).also { save(it) }
     }
 
     fun save(profile: CameraProfile) {
         preferences.edit()
             .putLong(key("exposure_ns"), profile.exposureNs)
             .putInt(key("iso"), profile.iso)
-            .putString(key("resolution"), profile.stream.key)
-            .putInt(key("fps"), profile.fps)
-            .putString(key("focus_mode"), profile.controls.focusMode.name)
-            .putFloat(key("focus_distance"), profile.controls.focusDistance)
-            .putInt(key("white_balance_mode"), profile.controls.whiteBalanceMode)
+            .remove(key("resolution")).remove(key("fps"))
+            .remove(key("focus_mode")).remove(key("focus_distance")).remove(key("white_balance_mode"))
             .putBoolean("camera_settings_migrated", true)
             .remove("shutter_speed").remove("iso_value").remove("manual_iso_enabled")
             .apply()

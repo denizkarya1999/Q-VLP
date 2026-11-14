@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark blue on the yellow settings rows; faded while a mode cannot be chosen yet. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:color="#8000274C" />
+    <item android:color="#00274C" />
+</selector>

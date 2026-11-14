@@ -33,9 +33,4 @@ class CameraChoiceTest {
         assertNull(CameraChoice.opposite(linkedMapOf("0" to Facing.REAR), "0"))
         assertNull(CameraChoice.opposite(linkedMapOf("1" to Facing.FRONT, "3" to Facing.FRONT), "1"))
     }
-
-    @Test fun factoryResetTriesTheSelectedCameraBeforeTheFrontDefault() {
-        assertEquals(listOf("2", "1", "3", "0"), CameraChoice.resetOrder(phone, "2"))
-        assertEquals(listOf("1", "3", "0", "2"), CameraChoice.resetOrder(phone, null))
-    }
 }
