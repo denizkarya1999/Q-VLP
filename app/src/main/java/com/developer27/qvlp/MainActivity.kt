@@ -27,6 +27,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.preference.PreferenceManager
+import com.developer27.qvlp.camera.CameraChoice
 import com.developer27.qvlp.camera.CameraHelper
 import com.developer27.qvlp.capture.CaptureTrigger
 import com.developer27.qvlp.capture.CaptureLength
@@ -85,6 +86,7 @@ class MainActivity : AppCompatActivity() {
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
         preferences = PreferenceManager.getDefaultSharedPreferences(this)
+        cameraHelper = CameraHelper(this, viewBinding, preferences)
         lastPosition = runCatching {
             val saved = JSONObject(requireNotNull(preferences.getString("last_capture_position", null)))
             Position(saved.getInt("position_id"), if (saved.isNull("rx_x_m")) null else saved.getDouble("rx_x_m"),
@@ -111,7 +113,6 @@ class MainActivity : AppCompatActivity() {
             clearResult()
             updateControls()
         }
-        cameraHelper = CameraHelper(this, viewBinding, preferences)
         cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) openCameraWhenReady() else {
                 cameraReady = false
@@ -123,6 +124,7 @@ class MainActivity : AppCompatActivity() {
         viewBinding.settingsButton.setOnClickListener { openSettings() }
         viewBinding.zoomInButton.setOnClickListener { if (!captureBusy && !fileBusy) cameraHelper.changeZoom(0.1f) }
         viewBinding.zoomOutButton.setOnClickListener { if (!captureBusy && !fileBusy) cameraHelper.changeZoom(-0.1f) }
+        viewBinding.switchCameraButton.setOnClickListener { switchCamera() }
         viewBinding.aboutButton.setOnClickListener {
             startActivity(Intent(this, AboutQvlpActivity::class.java))
         }
@@ -226,6 +228,14 @@ class MainActivity : AppCompatActivity() {
         }
         val position = ResearchSettings.position(preferences)
         if (position.x == null || position.y == null) positions.show() else beginCountdown(position)
+    }
+
+    private fun switchCamera() {
+        if (captureBusy || fileBusy) return
+        if (!cameraPermissionGranted()) { cameraPermissionLauncher.launch(Manifest.permission.CAMERA); return }
+        cameraReady = false // Capture waits for the other camera to confirm its settings.
+        cameraHelper.switchCamera()
+        updateControls()
     }
 
     private fun openSettings() {
@@ -388,6 +398,12 @@ class MainActivity : AppCompatActivity() {
         viewBinding.settingsButton.isEnabled = !busy
         viewBinding.zoomInButton.isEnabled = !busy && cameraReady && currentZoom < maximumZoom - 0.001f
         viewBinding.zoomOutButton.isEnabled = !busy && cameraReady && currentZoom > 1.001f
+        // Stays available while a camera is unsupported, so the other one can be selected.
+        val switchTo = cameraHelper.switchTarget()
+        viewBinding.switchCameraButton.visibility = if (switchTo == null) View.GONE else View.VISIBLE
+        viewBinding.switchCameraButton.isEnabled = !busy
+        viewBinding.switchCameraButton.setText(
+            if (switchTo == CameraChoice.Facing.REAR) R.string.switch_to_rear else R.string.switch_to_front)
         viewBinding.aboutButton.isEnabled = !busy
         viewBinding.sessionsButton.isEnabled = !busy
         viewBinding.storageStatus.isEnabled = !busy

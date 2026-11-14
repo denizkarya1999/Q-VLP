@@ -2,7 +2,6 @@ package com.developer27.qvlp.camera
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import com.developer27.qvlp.capture.SessionFiles
@@ -14,19 +13,16 @@ internal data class ResearchCameraSelection(val cameraId: String, val profile: C
 internal object ResearchCameraReset {
     fun select(manager: CameraManager, preferredId: String?, preferences: SharedPreferences? = null): ResearchCameraSelection {
         val failures = mutableListOf<String>()
-        for (id in manager.cameraIdList.sortedBy { if (it == preferredId) 0 else 1 }) {
+        for (id in CameraChoice.resetOrder(CameraChoice.facings(manager), preferredId)) {
             val result = runCatching {
-                val characteristics = manager.getCameraCharacteristics(id)
-                if (characteristics[CameraCharacteristics.LENS_FACING] != CameraCharacteristics.LENS_FACING_BACK)
-                    return@runCatching null
                 val fixed = FixedCamera.resolve(manager, id, preferences?.getString(FixedCamera.preferenceKey(id), null))
                 ResearchCameraSelection(id, defaults(fixed.capabilities), fixed.physicalId)
             }
             result.getOrNull()?.let { return it }
             result.exceptionOrNull()?.message?.let { failures.add(it) }
         }
-        error("No rear camera supports all research settings. " +
-            (failures.distinct().joinToString(" ").ifEmpty { "A compatible rear camera is required." }))
+        error("No camera supports all research settings. " +
+            (failures.distinct().joinToString(" ").ifEmpty { "A compatible camera is required." }))
     }
 
     fun defaults(capabilities: CameraCapabilities): CameraProfile {
@@ -61,7 +57,7 @@ internal object ResearchCameraReset {
         CameraSettingsStore(preferences, selection.cameraId).save(selection.profile)
         selection.physicalId?.let { preferences.edit().putString(FixedCamera.preferenceKey(selection.cameraId), it).apply() }
         preferences.edit()
-            .putString("selected_capture_camera", selection.cameraId)
+            .putString(CameraChoice.PREFERENCE_KEY, selection.cameraId)
             .putFloat("camera_${selection.cameraId}_zoom", 1f)
             .putString(PreviewDisplaySize.PREFERENCE_KEY, PreviewDisplaySize.ORIGINAL.key)
             .apply()

@@ -15,7 +15,6 @@ internal object ResearchCapturePolicy {
         frameDurationNs > MAX_FRAME_DURATION_NS && frameDurationNs <= MAX_CONFIRMED_FRAME_DURATION_NS
 
     enum class Issue(val message: String) {
-        REAR_CAMERA("Select a rear camera. Factory Reset in Settings selects a compatible rear camera."),
         ZOOM("Research capture requires 1× zoom. Use Factory Reset in Settings or return zoom to 1×."),
         RESOLUTION("Choose a fixed resolution with the full sensor aspect ratio and at least 30 fps."),
         EXPOSURE("Research capture requires a manual exposure of 100 µs or less."),
@@ -30,9 +29,8 @@ internal object ResearchCapturePolicy {
         REPORTED_GEOMETRY("Waiting for the camera to confirm the requested 1× sensor crop.")
     }
 
-    fun settingsIssue(rear: Boolean, zoom: Float, fixedResolution: Boolean, exposureNs: Long,
+    fun settingsIssue(zoom: Float, fixedResolution: Boolean, exposureNs: Long,
                       fixedIso: Boolean, fps: Int, fixedFocus: Boolean, fixedWhiteBalance: Boolean): Issue? = when {
-        !rear -> Issue.REAR_CAMERA
         !zoom.isFinite() || kotlin.math.abs(zoom - 1f) > 0.0001f -> Issue.ZOOM
         !fixedResolution -> Issue.RESOLUTION
         exposureNs !in 1..MAX_EXPOSURE_NS -> Issue.EXPOSURE

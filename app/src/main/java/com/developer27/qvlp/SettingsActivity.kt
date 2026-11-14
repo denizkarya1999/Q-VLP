@@ -14,6 +14,7 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import com.developer27.qvlp.camera.FixedCamera
 import com.developer27.qvlp.camera.CameraCapabilities
+import com.developer27.qvlp.camera.CameraChoice
 import com.developer27.qvlp.camera.CameraProfile
 import com.developer27.qvlp.camera.CameraSettingsStore
 import com.developer27.qvlp.camera.CaptureSettings
@@ -137,7 +138,7 @@ class SettingsActivity : AppCompatActivity() {
                 try {
                     val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
                     val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
-                    val selection = ResearchCameraReset.select(manager, prefs.getString("selected_capture_camera", null), prefs)
+                    val selection = ResearchCameraReset.select(manager, prefs.getString(CameraChoice.PREFERENCE_KEY, null), prefs)
                     ResearchCameraReset.apply(requireContext(), prefs, selection)
                     requireActivity().intent.putExtra(EXTRA_CAMERA_ID, selection.cameraId)
                     message(getString(R.string.camera_defaults_restored, selection.profile.stream.label, selection.profile.fps))

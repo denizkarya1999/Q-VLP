@@ -100,11 +100,11 @@ class ResearchCameraResetTest {
         val defaults = PreferenceManager.getDefaultSharedPreferences(context)
         val activeSession = defaults.getString("active_research_session", null)
         try {
-            prefs.edit().putString("selected_capture_camera", "front").putFloat("camera_rear_zoom", 2f)
+            prefs.edit().putString(CameraChoice.PREFERENCE_KEY, "front").putFloat("camera_rear_zoom", 2f)
                 .putString("capture_length_mode", "duration").putString("capture_duration_seconds", "7")
                 .putString("rx_x_m", "1.2").putString("lens_height_m", "1.5").apply()
             ResearchCameraReset.apply(context, prefs, ResearchCameraSelection("rear", ResearchCameraReset.defaults(capabilities())))
-            assertEquals("rear", prefs.getString("selected_capture_camera", null))
+            assertEquals("rear", prefs.getString(CameraChoice.PREFERENCE_KEY, null))
             assertEquals(1f, prefs.getFloat("camera_rear_zoom", 0f))
             assertEquals("1280x960", prefs.getString("camera_rear_resolution", null))
             assertEquals("duration", prefs.getString("capture_length_mode", null))

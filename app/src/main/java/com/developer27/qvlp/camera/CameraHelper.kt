@@ -88,6 +88,7 @@ class CameraHelper(
     private val researchConfirmation = ResearchCapturePolicy.Confirmation()
     @Volatile private var reportedResearchIssue: ResearchCapturePolicy.Issue? = ResearchCapturePolicy.Issue.CONFIRMING
     @Volatile private var selectedCameraId: String? = null
+    @Volatile private var cameraFacings: Map<String, CameraChoice.Facing>? = null
     private var zoomLevel = 1f
     private var maxZoom = 1f
     @Volatile
@@ -220,7 +221,7 @@ class CameraHelper(
         activeCapabilities = null
         fixedCamera = null
         lensIssue = null
-        selectedCameraId = null // Re-read the selection after Settings applies Factory Reset.
+        selectedCameraId = null // Re-read the selection after a camera switch or Factory Reset.
         requestedResearchCrop = null
         resetResearchConfirmation()
         activeCaptureCallback = null
@@ -324,17 +325,35 @@ class CameraHelper(
         }
     }
 
-    // Retain the research camera selection; default to the rear camera.
+    private fun facings(): Map<String, CameraChoice.Facing> = cameraFacings
+        ?: CameraChoice.facings(cameraManager).also { if (it.isNotEmpty()) cameraFacings = it }
+
+    // Retain the operator's camera choice; default to the front camera.
     fun getCameraId(): String {
         selectedCameraId?.let { return it }
-        val ids = cameraManager.cameraIdList.toList()
-        val saved = sharedPreferences.getString("selected_capture_camera",
-            sharedPreferences.getString("research_rear_camera", null))
-        val selected = saved?.takeIf { it in ids } ?: ids.firstOrNull {
-            cameraManager.getCameraCharacteristics(it)[CameraCharacteristics.LENS_FACING] == CameraCharacteristics.LENS_FACING_BACK
-        } ?: ids.firstOrNull() ?: error("No camera is available on this device.")
+        val selected = CameraChoice.initial(facings(), sharedPreferences.getString(CameraChoice.PREFERENCE_KEY, null))
+            ?: error("No camera is available on this device.")
         selectedCameraId = selected
         return selected
+    }
+
+    /** Facing of the camera that [switchCamera] would open; null when the device has no other camera. */
+    internal fun switchTarget(): CameraChoice.Facing? = runCatching {
+        val cameras = facings()
+        CameraChoice.opposite(cameras, getCameraId())?.let(cameras::get)
+    }.getOrNull()
+
+    @SuppressLint("MissingPermission")
+    fun switchCamera() {
+        if (dispatch { switchCamera() }) return
+        if (burstRequested) return
+        val target = runCatching { CameraChoice.opposite(facings(), getCameraId()) }.getOrNull() ?: return
+        // Save before closing: closing makes the next getCameraId() re-read the selection.
+        sharedPreferences.edit().putString(CameraChoice.PREFERENCE_KEY, target).apply()
+        closeCamera()
+        // Frames from different cameras never share a session.
+        SessionFiles.newSession(activity.applicationContext)
+        openCamera()
     }
 
     fun changeZoom(step: Float) {
@@ -426,7 +445,6 @@ class CameraHelper(
             profile.stream in capabilities.streams &&
             kotlin.math.abs(size.width.toDouble() / size.height - capabilities.sensorAspectRatio) < 0.02
         return ResearchCapturePolicy.settingsIssue(
-            rear = cameraCharacteristics?.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK,
             zoom = zoomLevel, fixedResolution = fixedResolution, exposureNs = profile.exposureNs,
             fixedIso = capabilities.isoRange.contains(profile.iso),
             fps = profile.fps.takeIf { it in profile.stream.frameRates } ?: 0,

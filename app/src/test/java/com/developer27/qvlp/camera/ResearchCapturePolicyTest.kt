@@ -4,10 +4,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ResearchCapturePolicyTest {
-    private fun issue(rear: Boolean = true, zoom: Float = 1f, fixedResolution: Boolean = true,
+    private fun issue(zoom: Float = 1f, fixedResolution: Boolean = true,
                       exposureNs: Long = 100_000L, fixedIso: Boolean = true, fps: Int = 30,
                       fixedFocus: Boolean = true, fixedWhiteBalance: Boolean = true) =
-        ResearchCapturePolicy.settingsIssue(rear, zoom, fixedResolution, exposureNs, fixedIso, fps, fixedFocus, fixedWhiteBalance)
+        ResearchCapturePolicy.settingsIssue(zoom, fixedResolution, exposureNs, fixedIso, fps, fixedFocus, fixedWhiteBalance)
 
     @Test fun acceptsResearchSettingsAtTheLimits() {
         assertNull(issue())
@@ -15,7 +15,6 @@ class ResearchCapturePolicyTest {
     }
 
     @Test fun rejectsEachNonResearchSetting() {
-        assertEquals(ResearchCapturePolicy.Issue.REAR_CAMERA, issue(rear = false))
         assertEquals(ResearchCapturePolicy.Issue.ZOOM, issue(zoom = 1.1f))
         assertEquals(ResearchCapturePolicy.Issue.ZOOM, issue(zoom = Float.NaN))
         assertEquals(ResearchCapturePolicy.Issue.RESOLUTION, issue(fixedResolution = false))
