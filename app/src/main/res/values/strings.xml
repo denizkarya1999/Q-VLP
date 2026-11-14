@@ -27,7 +27,6 @@
     <string name="camera_settings_unavailable">Manual camera settings unavailable</string>
     <string name="shutter_rate">Rolling Shutter Rate</string>
     <string name="shutter_rate_value">%1$d Hz</string>
-    <string name="shutter_rate_too_slow">Research capture needs %1$d Hz or higher.</string>
     <string name="iso">ISO Rate</string>
     <string name="iso_range">Enter a whole number from ISO %1$d to %2$d.</string>
     <string name="iso_summary">ISO %1$d</string>

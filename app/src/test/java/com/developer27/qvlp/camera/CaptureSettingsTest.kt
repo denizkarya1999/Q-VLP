@@ -48,8 +48,8 @@ class CaptureSettingsTest {
     }
 
     @Test
-    fun theResearchLimitIsTenThousandHertz() {
-        assertEquals(10_000, ResearchCapturePolicy.MIN_SHUTTER_RATE_HZ)
-        assertEquals(ResearchCapturePolicy.MAX_EXPOSURE_NS, CaptureSettings.exposureNanos(ResearchCapturePolicy.MIN_SHUTTER_RATE_HZ))
+    fun theDefaultIsTenThousandHertz() {
+        assertEquals(10_000, CaptureSettings.shutterRateHz(CaptureSettings.DEFAULT_EXPOSURE_NS))
+        assertEquals(CaptureSettings.DEFAULT_EXPOSURE_NS, CaptureSettings.exposureNanos(10_000))
     }
 }

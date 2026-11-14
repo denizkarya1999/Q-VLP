@@ -14,11 +14,19 @@ class ResearchCapturePolicyTest {
         assertNull(issue(exposureNs = 50_000L, fps = 60))
     }
 
+    @Test fun acceptsEveryRollingShutterRateTheOperatorCanChoose() {
+        // 500 Hz is 2 ms and 50 Hz is 20 ms: slower than the default, and still a valid choice.
+        for (rate in CaptureSettings.SHUTTER_RATES_HZ) assertNull(issue(exposureNs = CaptureSettings.exposureNanos(rate)))
+        val check = ResearchCapturePolicy.Confirmation()
+        val slow = valid.copy(exposureNs = 1_991_924L)
+        assertEquals(ResearchCapturePolicy.Issue.CONFIRMING, check.observe(slow))
+        assertNull(check.observe(slow))
+    }
+
     @Test fun rejectsEachNonResearchSetting() {
         assertEquals(ResearchCapturePolicy.Issue.ZOOM, issue(zoom = 1.1f))
         assertEquals(ResearchCapturePolicy.Issue.ZOOM, issue(zoom = Float.NaN))
         assertEquals(ResearchCapturePolicy.Issue.RESOLUTION, issue(fixedResolution = false))
-        assertEquals(ResearchCapturePolicy.Issue.EXPOSURE, issue(exposureNs = 100_001L))
         assertEquals(ResearchCapturePolicy.Issue.EXPOSURE, issue(exposureNs = 0L))
         assertEquals(ResearchCapturePolicy.Issue.ISO, issue(fixedIso = false))
         assertEquals(ResearchCapturePolicy.Issue.FRAME_RATE, issue(fps = 29))
@@ -84,10 +92,9 @@ class ResearchCapturePolicyTest {
         assertFalse(ResearchCapturePolicy.usesFrameTimingTolerance(16_666_667L))
     }
 
-    @Test fun nominalTimingStillRejectsExposureAndGeometryViolations() {
+    @Test fun nominalTimingStillRejectsGeometryAndMissingMeasurements() {
         val check = ResearchCapturePolicy.Confirmation()
         val pixel = valid.copy(frameDurationNs = 33_340_371L)
-        assertEquals(ResearchCapturePolicy.Issue.REPORTED_EXPOSURE, check.observe(pixel.copy(exposureNs = 100_001L)))
         assertEquals(ResearchCapturePolicy.Issue.REPORTED_GEOMETRY, check.observe(pixel.copy(geometryMatches = false)))
         assertEquals(ResearchCapturePolicy.Issue.MISSING_MEASUREMENTS, check.observe(pixel.copy(iso = null)))
         assertEquals(ResearchCapturePolicy.Issue.CONFIRMING, check.observe(pixel))
@@ -101,10 +108,9 @@ class ResearchCapturePolicyTest {
         }
     }
 
-    @Test fun rejectsClampedExposureSlowCadenceAndStaleZoomResults() {
+    @Test fun rejectsSlowCadenceAndStaleZoomResults() {
         val check = ResearchCapturePolicy.Confirmation()
         check.observe(valid); check.observe(valid)
-        assertEquals(ResearchCapturePolicy.Issue.REPORTED_EXPOSURE, check.observe(valid.copy(exposureNs = 120_000L)))
         assertEquals(ResearchCapturePolicy.Issue.REPORTED_FRAME_RATE, check.observe(valid.copy(frameDurationNs = ResearchCapturePolicy.MAX_CONFIRMED_FRAME_DURATION_NS + 1)))
         assertEquals(ResearchCapturePolicy.Issue.REPORTED_GEOMETRY, check.observe(valid.copy(geometryMatches = false)))
         assertEquals(ResearchCapturePolicy.Issue.CONFIRMING, check.observe(valid))

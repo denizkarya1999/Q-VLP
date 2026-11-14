@@ -1,10 +1,10 @@
 package com.developer27.qvlp.camera
 
-/** Research limits shared by the reset preset and the capture gate. */
+/**
+ * What a capture needs from the camera. The rolling shutter rate and ISO are the operator's choice:
+ * every rate the camera lists is accepted, so choosing one never stops a capture.
+ */
 internal object ResearchCapturePolicy {
-    const val MAX_EXPOSURE_NS = 100_000L
-    /** The same limit as a rolling shutter rate: 10000 Hz. */
-    const val MIN_SHUTTER_RATE_HZ = (1_000_000_000L / MAX_EXPOSURE_NS).toInt()
     const val MIN_FPS = 30
     // Ceil(1 second / 30): allow only integer-nanosecond rounding.
     const val MAX_FRAME_DURATION_NS = 33_333_334L
@@ -30,14 +30,13 @@ internal object ResearchCapturePolicy {
     enum class Issue(val message: String) {
         ZOOM("Research capture requires 1× zoom. Return zoom to 1× with the − button."),
         RESOLUTION("This camera has no resolution that matches its sensor shape at 30 fps or faster, which research capture requires. Switch to the other camera."),
-        EXPOSURE("Research capture requires a rolling shutter rate of 10000 Hz or higher (an exposure of 100 µs or less)."),
+        EXPOSURE("Choose a rolling shutter rate in Settings."),
         ISO("Choose a fixed manual ISO supported by this camera."),
         FRAME_RATE("This camera cannot provide 30 fps at the fixed resolution, which research capture requires. Switch to the other camera."),
         FOCUS("This camera cannot lock or fix its focus, which research capture requires. Switch to the other camera."),
         WHITE_BALANCE("This camera cannot lock its white balance or use a fixed preset, which research capture requires. Switch to the other camera."),
         CONFIRMING("Waiting for the camera to confirm stable research settings."),
         MISSING_MEASUREMENTS("The camera has not reported exposure, ISO and frame duration; research settings cannot be confirmed."),
-        REPORTED_EXPOSURE("The camera reports an exposure above 100 µs. Choose a higher rolling shutter rate in Settings."),
         REPORTED_FRAME_RATE("The camera reports a frame rate below nominal 30 fps, beyond the allowed 0.05% timing rounding. Reopen the app or switch to the other camera."),
         REPORTED_GEOMETRY("Waiting for the camera to confirm the requested 1× sensor crop.")
     }
@@ -46,7 +45,7 @@ internal object ResearchCapturePolicy {
                       fixedIso: Boolean, fps: Int, fixedFocus: Boolean, fixedWhiteBalance: Boolean): Issue? = when {
         !zoom.isFinite() || kotlin.math.abs(zoom - 1f) > 0.0001f -> Issue.ZOOM
         !fixedResolution -> Issue.RESOLUTION
-        exposureNs !in 1..MAX_EXPOSURE_NS -> Issue.EXPOSURE
+        exposureNs < 1 -> Issue.EXPOSURE
         !fixedIso -> Issue.ISO
         fps < MIN_FPS -> Issue.FRAME_RATE
         !fixedFocus -> Issue.FOCUS
@@ -73,7 +72,6 @@ internal object ResearchCapturePolicy {
             val invalid = when {
                 reading.exposureNs == null || reading.exposureNs <= 0 || reading.iso == null || reading.iso <= 0 ||
                     reading.frameDurationNs == null || reading.frameDurationNs <= 0 -> Issue.MISSING_MEASUREMENTS
-                reading.exposureNs > MAX_EXPOSURE_NS -> Issue.REPORTED_EXPOSURE
                 reading.frameDurationNs > MAX_CONFIRMED_FRAME_DURATION_NS -> Issue.REPORTED_FRAME_RATE
                 !reading.geometryMatches -> Issue.REPORTED_GEOMETRY
                 else -> null

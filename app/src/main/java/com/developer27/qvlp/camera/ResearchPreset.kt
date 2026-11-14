@@ -10,12 +10,11 @@ import kotlin.math.abs
 internal object ResearchPreset {
     /** The fixed values, with the two adjustable ones at their defaults: 10000 Hz and the lowest ISO. */
     fun defaults(capabilities: CameraCapabilities): CameraProfile {
-        require(capabilities.exposureRangeNs.lower <= ResearchCapturePolicy.MAX_EXPOSURE_NS) {
-            "This camera cannot expose for 100 µs or less."
-        }
         val (stream, fps) = streamAndRate(capabilities)
+        // A camera that cannot expose as briefly as the default starts at the shortest exposure it has.
         return CameraProfile(
-            minOf(ResearchCapturePolicy.MAX_EXPOSURE_NS, capabilities.maximumExposureNs(stream, fps)),
+            CaptureSettings.DEFAULT_EXPOSURE_NS.coerceIn(
+                capabilities.exposureRangeNs.lower, capabilities.maximumExposureNs(stream, fps)),
             capabilities.isoRange.lower, stream, fps, controls(capabilities)
         )
     }

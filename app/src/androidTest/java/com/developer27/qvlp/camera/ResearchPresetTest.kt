@@ -62,8 +62,8 @@ class ResearchPresetTest {
         assertEquals(Size(1280, 720), ResearchPreset.defaults(caps).stream.size)
     }
 
-    @Test fun refusesExposureClampingAboveTheResearchLimit() {
-        assertTrue(runCatching { ResearchPreset.defaults(capabilities().copy(exposureRangeNs = Range(200_000L, 1_000_000_000L))) }.isFailure)
+    @Test fun startsAtTheShortestExposureWhenTheDefaultIsOutOfRange() {
+        assertEquals(200_000L, ResearchPreset.defaults(capabilities().copy(exposureRangeNs = Range(200_000L, 1_000_000_000L))).exposureNs)
     }
 
     @Test fun refusesSlowOrCroppedFallbacks() {

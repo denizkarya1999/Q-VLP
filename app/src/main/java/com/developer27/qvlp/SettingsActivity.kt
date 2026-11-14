@@ -18,7 +18,6 @@ import com.developer27.qvlp.camera.CameraCapabilities
 import com.developer27.qvlp.camera.CameraProfile
 import com.developer27.qvlp.camera.CameraSettingsStore
 import com.developer27.qvlp.camera.CaptureSettings
-import com.developer27.qvlp.camera.ResearchCapturePolicy
 import com.developer27.qvlp.capture.CaptureLengthPreferences
 
 class SettingsActivity : AppCompatActivity() {
@@ -135,9 +134,7 @@ class SettingsActivity : AppCompatActivity() {
             shutterRate.entryValues = rates.map { it.toString() }.toTypedArray()
             // An exposure saved before this setting existed may fall between two listed rates.
             shutterRate.value = rates.firstOrNull { CaptureSettings.exposureNanos(it) == profile.exposureNs }?.toString()
-            shutterRate.summary = getString(R.string.shutter_rate_value, rate) +
-                if (profile.exposureNs > ResearchCapturePolicy.MAX_EXPOSURE_NS)
-                    "\n" + getString(R.string.shutter_rate_too_slow, ResearchCapturePolicy.MIN_SHUTTER_RATE_HZ) else ""
+            shutterRate.summary = getString(R.string.shutter_rate_value, rate)
             iso.text = profile.iso.toString()
             iso.summary = getString(R.string.iso_summary, profile.iso)
             iso.dialogMessage = getString(R.string.iso_range, capabilities.isoRange.lower, capabilities.isoRange.upper)
