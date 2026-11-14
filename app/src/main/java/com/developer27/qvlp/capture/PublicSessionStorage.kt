@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.os.CancellationSignal
+import android.os.Environment
 import java.util.concurrent.CancellationException
 import org.json.JSONObject
 import java.io.File
@@ -63,6 +64,18 @@ internal object PublicSessionStorage {
         if (previous != null && previous != uri) runCatching {
             context.contentResolver.releasePersistableUriPermission(previous, access)
         }
+    }
+
+    /**
+     * Makes sure Pictures/Q-VLP exists. Called off the main thread when the app starts, so the folder is there
+     * before the first capture and before auto-save has been set up. Android 11 and later let an app create a
+     * folder in Pictures without a permission; earlier versions get it once folder access has been granted.
+     */
+    fun ensureFolder(context: Context): Boolean {
+        @Suppress("DEPRECATION") // The only way to name the shared Pictures folder as a path.
+        val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Q-VLP")
+        if (folder.isDirectory || runCatching { folder.mkdirs() }.getOrDefault(false)) return true
+        return configured(context) && runCatching { destination(context, requireNotNull(selected(context))) }.isSuccess
     }
 
     fun requireDestination(context: Context, control: CopyControl = CopyControl()): Uri {

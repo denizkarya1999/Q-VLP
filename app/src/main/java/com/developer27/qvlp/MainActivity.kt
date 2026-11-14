@@ -32,6 +32,7 @@ import com.developer27.qvlp.capture.BurstSummary
 import com.developer27.qvlp.capture.Position
 import com.developer27.qvlp.capture.PositionCatalog
 import com.developer27.qvlp.capture.PositionPicker
+import com.developer27.qvlp.capture.PublicSessionStorage
 import com.developer27.qvlp.capture.ResearchSettings
 import com.developer27.qvlp.capture.SessionBrowser
 import com.developer27.qvlp.capture.SessionCsv
@@ -95,6 +96,8 @@ class MainActivity : AppCompatActivity() {
         sessions = SessionBrowser(this, ::setFileBusy) { resetPosition -> sessionChanged(resetPosition) }
         sessions.restore(savedInstanceState)
         viewBinding.storageStatus.setOnClickListener { sessions.storage(retry = storageState.needsAttention) }
+        // The session folder exists from the first start, before any capture or auto-save setup.
+        applicationContext.let { app -> SessionFiles.io.execute { PublicSessionStorage.ensureFolder(app) } }
         stopObservingStorage = SessionPublisher.observe { state ->
             storageState = state
             showStorageStatus()

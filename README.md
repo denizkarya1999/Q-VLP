@@ -39,7 +39,7 @@ Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · Un
    - **End Session** can be tapped after any position. Captured positions stay saved, and the next capture starts a new session.
 
    "Replace" means the latest completed capture of a position is the one used in `final.csv`. The earlier capture's folders are kept in the session.
-5. Once, choose where sessions are saved: when auto-save needs setting up, a notice appears on the camera screen; tap it, then **Choose folder → Internal storage → Pictures → Use this folder → Allow**. After that every position saves to **Pictures/Q-VLP** automatically and the notice stays hidden.
+5. The app creates **Internal storage/Pictures/Q-VLP** by itself when it starts (Android 11 and later). Once, choose where sessions are saved: when auto-save needs setting up, a notice appears on the camera screen; tap it, then **Choose folder → Internal storage → Pictures → Use this folder → Allow**. After that every position saves to **Pictures/Q-VLP** automatically and the notice stays hidden.
 
 ### The information button
 
@@ -82,7 +82,7 @@ These are examples; use measurements from the real room. IDs must be unique nonn
 
 ### What a session contains
 
-Each session is one folder in **Internal storage/Pictures/Q-VLP**. It contains exactly this, and nothing else:
+Each session is one folder in **Internal storage/Pictures/Q-VLP**. That folder is created when the app starts, so it is there before the first capture. It contains exactly this, and nothing else:
 
 ```
 session_<id>/
