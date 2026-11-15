@@ -10,10 +10,48 @@ class SessionLayoutTest {
     @Test fun namesACaptureAndItsProcessedFolderByPositionAndTime() {
         val name = SessionLayout.captureName(12, LocalDateTime.of(2026, 11, 14, 9, 5, 7))
         assertEquals("position_12_20261114_090507", name)
-        assertEquals(File("session_x", "processed_position_frames_12_20261114_090507"),
-            SessionLayout.processedFolder(File("session_x", name)))
+        val capture = File(File("session_x", "Original_Frames"), name)
+        assertEquals(File("session_x"), SessionLayout.session(capture))
+        assertEquals(File(File("session_x", "Processed_Frames"), "processed_position_frames_12_20261114_090507"),
+            SessionLayout.processedFolder(capture))
         assertTrue(SessionLayout.isCapture(File(name)))
         assertFalse(SessionLayout.isCapture(File("processed_position_frames_12_20261114_090507")))
+    }
+
+    @Test fun capturesLiveInOriginalFramesAndTheirResultsInProcessedFrames() {
+        val session = Files.createTempDirectory("session_").toFile()
+        try {
+            val capture = File(SessionLayout.originals(session), "position_3_20261114_090507").apply { mkdirs() }
+            File(SessionLayout.originals(session), "notes.txt").writeText("not a capture")
+            File(session, "position_9_stray").mkdirs() // Only Original_Frames holds captures.
+            assertEquals(listOf(capture), SessionLayout.captures(session))
+            assertEquals("Original_Frames/position_3_20261114_090507", capture.relativeTo(session).invariantSeparatorsPath)
+            assertEquals("Processed_Frames/processed_position_frames_3_20261114_090507",
+                SessionLayout.processedFolder(capture).relativeTo(session).invariantSeparatorsPath)
+            assertTrue(SessionLayout.captures(File(session, "missing")).isEmpty())
+        } finally { session.deleteRecursively() }
+    }
+
+    @Test fun aSessionSavedInTheEarlierLayoutIsMovedIntoTheTwoFolders() {
+        val session = Files.createTempDirectory("session_").toFile()
+        try {
+            File(session, "final.csv").writeText("position_id\n")
+            File(session, "session.json").writeText("{}")
+            File(File(session, "position_1_20261114_185036/frames").apply { mkdirs() }, "frame_00000.png").writeBytes(byteArrayOf(1))
+            File(File(session, "position_1_20261114_185036"), "burst.json").writeText("{}")
+            File(File(session, "processed_position_frames_1_20261114_185036/processed_frames").apply { mkdirs() }, "frame_00000.png")
+                .writeBytes(byteArrayOf(2))
+            assertTrue(SessionLayout.adopt(session))
+            assertEquals(setOf("final.csv", "session.json", "Original_Frames", "Processed_Frames"), session.list()!!.toSet())
+            val capture = SessionLayout.captures(session).single()
+            assertEquals("position_1_20261114_185036", capture.name)
+            assertTrue(File(capture, "frames/frame_00000.png").isFile)
+            assertTrue(File(capture, "burst.json").isFile)
+            assertTrue(File(SessionLayout.processedFolder(capture), "processed_frames/frame_00000.png").isFile)
+            // Nothing is left to move the second time.
+            assertFalse(SessionLayout.adopt(session))
+            assertEquals(1, SessionLayout.captures(session).size)
+        } finally { session.deleteRecursively() }
     }
 
     @Test fun readsThePositionOutOfACaptureNameOnly() {

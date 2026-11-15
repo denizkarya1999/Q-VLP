@@ -218,25 +218,12 @@ class SessionDeletionTest {
         } finally { clean(first); clean(second); clean(sibling) }
     }
 
-    @Test fun aPositionsFileImportsWithoutChangingTheUsersPositions() {
-        val name = "csv_help_test_${UUID.randomUUID()}"
-        val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
-        try {
-            val example = "position_id,rx_x_m,rx_y_m\n0,0.00,0.00\n1,0.50,0.00\n2,0.50,0.50\n"
-            assertEquals(3, PositionCatalog.import(example.byteInputStream(), prefs))
-            val positions = PositionCatalog.read(prefs)
-            assertEquals(listOf(0, 1, 2), positions.map { it.id })
-            assertEquals(0.5, positions[2].x!!, 0.0)
-            assertEquals(0.5, positions[2].y!!, 0.0)
-        } finally { context.deleteSharedPreferences(name) }
-    }
-
     @Test fun rejectsInvalidIdsAndTheSessionCurrentlyRecording() {
         val target = fixture()
         try {
             for (id in listOf("../sessions", "session_../other", "", "session_example/child"))
                 assertTrue(runCatching { SessionFiles.beginDeletion(context, id) }.isFailure)
-            SessionFiles.activeCapture = File(target, "position_active")
+            SessionFiles.activeCapture = File(SessionLayout.originals(target), "position_active")
             assertTrue(runCatching { SessionFiles.beginDeletion(context, target.name) }.isFailure)
             assertFalse(SessionFiles.isDeleting(context, target.name))
             assertTrue(target.exists())

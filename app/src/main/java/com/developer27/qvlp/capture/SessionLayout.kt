@@ -9,17 +9,21 @@ import java.time.format.DateTimeFormatter
  *
  *     session_<id>/
  *       final.csv
- *       position_<id>_<timestamp>/                    one per capture
- *         frames/frame_00000.png …
- *         metadata/frame_00000_metadata.json …        camera settings of each frame
- *         frame_and_metadata_mapping.csv
- *       processed_position_frames_<id>_<timestamp>/   the same capture after LED detection
- *         processed_frames/frame_00000.png …
- *         processed_frame_metadata/frame_00000_metadata.json …
- *         processed_frame_and_metadata_mapping.csv
+ *       Original_Frames/
+ *         position_<id>_<timestamp>/                    one per capture
+ *           frames/frame_00000.png …
+ *           metadata/frame_00000_metadata.json …        camera settings of each frame
+ *           frame_and_metadata_mapping.csv
+ *       Processed_Frames/
+ *         processed_position_frames_<id>_<timestamp>/   the same capture after LED detection
+ *           processed_frames/frame_00000.png …
+ *           processed_frame_metadata/frame_00000_metadata.json …
+ *           processed_frame_and_metadata_mapping.csv
  */
 internal object SessionLayout {
     const val FINAL = "final.csv"
+    const val ORIGINALS = "Original_Frames"
+    const val PROCESSED = "Processed_Frames"
     const val FRAMES = "frames"
     const val METADATA = "metadata"
     const val MAPPING = "frame_and_metadata_mapping.csv"
@@ -33,8 +37,36 @@ internal object SessionLayout {
 
     fun captureName(positionId: Int, time: LocalDateTime): String = "$CAPTURE_PREFIX${positionId}_${STAMP.format(time)}"
     fun isCapture(folder: File): Boolean = folder.name.startsWith(CAPTURE_PREFIX)
+
+    /** Where a session keeps its captures. */
+    fun originals(session: File): File = File(session, ORIGINALS)
+
+    /** The session a capture folder belongs to: two levels up, past Original_Frames. */
+    fun session(capture: File): File = requireNotNull(capture.parentFile?.parentFile) { "Not a capture folder: $capture" }
+
+    fun captures(session: File): List<File> =
+        originals(session).listFiles().orEmpty().filter { it.isDirectory && isCapture(it) }
+
     fun processedFolder(capture: File): File =
-        File(capture.parentFile, PROCESSED_PREFIX + capture.name.removePrefix(CAPTURE_PREFIX))
+        File(File(session(capture), PROCESSED), PROCESSED_PREFIX + capture.name.removePrefix(CAPTURE_PREFIX))
+
+    /**
+     * Moves the captures of a session saved before Original_Frames and Processed_Frames existed into them.
+     * Returns whether anything moved; a session already in this layout is left alone.
+     */
+    fun adopt(session: File): Boolean {
+        var moved = false
+        for (folder in session.listFiles().orEmpty().filter { it.isDirectory }) {
+            val container = when {
+                folder.name.startsWith(PROCESSED_PREFIX) -> PROCESSED
+                folder.name.startsWith(CAPTURE_PREFIX) -> ORIGINALS
+                else -> continue
+            }
+            val target = File(File(session, container).apply { mkdirs() }, folder.name)
+            if (!target.exists() && folder.renameTo(target)) moved = true
+        }
+        return moved
+    }
 
     /** The position a capture folder belongs to, or null for a name that is not a capture. */
     fun positionId(captureName: String): Int? =

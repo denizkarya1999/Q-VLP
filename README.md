@@ -1,6 +1,6 @@
 # Q-VLP — Quantum-based Location Estimation
 
-Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. This version records frames of the ceiling LEDs at surveyed positions, detects the LEDs in every frame and builds the fingerprint file `final.csv`. Location estimation is planned.
+Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. This version records frames of the ceiling LEDs at numbered positions, detects the LEDs in every frame and builds the fingerprint file `final.csv`. Location estimation is planned.
 
 The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplate). Open this directory in Android Studio; `app` is the application module.
 
@@ -22,7 +22,7 @@ Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · Un
 
 **Settings** has three groups. **Modes** is two radio buttons: **Data Collection Mode** is selected and runs the recording workflow; **Inference Mode** is faded, marked **Not implemented yet** and cannot be selected. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. There is no Help section.
 
-1. Tap **Position** and enter the position ID. Only the ID is typed; X/Y coordinates are not needed. A `positions.csv` can be imported from the same dialog to step through a surveyed list instead.
+1. Tap **Position** and enter the position ID. Only the ID is typed: there are no X/Y coordinates and no list to import.
 2. Mount the phone with the camera lens over the mark, at the same height for every position.
 3. Align the ceiling LEDs in the preview and tap **Start Capture** (or press a volume key), then step away. The app waits 3 seconds, captures **Settings → Recording → Number of Frames** frames (1–1000, default 30), and processes them. There is no beep or vibration.
 4. When processing ends, the buttons below replace Start Capture. Nothing is written on the result screen: no result line, no warning line and no status boxes.
@@ -34,7 +34,7 @@ Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · Un
    | **End Session** | |
 
    - **Repeat** captures the same position again.
-   - **Next Position** and **Previous Position** select the next or previous position (ID ± 1, or the neighbouring row of an imported list). Capturing a position that already has a capture replaces it.
+   - **Next Position** and **Previous Position** select the next or previous position (ID ± 1). Capturing a position that already has a capture replaces it.
    - **Replace Position** asks for the ID of the position to capture again. It lists the IDs captured in this session and rejects an ID that has no capture.
    - **End Session** can be tapped after any position. Captured positions stay saved, and the next capture starts a new session.
 
@@ -59,18 +59,6 @@ The preview always fills the screen at the camera image's true proportions, on b
 
 **Settings → Camera Settings** has two options. **Rolling Shutter Rate** is a list in Hz, as in RoTemplate and LiFind; the exposure time is one period of the rate (10000 Hz, the default, is 100 µs). Only rates the camera supports are listed, and every listed rate can be used for capture: choosing one never blocks the camera. The LED stripes (1.8–4.8 kHz) are sharpest at 10000 Hz or higher; slower rates give a brighter picture but blur the stripes, so fewer LEDs are detected. **ISO Rate** is typed within the camera's range. Everything else is fixed by the app and has no setting: the lens, the resolution (1280 × 960 on a Pixel 8a, front and rear), 30 fps, focus and white balance.
 
-### Survey file (optional)
-
-Use UTF-8 CSV with exactly these columns (column order may vary):
-
-```csv
-position_id,rx_x_m,rx_y_m
-0,0.3,0.3
-1,0.6,0.3
-```
-
-These are examples; use measurements from the real room. IDs must be unique nonnegative integers up to 999999, and coordinates must be finite numbers. Files are limited to 1 MB / 10,000 positions. Invalid files leave the existing list untouched. Import preserves file order, so Next and Previous follow the prepared path; the last position shows **End of List**. A successful import selects the first position and starts a new session on the next capture. The coordinates are kept by the app for reference only: they are not written into the session folder.
-
 ## Camera and saved data
 
 - Manual exposure and ISO use device-reported limits. The defaults are a 10000 Hz rolling shutter rate (100 µs) and minimum ISO; the app fixes 1280 × 960 at 30 fps. A 4:3 size also qualifies when the sensor is slightly wider than 4:3, as on the Pixel 8a front camera (4208 × 3072): such frames keep every sensor row and crop under 3% of the width.
@@ -86,22 +74,24 @@ Each session is one folder in **Internal storage/Pictures/Q-VLP**. That folder i
 
 ```
 session_<id>/
-  final.csv
-  position_<id>_<attempt_timestamp>/
-    frames/
-      frame_00000.png ...                      the frames, in colour
-    metadata/
-      frame_00000_metadata.json ...            camera settings of each frame
-    frame_and_metadata_mapping.csv
-  processed_position_frames_<id>_<attempt_timestamp>/
-    processed_frames/
-      frame_00000.png ...                      the frames after LED detection
-    processed_frame_metadata/
-      frame_00000_metadata.json ...            LED_k_u_px, LED_k_v_px, LED_k_detected
-    processed_frame_and_metadata_mapping.csv
+  final.csv                                        the fingerprint: one row per position
+  Original_Frames/                                 the original frames
+    position_<id>_<attempt_timestamp>/             one folder per capture
+      frames/
+        frame_00000.png ...                        the frames, in colour
+      metadata/
+        frame_00000_metadata.json ...              camera settings of each frame
+      frame_and_metadata_mapping.csv               pairs each frame with its metadata file
+  Processed_Frames/                                the frames after LED detection
+    processed_position_frames_<id>_<attempt_timestamp>/   one folder per capture
+      processed_frames/
+        frame_00000.png ...                        the frames, in colour, with the detection drawn on
+      processed_frame_metadata/
+        frame_00000_metadata.json ...              LED_k_u_px, LED_k_v_px, LED_k_detected
+      processed_frame_and_metadata_mapping.csv     pairs each processed frame with its metadata file
 ```
 
-`<id>` is the position ID and `<attempt_timestamp>` the local time the capture started, as `yyyyMMdd_HHmmss`. Every capture of a position makes one `position_…` folder and its `processed_position_frames_…` twin.
+`<id>` is the position ID and `<attempt_timestamp>` the local time the capture started, as `yyyyMMdd_HHmmss`. Every capture of a position makes one `position_…` folder in `Original_Frames` and its `processed_position_frames_…` twin in `Processed_Frames`. A session recorded before these two folders existed is moved into them the next time the app starts.
 
 **Frames.** Each frame is a lossless colour PNG in sensor-native orientation, without rotation, rescaling or lossy compression, so compression cannot blur the stripes. The camera delivers luminance with half-resolution colour (YUV 4:2:0); the app converts it to RGB once with full-range BT.601. No `.yuv` file is kept.
 
@@ -119,7 +109,7 @@ session_<id>/
 
 **Processed frame metadata.** `processed_frame_metadata/frame_00000_metadata.json` holds, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected` (1 or 0; the coordinates are `null` when the LED was not detected). A `details` block adds what the detector measured: background level, closing window, row time and, per LED, the estimated frequency, stripe period, fit quality, blob area and the quality flags.
 
-**final.csv.** One row per position with 13 columns: `position_id` (the typed ID) and, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected`. It is built from the processed frame metadata, read through `processed_frame_and_metadata_mapping.csv`, of the **latest completed capture of each position**. An LED is detected at a position when it was valid in at least 70% of that capture's frames; its coordinates are the median over those valid frames. An LED that is not detected has `0` and empty coordinates. An interrupted capture never replaces a completed one.
+**final.csv.** One row per position with 13 columns: `position_id` (the typed ID) and, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected`. It is built from the processed frame metadata, read through `Processed_Frames/processed_position_frames_…/processed_frame_and_metadata_mapping.csv`, of the **latest completed capture of each position**, and its rows are in order of position ID. An LED is detected at a position when it was valid in at least 70% of that capture's frames; its coordinates are the median over those valid frames. An LED that is not detected has `0` and empty coordinates. An interrupted capture never replaces a completed one.
 
 `LED_k_u_px` is the column and `LED_k_v_px` the row of LED k's blob centre, in pixels with sub-pixel precision. The origin is the centre of the top-left pixel; u grows to the right and v grows downward, in sensor-native orientation.
 

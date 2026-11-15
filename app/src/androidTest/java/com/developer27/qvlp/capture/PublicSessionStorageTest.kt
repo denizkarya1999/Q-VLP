@@ -126,7 +126,7 @@ class PublicSessionStorageTest {
 
     @Test fun snapshotsExcludeActiveCapturesAndDoNotGrowWhileBeingPublished() {
         val session = File(context.cacheDir, "session_${UUID.randomUUID()}").apply { mkdirs() }
-        val active = File(session, "position_active").apply { mkdirs() }
+        val active = File(SessionLayout.originals(session), "position_active").apply { mkdirs() }
         File(active, "frame_00000.png").writeBytes(byteArrayOf(1))
         // The processed folder of a capture still being written is not ready either.
         File(SessionLayout.processedFolder(active).apply { mkdirs() }, "frame_00000.png").writeBytes(byteArrayOf(1))

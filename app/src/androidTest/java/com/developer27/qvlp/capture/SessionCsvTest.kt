@@ -16,13 +16,12 @@ class SessionCsvTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private fun session(parent: File = context.cacheDir): File = File(parent, "session_${UUID.randomUUID()}").apply {
         mkdirs()
-        SessionFiles.writeJson(File(this, "session.json"), JSONObject().put("survey", JSONObject().put("positions",
-            JSONArray().put(JSONObject().put("position_id", 2)).put(JSONObject().put("position_id", 1)))))
+        SessionFiles.writeJson(File(this, "session.json"), JSONObject())
     }
 
     /** One capture and its processed folder: LED 1 is seen at [u] in every frame. */
     private fun attempt(session: File, name: String, position: Int, second: Int, state: String = "complete",
-                        frames: Int = 2, u: Double = 100.0): File = File(session, "position_${position}_$name").apply {
+                        frames: Int = 2, u: Double = 100.0): File = File(SessionLayout.originals(session), "position_${position}_$name").apply {
         File(this, SessionLayout.FRAMES).mkdirs()
         SessionFiles.writeJson(File(this, "burst.json"), JSONObject().put("position", JSONObject().put("position_id", position))
             .put("state", state).put("frames_saved", frames).put("finished_at", "2026-10-23T12:00:${second.toString().padStart(2, '0')}Z"))
@@ -38,7 +37,7 @@ class SessionCsvTest {
         File(processed, SessionLayout.PROCESSED_MAPPING).writeText(SessionLayout.mapping((0 until frames).toList()))
     }
 
-    @Test fun listsPositionsInSurveyOrderAndALaterCaptureReplacesAnEarlierOne() {
+    @Test fun listsPositionsByIdAndALaterCaptureReplacesAnEarlierOne() {
         val session = session()
         try {
             val first = attempt(session, "first", 1, 1, u = 100.0)
@@ -49,12 +48,12 @@ class SessionCsvTest {
             SessionCsv.update(session)
             val final = File(session, SessionLayout.FINAL).readLines()
             assertEquals(SessionCsv.finalHeader, final.first())
-            // One row per position, in survey order. Position 1 comes from its latest completed capture.
-            assertEquals(listOf("2,300.500,50.000,1,,,0,,,0,,,0", "1,201.000,50.000,1,,,0,,,0,,,0"), final.drop(1))
+            // One row per position, by ID. Position 1 comes from its latest completed capture.
+            assertEquals(listOf("1,201.000,50.000,1,,,0,,,0,,,0", "2,300.500,50.000,1,,,0,,,0,,,0"), final.drop(1))
             assertArrayEquals(original, File(first, SessionLayout.MAPPING).readBytes())
             val index = SessionFiles.readJson(File(session, "session.json")).getJSONObject("export")
             assertEquals("latest_completed_capture_per_position", index.getString("repeat_policy"))
-            assertEquals(repeat.name, index.getJSONArray("selected_attempts").getJSONObject(1).getString("attempt"))
+            assertEquals(repeat.name, index.getJSONArray("selected_attempts").getJSONObject(0).getString("attempt"))
             assertEquals(2, index.getJSONArray("excluded_attempts").length())
         } finally { session.deleteRecursively() }
     }
@@ -112,13 +111,14 @@ class SessionCsvTest {
                 val csv = zip.getInputStream(zip.getEntry("${session.name}/${SessionLayout.FINAL}")).bufferedReader().readLines()
                 assertEquals(listOf(SessionCsv.finalHeader, "1,200.500,50.000,1,,,0,,,0,,,0"), csv)
                 for (capture in listOf(old, latest)) {
-                    assertNotNull(zip.getEntry("${session.name}/${capture.name}/${SessionLayout.FRAMES}/${SessionLayout.frameName(0)}"))
-                    assertNotNull(zip.getEntry("${session.name}/${capture.name}/${SessionLayout.MAPPING}"))
-                    assertNotNull(zip.getEntry("${session.name}/${SessionLayout.processedFolder(capture).name}/${SessionLayout.PROCESSED_MAPPING}"))
-                    assertNull(zip.getEntry("${session.name}/${capture.name}/burst.json"))
+                    val original = "${session.name}/${SessionLayout.ORIGINALS}/${capture.name}"
+                    assertNotNull(zip.getEntry("$original/${SessionLayout.FRAMES}/${SessionLayout.frameName(0)}"))
+                    assertNotNull(zip.getEntry("$original/${SessionLayout.MAPPING}"))
+                    assertNotNull(zip.getEntry("${session.name}/${SessionLayout.PROCESSED}/${SessionLayout.processedFolder(capture).name}/${SessionLayout.PROCESSED_MAPPING}"))
+                    assertNull(zip.getEntry("$original/burst.json"))
                 }
                 assertNull(zip.getEntry("${session.name}/session.json"))
-                assertNull(zip.getEntry("${session.name}/${latest.name}/${SessionLayout.FRAMES}/frame_00001.yuv.part"))
+                assertNull(zip.getEntry("${session.name}/${SessionLayout.ORIGINALS}/${latest.name}/${SessionLayout.FRAMES}/frame_00001.yuv.part"))
             }
         } finally { archive?.delete(); session.deleteRecursively() }
     }

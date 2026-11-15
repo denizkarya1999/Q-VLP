@@ -30,7 +30,6 @@ import com.developer27.qvlp.capture.CaptureProcessing
 import com.developer27.qvlp.capture.CaptureLengthPreferences
 import com.developer27.qvlp.capture.BurstSummary
 import com.developer27.qvlp.capture.Position
-import com.developer27.qvlp.capture.PositionCatalog
 import com.developer27.qvlp.capture.PositionPicker
 import com.developer27.qvlp.capture.PublicSessionStorage
 import com.developer27.qvlp.capture.ResearchSettings
@@ -90,8 +89,7 @@ class MainActivity : AppCompatActivity() {
         cameraHelper = CameraHelper(this, viewBinding, preferences)
         lastPosition = runCatching {
             val saved = JSONObject(requireNotNull(preferences.getString("last_capture_position", null)))
-            Position(saved.getInt("position_id"), if (saved.isNull("rx_x_m")) null else saved.getDouble("rx_x_m"),
-                if (saved.isNull("rx_y_m")) null else saved.getDouble("rx_y_m"), saved.optString("source", "manual"))
+            Position(saved.getInt("position_id"))
         }.getOrNull()
         sessions = SessionBrowser(this, ::setFileBusy) { resetPosition -> sessionChanged(resetPosition) }
         sessions.restore(savedInstanceState)
@@ -102,8 +100,7 @@ class MainActivity : AppCompatActivity() {
             storageState = state
             showStorageStatus()
         }
-        positions = PositionPicker(this, preferences, ::setFileBusy) { imported ->
-            if (imported) lastPosition = null
+        positions = PositionPicker(this, preferences) {
             clearResult()
             updateControls()
         }
@@ -133,12 +130,12 @@ class MainActivity : AppCompatActivity() {
         }
         viewBinding.startCaptureButton.setOnClickListener { triggerCapture() }
         viewBinding.repeatCaptureButton.setOnClickListener {
-            lastPosition?.let { PositionCatalog.select(preferences, it); beginCountdown(it) }
+            lastPosition?.let { ResearchSettings.select(preferences, it); beginCountdown(it) }
         }
         viewBinding.infoButton.setOnClickListener { showInformation() }
         TooltipCompat.setTooltipText(viewBinding.infoButton, getString(R.string.information))
         viewBinding.previousPositionButton.setOnClickListener {
-            PositionCatalog.previous(preferences)?.let(::selectForCapture)
+            ResearchSettings.previous(preferences)?.let(::selectForCapture)
         }
         viewBinding.replacePositionButton.setOnClickListener {
             positions.replace(capturedPositions, lastPosition?.id, ::selectForCapture)
@@ -153,8 +150,8 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton(android.R.string.cancel, null).show()
         }
         viewBinding.nextPositionButton.setOnClickListener {
-            PositionCatalog.next(preferences)?.let {
-                PositionCatalog.select(preferences, it)
+            ResearchSettings.next(preferences)?.let {
+                ResearchSettings.select(preferences, it)
                 clearResult()
                 viewBinding.burstStatus.setText(R.string.next_position_ready)
                 updateControls()
@@ -266,17 +263,14 @@ class MainActivity : AppCompatActivity() {
         clearResult()
         lastPosition = null
         preferences.edit().remove("last_capture_position").apply()
-        if (resetPosition) {
-            val first = PositionCatalog.read(preferences).firstOrNull()
-            if (first != null) PositionCatalog.select(preferences, first) else PositionCatalog.clear(preferences)
-        }
+        if (resetPosition) ResearchSettings.clear(preferences)
         refreshCapturedPositions()
         updateControls()
     }
 
     /** Going back to a position: the next capture there replaces the earlier one in final.csv. */
     private fun selectForCapture(position: Position) {
-        PositionCatalog.select(preferences, position)
+        ResearchSettings.select(preferences, position)
         clearResult()
         viewBinding.burstStatus.text = getString(
             if (position.id in capturedPositions) R.string.replacing_position else R.string.position_not_captured, position.id)
@@ -464,13 +458,7 @@ class MainActivity : AppCompatActivity() {
         val hasPosition = ResearchSettings.hasPosition(preferences)
         viewBinding.positionButton.text = if (hasPosition) getString(R.string.position_button, position.id)
             else getString(R.string.choose_position)
-        // Coordinates are shown only when an imported survey supplies them.
-        viewBinding.positionCoordinates.text = when {
-            !hasPosition -> getString(R.string.position_required)
-            position.x != null && position.y != null ->
-                getString(R.string.position_coordinates, position.x.toString(), position.y.toString())
-            else -> ""
-        }
+        viewBinding.positionCoordinates.text = if (hasPosition) "" else getString(R.string.position_required)
         viewBinding.positionCoordinates.visibility =
             if (viewBinding.positionCoordinates.text.isEmpty()) View.GONE else View.VISIBLE
         val hasResult = resultDetails != null
@@ -485,10 +473,9 @@ class MainActivity : AppCompatActivity() {
         viewBinding.resultActions.visibility = if (hasResult && !busy) View.VISIBLE else View.GONE
         viewBinding.burstStatus.visibility = if (viewBinding.burstStatus.text.isEmpty()) View.GONE else View.VISIBLE
         viewBinding.repeatCaptureButton.isEnabled = !busy && cameraReady && lastPosition != null
-        val hasNext = if (hasResult && !busy) PositionCatalog.next(preferences) != null else false
+        val hasNext = if (hasResult && !busy) ResearchSettings.next(preferences) != null else false
         viewBinding.nextPositionButton.isEnabled = !busy && hasNext
-        viewBinding.nextPositionButton.setText(if (hasNext) R.string.next_position else R.string.last_position)
-        viewBinding.previousPositionButton.isEnabled = !busy && hasResult && PositionCatalog.previous(preferences) != null
+        viewBinding.previousPositionButton.isEnabled = !busy && hasResult && ResearchSettings.previous(preferences) != null
         viewBinding.infoButton.isEnabled = !busy
         viewBinding.replacePositionButton.isEnabled = !busy
         viewBinding.endSessionButton.isEnabled = !busy

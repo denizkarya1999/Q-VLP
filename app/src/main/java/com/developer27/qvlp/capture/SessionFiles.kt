@@ -28,7 +28,19 @@ internal object SessionFiles {
         active != null && (folder == active || folder == SessionLayout.processedFolder(active))
     }
     private const val ACTIVE = "active_research_session"
-    private fun root(context: Context) = File(context.filesDir, "sessions").apply { mkdirs() }
+    @Volatile private var adopted = false
+
+    /** Every session is reached through here, so sessions saved in the earlier layout are moved over first. */
+    private fun root(context: Context): File {
+        val root = File(context.filesDir, "sessions").apply { mkdirs() }
+        if (!adopted) synchronized(this) {
+            if (!adopted) {
+                root.listFiles().orEmpty().filter { it.isDirectory && validId(it.name) }.forEach { SessionLayout.adopt(it) }
+                adopted = true
+            }
+        }
+        return root
+    }
     fun validId(id: String) = id.matches(Regex("session_[0-9a-f-]+"))
     private fun deletions(context: Context) = context.getSharedPreferences("session_deletions", Context.MODE_PRIVATE)
     fun isDeleting(context: Context, id: String) = deletions(context).contains(id)
@@ -39,7 +51,7 @@ internal object SessionFiles {
         require(validId(id)) { "Invalid session." }
         val session = File(root(context), id)
         check(session.isDirectory || isDeleting(context, id)) { "Session not found." }
-        check(activeCapture?.parentFile != session) { "Finish or cancel the recording before deleting its session." }
+        check(activeCapture?.let(SessionLayout::session) != session) { "Finish or cancel the recording before deleting its session." }
         check(deletions(context).edit().putLong(id, System.currentTimeMillis()).commit()) { "Cannot remember the deletion." }
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val active = prefs.getString(ACTIVE, null) == id
@@ -72,7 +84,7 @@ internal object SessionFiles {
     /** The positions that already have a capture in the session now being recorded. */
     fun capturedPositions(context: Context): Set<Int> {
         val id = activeSessionId(context)?.takeIf(::validId) ?: return emptySet()
-        return File(root(context), id).list().orEmpty().mapNotNull(SessionLayout::positionId).toSet()
+        return SessionLayout.captures(File(root(context), id)).mapNotNull { SessionLayout.positionId(it.name) }.toSet()
     }
 
     fun newSession(context: Context) {
@@ -97,7 +109,6 @@ internal object SessionFiles {
                 put("device_model", Build.MODEL)
                 put("android_api", Build.VERSION.SDK_INT)
                 put("app_version", context.packageManager.getPackageInfo(context.packageName, 0).versionName)
-                put("survey", PositionCatalog.snapshot(prefs))
                 put("image_format", "PNG: lossless 8-bit RGB, converted from the camera's YUV 4:2:0 with full-range BT.601")
                 put("image_orientation", "sensor-native; no pixel rotation or rescaling")
                 put("unknown_values", "CSV empty cells; JSON null")
@@ -107,7 +118,8 @@ internal object SessionFiles {
         }
         // Captures a second apart can never collide; anything closer gets a suffix.
         val name = SessionLayout.captureName(position.id, LocalDateTime.now())
-        val directory = generateSequence(0) { it + 1 }.map { File(session, if (it == 0) name else "$name-$it") }.first { !it.exists() }
+        val originals = SessionLayout.originals(session)
+        val directory = generateSequence(0) { it + 1 }.map { File(originals, if (it == 0) name else "$name-$it") }.first { !it.exists() }
         check(File(directory, SessionLayout.FRAMES).mkdirs()) { "Cannot create the capture folder." }
         return BurstLocation(session.name, directory)
     }
@@ -119,7 +131,7 @@ internal object SessionFiles {
             if (isDeleting(context, dir.name)) return@map SavedSession(dir.name,
                 "Deletion pending · Select to retry\n${dir.name}", "", deleting = true)
             val info = runCatching { readJson(File(dir, "session.json")) }.getOrNull()
-            val captures = dir.listFiles().orEmpty().filter { it.isDirectory && SessionLayout.isCapture(it) }
+            val captures = SessionLayout.captures(dir)
             val count = captures.sumOf { capture ->
                 File(capture, SessionLayout.FRAMES).list().orEmpty().count { it.endsWith(".png") }.takeIf { it > 0 }
                     // Captures recorded by earlier versions keep their frames beside burst.json.

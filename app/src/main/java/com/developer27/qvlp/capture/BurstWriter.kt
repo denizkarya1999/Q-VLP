@@ -272,7 +272,7 @@ internal class BurstWriter private constructor(
                 warnings.add("Could not finish session metadata: ${e.message}. Saved frame files remain available.")
             }
             if (SessionFiles.activeCapture == location.directory) SessionFiles.activeCapture = null
-            SessionPublisher.captureReady(context, requireNotNull(location.directory.parentFile), position.id)
+            SessionPublisher.captureReady(context, SessionLayout.session(location.directory), position.id)
             completed(BurstSummary(location.sessionId, position.id, saved.size, length, fps, warnings.toList(), reason != null,
                 ledsDetected))
         }

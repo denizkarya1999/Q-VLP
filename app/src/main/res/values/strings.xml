@@ -99,13 +99,9 @@
     <string name="next_position_ready">Move the lens over this floor mark, then tap Start Capture.</string>
     <string name="done">Done</string>
     <string name="choose_position">Choose Position</string>
-    <string name="import_positions">Import CSV</string>
-    <string name="enter_position">Enter Manually</string>
     <string name="use_position">Use Position</string>
-    <string name="positions_import_failed">Could not load positions</string>
-    <string name="position_entry_help">Enter the ID of the location you are recording. Coordinates are not needed.\n\nTo use a surveyed list instead, import a positions.csv with the columns position_id,rx_x_m,rx_y_m.</string>
+    <string name="position_entry_help">Enter the ID of the location you are recording.</string>
     <string name="position_invalid">Enter a whole-number ID from 0 to 999999.</string>
-    <string name="position_coordinates">X %1$s m · Y %2$s m</string>
     <string name="position_required">Enter a position ID before capture.</string>
     <string name="preview_hint">Align the lens with the ceiling LEDs</string>
     <string name="camera_details">Camera Details</string>
@@ -114,7 +110,6 @@
     <string name="camera_wait_button">Preparing camera…</string>
     <string name="files_working">Working with files…</string>
     <string name="capture_saved">Frames saved: %1$d / %2$d</string>
-    <string name="last_position">End of List</string>
     <string name="saved_sessions_title">Saved Sessions</string>
     <string name="session_selection_help">Tap for details. Press and hold to select sessions.</string>
     <string name="session_selection_active">Tap sessions to select or deselect, then tap Delete.</string>

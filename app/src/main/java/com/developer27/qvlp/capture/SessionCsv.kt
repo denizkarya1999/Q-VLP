@@ -74,8 +74,7 @@ internal object SessionCsv {
     fun update(session: File) {
         val metadataFile = File(session, "session.json")
         val metadata = SessionFiles.readJson(metadataFile)
-        val folders = session.listFiles().orEmpty()
-            .filter { it.isDirectory && SessionLayout.isCapture(it) && !SessionFiles.isActive(it) }.sortedBy { it.name }
+        val folders = SessionLayout.captures(session).filter { !SessionFiles.isActive(it) }.sortedBy { it.name }
         val signature = sha(folders.joinToString("\n") { folder ->
             "${folder.name}:${stamp(File(folder, "burst.json"))}:${stamp(File(SessionLayout.processedFolder(folder), SessionLayout.PROCESSED_MAPPING))}"
         }.toByteArray())
@@ -99,9 +98,7 @@ internal object SessionCsv {
         completed.filter { selected[it.position] != it }.forEach {
             excluded.put(JSONObject().put("attempt", it.folder.name).put("reason", "replaced_by_later_capture"))
         }
-        val survey = metadata.optJSONObject("survey")?.optJSONArray("positions") ?: JSONArray()
-        val order = (0 until survey.length()).associate { survey.getJSONObject(it).getInt("position_id") to it }
-        val attempts = selected.values.sortedWith(compareBy<Attempt> { order[it.position] ?: Int.MAX_VALUE }.thenBy { it.position })
+        val attempts = selected.values.sortedBy { it.position }
         val selection = JSONArray()
         val lines = ArrayList<String>()
         lines.add(finalHeader)
