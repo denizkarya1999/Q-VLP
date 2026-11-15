@@ -49,4 +49,10 @@
             android:dialogLayout="@layout/dialog_camera_value" android:positiveButtonText="@string/save_setting"
             android:negativeButtonText="@android:string/cancel" android:layout="@layout/preference_list_layout" />
     </PreferenceCategory>
+    <PreferenceCategory android:title="@string/factory_reset"
+        android:layout="@layout/preference_category_layout">
+        <Preference android:key="factory_reset" android:title="@string/factory_reset"
+            android:summary="@string/factory_reset_summary" android:persistent="false"
+            android:layout="@layout/preference_list_layout" />
+    </PreferenceCategory>
 </PreferenceScreen>

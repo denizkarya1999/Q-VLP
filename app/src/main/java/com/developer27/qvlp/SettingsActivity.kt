@@ -26,7 +26,6 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(R.layout.settings_activity)
         findViewById<android.widget.TextView>(R.id.settingsTitle).setText(R.string.settings)
         findViewById<android.widget.Button>(R.id.settingsDone).setOnClickListener { finish() }
-        findViewById<android.widget.Button>(R.id.factoryResetButton).setOnClickListener { confirmFactoryReset() }
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.settings_container, SettingsFragment()).commit()
@@ -34,7 +33,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /** Nothing is restored until the operator confirms. The camera screen then reopens with the defaults. */
-    private fun confirmFactoryReset() {
+    internal fun confirmFactoryReset() {
         androidx.appcompat.app.AlertDialog.Builder(this).setTitle(R.string.factory_reset_title)
             .setMessage(R.string.factory_reset_message)
             .setPositiveButton(R.string.factory_reset_confirm) { _, _ ->
@@ -69,6 +68,11 @@ class SettingsActivity : AppCompatActivity() {
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.root_preferences, rootKey)
+            // Bound first: the reset must work even when the camera's own settings cannot be shown.
+            requireNotNull(findPreference<Preference>("factory_reset")).setOnPreferenceClickListener {
+                (requireActivity() as SettingsActivity).confirmFactoryReset()
+                true
+            }
             bindModes()
             CaptureLengthPreferences.bind(this)
             shutterRate = requireNotNull(findPreference("shutter_rate"))
