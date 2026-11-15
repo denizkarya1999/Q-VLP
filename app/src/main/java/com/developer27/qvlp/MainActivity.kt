@@ -24,6 +24,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.preference.PreferenceManager
 import com.developer27.qvlp.camera.CameraChoice
 import com.developer27.qvlp.camera.CameraHelper
+import com.developer27.qvlp.camera.CameraRecovery
 import com.developer27.qvlp.capture.CaptureTrigger
 import com.developer27.qvlp.capture.CaptureLength
 import com.developer27.qvlp.capture.CaptureProcessing
@@ -59,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     private var switchIconToRear: Boolean? = null
     private var capturedPositions: Set<Int> = emptySet()
     private var cameraNeedsAttention = false
+    private val cameraRecovery = CameraRecovery()
     private var countdown: CountDownTimer? = null
     private var orientationBeforeCapture = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var lastPosition: Position? = null
@@ -168,6 +170,7 @@ class MainActivity : AppCompatActivity() {
         if (!captureBusy && resultDetails == null) showCapturePlan()
         cameraHelper.fitPreview()
         cameraHelper.startBackgroundThread()
+        cameraRecovery.restart() // Settings may have changed while the screen was away.
         openCameraWhenReady()
         updateControls()
         if (!captureBusy && !fileBusy) sessions.resumeSaving()
@@ -236,6 +239,7 @@ class MainActivity : AppCompatActivity() {
         if (captureBusy || fileBusy) return
         if (!cameraPermissionGranted()) { cameraPermissionLauncher.launch(Manifest.permission.CAMERA); return }
         cameraReady = false // Capture waits for the other camera to confirm its settings.
+        cameraRecovery.restart()
         cameraHelper.switchCamera()
         updateControls()
     }
@@ -292,12 +296,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** The technical measurements stay available without filling the capture screen. */
-    internal fun showCameraState(ready: Boolean, details: String, error: Boolean = false) {
+    internal fun showCameraState(ready: Boolean, details: String, error: Boolean = false, certain: Boolean = true) {
         if (isDestroyed) return
         cameraReady = ready
         cameraDetails = details
-        cameraNeedsAttention = error
-        showCameraNotice(if (error) R.string.camera_attention else null)
+        if (ready) cameraRecovery.restart()
+        // A camera that needs attention is put back to its defaults instead of waiting for the operator.
+        // Without the camera permission there is nothing to reset, and a capture in progress is left to finish.
+        val step = when {
+            !cameraPermissionGranted() -> if (error) CameraRecovery.Step.SHOW else CameraRecovery.Step.NONE
+            captureBusy -> CameraRecovery.Step.NONE
+            else -> cameraRecovery.report(error, certain, cameraHelper.onDefaultCamera())
+        }
+        if (step == CameraRecovery.Step.RESET_SETTINGS || step == CameraRecovery.Step.USE_DEFAULT_CAMERA) {
+            cameraReady = false
+            cameraHelper.resetToDefaults(useDefaultCamera = step == CameraRecovery.Step.USE_DEFAULT_CAMERA)
+            refreshCapturedPositions()
+            Toast.makeText(this, R.string.camera_reset, Toast.LENGTH_SHORT).show()
+        }
+        cameraNeedsAttention = step == CameraRecovery.Step.SHOW
+        showCameraNotice(if (cameraNeedsAttention) R.string.camera_attention else null)
         updateControls()
     }
 

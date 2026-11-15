@@ -142,6 +142,11 @@ internal class CameraSettingsStore(private val preferences: SharedPreferences, p
         return CameraProfile(exposure, iso, stream, fps, defaults.controls).also { save(it) }
     }
 
+    /** Forgets the chosen rolling shutter rate and ISO, so the next [load] returns the defaults. */
+    fun reset() {
+        preferences.edit().remove(key("exposure_ns")).remove(key("iso")).apply()
+    }
+
     fun save(profile: CameraProfile) {
         preferences.edit()
             .putLong(key("exposure_ns"), profile.exposureNs)

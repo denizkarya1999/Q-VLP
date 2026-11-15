@@ -62,11 +62,21 @@ The **i** button under the camera-switch button opens everything the screen no l
 - **Saving** — the auto-save progress of the session folder.
 - **Last capture** — frames saved, measured fps, which LEDs were detected, any warnings, and the session folder.
 
-The camera and saving notices appear on the camera screen only when something needs attention, such as a camera error, a missing permission or a failed save.
+The camera and saving notices appear on the camera screen only when something needs attention, such as a missing permission or a failed save.
+
+### Automatic camera reset
+
+When the camera needs attention, the app does not wait for the operator. It resets the camera to its defaults and shows a short **Camera reset to default.** message:
+
+1. The camera in use goes back to 1× zoom, a 10000 Hz rolling shutter rate and its lowest ISO, and is reopened.
+2. If that camera still needs attention, the app switches to its default camera, the front one, with the same defaults.
+3. Only a problem that survives both is shown as **Camera needs attention**. Tap it for the details.
+
+Capture needs 1× zoom, so zooming in is one of these cases: the preview zooms for a moment and the camera then returns to 1×. A problem a camera reports only while it is settling is given three seconds to clear before anything is reset, and nothing is reset during a countdown or capture. A reset starts a new session on the next capture, as any change of camera or zoom does.
 
 ### Camera screen
 
-**Sessions**, **Settings** and **About** are across the top; **Position** and a full-width **Start Capture** button are at the bottom. On the right of the preview, from top to bottom: **+**, the zoom level, **−**, the **switch-camera** button and the **i** button. Zoom uses the camera's digital crop range in 0.1× steps. The app opens the **front camera** by default; the switch button's icon shows the camera a tap selects (a camera for rear, a person for front) and is hidden when the device has one facing. Each camera keeps its own settings and zoom, and switching camera or changing zoom starts a new session on the next capture.
+**Sessions**, **Settings** and **About** are across the top; **Position** and a full-width **Start Capture** button are at the bottom. On the right of the preview, from top to bottom: **+**, the zoom level, **−**, the **switch-camera** button and the **i** button. Zoom uses the camera's digital crop range in 0.1× steps; captures are taken at 1×, and a zoomed camera resets itself (see Automatic camera reset). The app opens the **front camera** by default; the switch button's icon shows the camera a tap selects (a camera for rear, a person for front) and is hidden when the device has one facing. Each camera keeps its own settings and zoom, and switching camera or changing zoom starts a new session on the next capture.
 
 The preview always fills the screen at the camera image's true proportions, on both cameras, and crops what does not fit; there is no preview size setting. It is display-only: it does not change zoom, resolution or saved pixels. Screen orientation is held during a capture and frames are not rotated. Cancelling or leaving the app keeps the frames already saved and marks the capture as interrupted.
 

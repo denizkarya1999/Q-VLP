@@ -106,6 +106,7 @@
     <string name="preview_hint">Align the lens with the ceiling LEDs</string>
     <string name="camera_details">Camera Details</string>
     <string name="camera_attention">Camera needs attention · Tap for details</string>
+    <string name="camera_reset">Camera reset to default.</string>
     <string name="camera_permission_help">Tap here to allow camera access.</string>
     <string name="camera_wait_button">Preparing camera…</string>
     <string name="files_working">Working with files…</string>

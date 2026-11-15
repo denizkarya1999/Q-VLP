@@ -356,6 +356,32 @@ class CameraHelper(
         openCamera()
     }
 
+    /** Whether the camera in use is the one the app opens when nothing has been chosen. */
+    internal fun onDefaultCamera(): Boolean = runCatching {
+        getCameraId() == CameraChoice.initial(facings(), null)
+    }.getOrDefault(true)
+
+    /**
+     * Puts the camera back the way a new installation starts: 1× zoom, the default rolling shutter rate and
+     * the lowest ISO. This is done for the camera in use or, with [useDefaultCamera], for the camera the app
+     * opens first, which then becomes the camera in use.
+     */
+    @SuppressLint("MissingPermission")
+    fun resetToDefaults(useDefaultCamera: Boolean) {
+        if (dispatch { resetToDefaults(useDefaultCamera) }) return
+        if (burstRequested) return
+        val current = runCatching { getCameraId() }.getOrNull()
+        val target = (if (useDefaultCamera) runCatching { CameraChoice.initial(facings(), null) }.getOrNull() else null)
+            ?: current ?: return
+        CameraSettingsStore(sharedPreferences, target).reset()
+        sharedPreferences.edit().remove("camera_${target}_zoom").remove(FixedCamera.preferenceKey(target))
+            .putString(CameraChoice.PREFERENCE_KEY, target).apply()
+        closeCamera()
+        // Frames taken with other settings never share a session.
+        SessionFiles.newSession(activity.applicationContext)
+        openCamera()
+    }
+
     fun changeZoom(step: Float) {
         if (dispatch { changeZoom(step) }) return
         if (burstRequested || isOpeningCamera || cameraDevice == null || activeProfile == null) return
@@ -749,8 +775,10 @@ class CameraHelper(
                     R.string.capture_reported, reportedExposure, reportedIso, cadence
                 ) + "\n" + controls.status() + timingNote + (block?.let { "\n$it" } ?: "")
                 val error = controls.error != null || (issue != null && issue != ResearchCapturePolicy.Issue.CONFIRMING)
+                // A setting outside what capture allows, or locks that failed, will not clear by waiting.
+                val certain = controls.error != null || researchConfigurationIssue() != null
                 activity.runOnUiThread {
-                    if (session === cameraCaptureSession) activity.showCameraState(block == null, text, error)
+                    if (session === cameraCaptureSession) activity.showCameraState(block == null, text, error, certain)
                 }
             }
         }.also { activeCaptureCallback = it }
