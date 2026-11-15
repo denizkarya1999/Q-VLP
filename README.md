@@ -18,6 +18,19 @@ Thuy-Anh Nguyen, Shahed Alabdulrahman, Deniz Karya Acikbas, Christian Nwobu, Cla
 
 Professor: Xiao Zhang · [Trustworthy AIoT Lab](https://www.zhangxiao.me/) · University of Michigan-Dearborn.
 
+## Screenshots
+
+Taken on a Pixel 8a. The files are in [`screenshots/`](screenshots), numbered in the order below.
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="screenshots/1.png" width="220" alt="Camera screen"> | <img src="screenshots/2.png" width="220" alt="Entering the position ID"> | <img src="screenshots/3.png" width="220" alt="After a capture"> |
+| 1. Camera screen | 2. Entering the position ID | 3. After a capture |
+| <img src="screenshots/4.png" width="220" alt="Replace Position"> | <img src="screenshots/5.png" width="220" alt="Information"> | <img src="screenshots/6.png" width="220" alt="Sessions"> |
+| 4. Replace Position | 5. Information | 6. Sessions |
+| <img src="screenshots/7.png" width="220" alt="Settings"> | <img src="screenshots/8.png" width="220" alt="Rolling Shutter Rate"> | <img src="screenshots/9.png" width="220" alt="About"> |
+| 7. Settings | 8. Rolling Shutter Rate | 9. About |
+
 ## Using Q-VLP
 
 **Settings** has three groups. **Modes** is two radio buttons: **Data Collection Mode** is selected and runs the recording workflow; **Inference Mode** is faded, marked **Not implemented yet** and cannot be selected. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. There is no Help section.
@@ -210,4 +223,4 @@ Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the u
 
 ## Installable release
 
-The GitHub release includes **Install Q-VLP.apk** and screenshots from the Pixel 8a. The APK uses the release build type and the project's existing development signing certificate so it can update the installed research app without deleting its sessions or settings. It is intended for direct installation on research devices. A public store release would need its own release-signing and distribution setup.
+**Install Q-VLP.apk** is the installable build; the GitHub release carries it together with the screenshots from the Pixel 8a. The APK uses the release build type and the project's existing development signing certificate so it can update the installed research app without deleting its sessions or settings. It is intended for direct installation on research devices. A public store release would need its own release-signing and distribution setup.
