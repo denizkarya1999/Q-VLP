@@ -107,6 +107,11 @@
     <string name="camera_details">Camera Details</string>
     <string name="camera_attention">Camera needs attention · Tap for details</string>
     <string name="camera_reset">Camera reset to default.</string>
+    <string name="factory_reset">Factory Reset</string>
+    <string name="factory_reset_title">Restore the default settings?</string>
+    <string name="factory_reset_message">This selects the front camera and restores 1× zoom, a 10000 Hz rolling shutter rate and the lowest ISO on both cameras, 30 frames and Data Collection Mode. The chosen position is cleared.\n\nSaved sessions and the auto-save folder are kept. The next capture starts a new session.</string>
+    <string name="factory_reset_confirm">Reset</string>
+    <string name="factory_reset_done">Settings restored to defaults.</string>
     <string name="camera_permission_help">Tap here to allow camera access.</string>
     <string name="camera_wait_button">Preparing camera…</string>
     <string name="files_working">Working with files…</string>

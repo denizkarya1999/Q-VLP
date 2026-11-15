@@ -30,10 +30,12 @@ Taken on a Pixel 8a. The files are in [`screenshots/`](screenshots), numbered in
 | 4. Replace Position | 5. Information | 6. Sessions |
 | <img src="screenshots/7.png" width="220" alt="Settings"> | <img src="screenshots/8.png" width="220" alt="Rolling Shutter Rate"> | <img src="screenshots/9.png" width="220" alt="About"> |
 | 7. Settings | 8. Rolling Shutter Rate | 9. About |
+| <img src="screenshots/10.png" width="220" alt="Factory Reset"> | | |
+| 10. Factory Reset | | |
 
 ## Using Q-VLP
 
-**Settings** has three groups. **Modes** is two radio buttons: **Data Collection Mode** is selected and runs the recording workflow; **Inference Mode** is faded, marked **Not implemented yet** and cannot be selected. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. There is no Help section.
+**Settings** has three groups. **Modes** is two radio buttons: **Data Collection Mode** is selected and runs the recording workflow; **Inference Mode** is faded, marked **Not implemented yet** and cannot be selected. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. A **Factory Reset** button sits at the bottom. There is no Help section.
 
 1. Tap **Position** and enter the position ID. Only the ID is typed: there are no X/Y coordinates and no list to import.
 2. Mount the phone with the camera lens over the mark, at the same height for every position.
@@ -177,7 +179,7 @@ A capture is always a number of frames; there is no duration mode. The number is
 
 ### Fixed settings and research checks
 
-There is no Factory Reset: nothing but the rolling shutter rate and ISO can be changed, so there is nothing else to restore. On each camera the app uses the resolution closest to the planned 1280 × 960 that covers the sensor, at 30 fps, and holds focus and white balance still. Resolution, frame-rate, focus and white-balance values saved by earlier versions are ignored. If a camera cannot meet these fixed values, a notice on the camera screen explains why and the other camera can be selected.
+**Settings → Factory Reset** asks for confirmation and then puts every setting back the way a new installation starts: the front camera, 1× zoom, a 10000 Hz rolling shutter rate and the lowest ISO on both cameras, 30 frames and Data Collection Mode, with no position chosen. Saved sessions and the auto-save folder are kept, and the next capture starts a new session. On each camera the app uses the resolution closest to the planned 1280 × 960 that covers the sensor, at 30 fps, and holds focus and white balance still. Resolution, frame-rate, focus and white-balance values saved by earlier versions are ignored. If a camera cannot meet these fixed values, a notice on the camera screen explains why and the other camera can be selected.
 
 Capture is checked before the countdown and again immediately before camera capture. On the selected camera, 1× zoom, fixed full-aspect-ratio resolution, a rolling shutter rate from the list, manual ISO, target FPS and the app-held focus and white balance must be valid. Camera readiness also requires confirmed focus/white-balance controls and two stable actual exposure/ISO/frame-duration readings with the expected sensor crop. Unknown measurements or a reported frame duration longer than 33,350,000 ns prevent capture. Nominal 30 fps allows at most 0.05% sensor-timing rounding; the requested FPS must still be at least 30. Sensor frame duration confirms the reported cadence; sustained delivered FPS still needs measurement on the phone and is logged separately. Later drift generates capture warnings.
 

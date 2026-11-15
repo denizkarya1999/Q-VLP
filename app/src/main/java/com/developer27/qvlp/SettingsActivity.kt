@@ -26,10 +26,26 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(R.layout.settings_activity)
         findViewById<android.widget.TextView>(R.id.settingsTitle).setText(R.string.settings)
         findViewById<android.widget.Button>(R.id.settingsDone).setOnClickListener { finish() }
+        findViewById<android.widget.Button>(R.id.factoryResetButton).setOnClickListener { confirmFactoryReset() }
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.settings_container, SettingsFragment()).commit()
         }
+    }
+
+    /** Nothing is restored until the operator confirms. The camera screen then reopens with the defaults. */
+    private fun confirmFactoryReset() {
+        androidx.appcompat.app.AlertDialog.Builder(this).setTitle(R.string.factory_reset_title)
+            .setMessage(R.string.factory_reset_message)
+            .setPositiveButton(R.string.factory_reset_confirm) { _, _ ->
+                runCatching { FactoryReset.apply(applicationContext) }.fold(
+                    onSuccess = {
+                        Toast.makeText(this, R.string.factory_reset_done, Toast.LENGTH_SHORT).show()
+                        finish()
+                    },
+                    onFailure = { Toast.makeText(this, it.message, Toast.LENGTH_LONG).show() })
+            }
+            .setNegativeButton(android.R.string.cancel, null).show()
     }
 
     companion object {

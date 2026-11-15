@@ -171,6 +171,7 @@ class MainActivity : AppCompatActivity() {
         cameraHelper.fitPreview()
         cameraHelper.startBackgroundThread()
         cameraRecovery.restart() // Settings may have changed while the screen was away.
+        if (FactoryReset.consume()) sessionChanged(resetPosition = true)
         openCameraWhenReady()
         updateControls()
         if (!captureBusy && !fileBusy) sessions.resumeSaving()
