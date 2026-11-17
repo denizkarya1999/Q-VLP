@@ -1,16 +1,16 @@
 # Q-VLP — Quantum-based Location Estimation
 
-Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. This version records frames of the ceiling LEDs at numbered positions, detects the LEDs in every frame and builds the fingerprint file `final.csv`. Location estimation is planned.
+Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. It has two modes. **Data Collection Mode** records frames of the ceiling LEDs at numbered positions, detects the LEDs in every frame and builds the fingerprint file `final.csv`. **Inference Mode** runs the **LED Recognition Model** on the camera preview, draws a box round each LED it recognises and, for each captured position, saves the frames with those boxes together with `final.csv`. Location estimation is planned.
 
 The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplate). Open this directory in Android Studio; `app` is the application module.
 
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
-- Version: 1.0.0
-- Release date: November 14, 2026
+- Version: 1.1.0
+- Release date: November 16, 2026
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
-**Topics:** `android` · `kotlin` · `camera2` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
+**Topics:** `android` · `kotlin` · `camera2` · `pytorch` · `yolo` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
 
 ## Authors
 
@@ -30,12 +30,16 @@ Taken on a Pixel 8a. The files are in [`screenshots/`](screenshots), numbered in
 | 4. Replace Position | 5. Information | 6. Sessions |
 | <img src="screenshots/7.png" width="220" alt="Settings"> | <img src="screenshots/8.png" width="220" alt="Rolling Shutter Rate"> | <img src="screenshots/9.png" width="220" alt="About"> |
 | 7. Settings | 8. Rolling Shutter Rate | 9. About |
-| <img src="screenshots/10.png" width="220" alt="Factory Reset"> | | |
-| 10. Factory Reset | | |
+| <img src="screenshots/10.png" width="220" alt="Factory Reset"> | <img src="screenshots/11.png" width="220" alt="Settings in Inference Mode"> | <img src="screenshots/12.png" width="220" alt="Inference Mode"> |
+| 10. Factory Reset | 11. Settings in Inference Mode | 12. Inference Mode |
+| <img src="screenshots/13.png" width="220" alt="Information in Inference Mode"> | <img src="screenshots/14.png" width="220" alt="Local File Inference"> | <img src="screenshots/15.png" width="220" alt="Inference Mode without post-inference files"> |
+| 13. Information in Inference Mode | 14. Local File Inference | 15. Inference Mode without post-inference files |
+
+No LEDs were in front of the camera when screenshots 12, 13 and 15 were taken, so they show no boxes. Screenshot 14 shows the boxes and tags on a frame of the test dataset; the preview draws them the same way.
 
 ## Using Q-VLP
 
-**Settings** has four sections. **Modes** is two radio buttons: **Data Collection Mode** is selected and runs the recording workflow; **Inference Mode** is faded, marked **Not implemented yet** and cannot be selected. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. **Factory Reset** has the **Factory Reset** button. There is no Help section.
+**Settings** has six sections. **Modes** is two radio buttons: **Data Collection Mode**, selected on a new installation, runs the recording workflow below; **Inference Mode** adds the LED Recognition Model (see [Inference Mode](#inference-mode)). **Inference** has two checkboxes that can be changed while Inference Mode is selected: **Generate Post-Inference Files** and **Enable CV Algorithms**. **Options** has **Local File Inference**. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. **Factory Reset** has the **Factory Reset** button. There is no Help section.
 
 1. Tap **Position** and enter the position ID. Only the ID is typed: there are no X/Y coordinates and no list to import.
 2. Mount the phone with the camera lens over the mark, at the same height for every position.
@@ -60,6 +64,7 @@ Taken on a Pixel 8a. The files are in [`screenshots/`](screenshots), numbered in
 
 The **i** button under the camera-switch button opens everything the screen no longer shows:
 
+- **Inference** (Inference Mode only) — the model, how long the latest frame took and the LEDs found in it.
 - **Camera** — whether the camera is ready, and the requested and reported settings.
 - **Saving** — the auto-save progress of the session folder.
 - **Last capture** — frames saved, measured fps, which LEDs were detected, any warnings, and the session folder.
@@ -70,7 +75,7 @@ The camera and saving notices appear on the camera screen only when something ne
 
 When the camera needs attention, the app does not wait for the operator. It resets the camera to its defaults and shows a short **Camera reset to default.** message:
 
-1. The camera in use goes back to 1× zoom, a 10000 Hz rolling shutter rate and its lowest ISO, and is reopened.
+1. The camera in use goes back to 1× zoom, a 6000 Hz rolling shutter rate and ISO 100, and is reopened.
 2. If that camera still needs attention, the app switches to its default camera, the front one, with the same defaults.
 3. Only a problem that survives both is shown as **Camera needs attention**. Tap it for the details.
 
@@ -82,11 +87,40 @@ Capture needs 1× zoom, so zooming in is one of these cases: the preview zooms f
 
 The preview always fills the screen at the camera image's true proportions, on both cameras, and crops what does not fit; there is no preview size setting. It is display-only: it does not change zoom, resolution or saved pixels. Screen orientation is held during a capture and frames are not rotated. Cancelling or leaving the app keeps the frames already saved and marks the capture as interrupted.
 
-**Settings → Camera Settings** has two options. **Rolling Shutter Rate** is a list in Hz, as in RoTemplate and LiFind; the exposure time is one period of the rate (10000 Hz, the default, is 100 µs). Only rates the camera supports are listed, and every listed rate can be used for capture: choosing one never blocks the camera. The LED stripes (1.8–4.8 kHz) are sharpest at 10000 Hz or higher; slower rates give a brighter picture but blur the stripes, so fewer LEDs are detected. **ISO Rate** is typed within the camera's range. Everything else is fixed by the app and has no setting: the lens, the resolution (1280 × 960 on a Pixel 8a, front and rear), 30 fps, focus and white balance.
+**Settings → Camera Settings** has two options. **Rolling Shutter Rate** is a list in Hz, as in RoTemplate and LiFind; the exposure time is one period of the rate (6000 Hz, the default, is about 167 µs). Only rates the camera supports are listed, and every listed rate can be used for capture: choosing one never blocks the camera. The LED stripes (1.8–4.8 kHz) are sharpest at 10000 Hz or higher; slower rates give a brighter picture but blur the stripes, so fewer LEDs are detected. **ISO Rate** is typed within the camera's range; the default is 100. Everything else is fixed by the app and has no setting: the lens, the resolution (1280 × 960 on a Pixel 8a, front and rear), 30 fps, focus and white balance.
+
+## Inference Mode
+
+Choose **Settings → Modes → Inference Mode**. The camera screen stays as it is, and the **LED Recognition Model** now runs on the preview: every LED it recognises gets a box in that LED's colour (LED 1 red, LED 2 blue, LED 3 green, LED 4 purple) with a tag such as `LED 1 | 98%`, the LED's name and the model's confidence. Nothing else is written on the screen; the **i** button has the details.
+
+- **One box per LED.** The model answers with thousands of candidate boxes. The app shows at most one box for each of the four LED classes, so at most four, and never two boxes on the same light: the most confident candidate of each class wins, and a light already given to one class is not given to another. A candidate the model is less than 25% sure of is not shown.
+- **The model.** `app/src/main/assets/qvlp_led_detection_model.pt` is the YOLO26n network trained on Q-VLP frames (1280 × 960, the four LEDs as classes `LED_1` to `LED_4`), exported to TorchScript by the training notebook. The app loads that file as it is with PyTorch (`org.pytorch:pytorch_android`), so a newly trained export can replace it without conversion. It takes a 1 × 3 × 960 × 1280 RGB picture with values from 0 to 1 and answers with 1 × 8 × 25200 values: centre, width, height and four class scores for each candidate.
+- **Frames.** The model is given camera frames in sensor-native orientation, converted to RGB exactly as saved frames are, which is how it was trained. The camera delivers 30 frames a second and one model run takes longer than a frame, so a frame is taken whenever the model is free and the others are skipped; the boxes always belong to a recent frame.
+- **Camera settings.** The model was trained on frames taken at a 6000 Hz rolling shutter rate, the default. A very different rate or ISO changes how the LEDs look and can lower its confidence.
+- **Speed on a Pixel 8a.** The model is large for a phone (1280 × 960 input). One run takes about 0.45 s on a still picture and 0.7 to 0.9 s while the camera is running, so the boxes are renewed about once a second, and more slowly when the phone is warm. The first run also loads the model, which takes about 2 s. After a 30-frame capture the post-inference files take about 30 s.
+- **Where a box can be.** The preview fills the screen and crops what does not fit, so an LED near the edge of the frame can be outside the visible preview. Its box is then off screen; the saved inference frames always show the whole frame.
+
+### Post-inference files
+
+**Settings → Inference → Generate Post-Inference Files** is ticked on a new installation. While it is ticked, Inference Mode also has the capture workflow of Data Collection Mode: choose a position, tap **Start Capture**, and the frames of that position are saved. After the capture the model runs on every saved frame, and the session gets these files:
+
+- `final.csv`, with the position's row built from what the model found (see [What a session contains](#what-a-session-contains));
+- `Inference_Frames`, each frame as a PNG with the inference bounding boxes drawn on it exactly as on the preview, and beside it a metadata file with each LED's centre, confidence and box;
+- `Processed_Frames`, the frames after LED detection, as in Data Collection Mode. `Original_Frames` is kept too.
+
+Untick the checkbox and Inference Mode saves nothing: the capture controls disappear and the screen shows the preview with its boxes only. During a capture the preview boxes are hidden, because the frames are going to the capture.
+
+### Local File Inference
+
+**Settings → Options → Local File Inference** opens a screen with one button, **Choose Image**. Pick an image stored on the phone, for example one of the test frames in **Pictures/Q-VLP Local Inference Test Dataset**, and the app runs the same model on it and shows the picture with the same boxes and tags, a list such as `LED 1 | 98%` under it, and the file name, size and time taken. A picture that is not 1280 × 960 is scaled to fit with grey around it, as in training, and its boxes are drawn on the original. This screen works in either mode and saves no files.
+
+### Enable CV Algorithms
+
+**Settings → Inference → Enable CV Algorithms** is a placeholder for computer vision that will run after the model: blob detection and analysis, distance estimation and other algorithms. It can be ticked in Inference Mode and its value is remembered, but no such algorithm exists yet and ticking it runs nothing.
 
 ## Camera and saved data
 
-- Manual exposure and ISO use device-reported limits. The defaults are a 10000 Hz rolling shutter rate (100 µs) and minimum ISO; the app fixes 1280 × 960 at 30 fps. A 4:3 size also qualifies when the sensor is slightly wider than 4:3, as on the Pixel 8a front camera (4208 × 3072): such frames keep every sensor row and crop under 3% of the width.
+- Manual exposure and ISO use device-reported limits. The defaults are a 6000 Hz rolling shutter rate (about 167 µs) and ISO 100; the app fixes 1280 × 960 at 30 fps. A 4:3 size also qualifies when the sensor is slightly wider than 4:3, as on the Pixel 8a front camera (4208 × 3072): such frames keep every sensor row and crop under 3% of the width.
 - Focus and white balance are fixed or locked by the app before capture. Returning from Settings reacquires the locks.
 - Requests disable stabilization and scene effects where exposed, apply the selected digital crop (full sensor at 1×) and disable distortion correction and rotate-and-crop where supported. On the rear camera, preview and capture are pinned to the same physical lens; the front camera is used directly.
 - Camera images and their results are paired by sensor timestamp. Actual exposure, ISO, timestamp, resolution and measured cadence are saved. Requested values are never substituted for missing measurements.
@@ -114,7 +148,16 @@ session_<id>/
       processed_frame_metadata/
         frame_00000_metadata.json ...              LED_k_u_px, LED_k_v_px, LED_k_detected
       processed_frame_and_metadata_mapping.csv     pairs each processed frame with its metadata file
+  Inference_Frames/                                the frames after the LED Recognition Model (Inference Mode only)
+    inference_position_frames_<id>_<attempt_timestamp>/   one folder per capture
+      inference_frames/
+        frame_00000.png ...                        the frames, in colour, with the inference bounding boxes
+      inference_frame_metadata/
+        frame_00000_metadata.json ...              LED_k_u_px, LED_k_v_px, LED_k_detected, confidence and box
+      inference_frame_and_metadata_mapping.csv     pairs each inference frame with its metadata file
 ```
+
+`Inference_Frames` exists only in a session captured in Inference Mode with **Generate Post-Inference Files** ticked. The two modes never share a session: changing the mode starts a new session on the next capture.
 
 `<id>` is the position ID and `<attempt_timestamp>` the local time the capture started, as `yyyyMMdd_HHmmss`. Every capture of a position makes one `position_…` folder in `Original_Frames` and its `processed_position_frames_…` twin in `Processed_Frames`. A session recorded before these two folders existed is moved into them the next time the app starts.
 
@@ -135,6 +178,8 @@ session_<id>/
 **Processed frame metadata.** `processed_frame_metadata/frame_00000_metadata.json` holds, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected` (1 or 0; the coordinates are `null` when the LED was not detected). A `details` block adds what the detector measured: background level, closing window, row time and, per LED, the estimated frequency, stripe period, fit quality, blob area and the quality flags.
 
 **final.csv.** One row per position with 13 columns: `position_id` (the typed ID) and, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected`. It is built from the processed frame metadata, read through `Processed_Frames/processed_position_frames_…/processed_frame_and_metadata_mapping.csv`, of the **latest completed capture of each position**, and its rows are in order of position ID. An LED is detected at a position when it was valid in at least 70% of that capture's frames; its coordinates are the median over those valid frames. An LED that is not detected has `0` and empty coordinates. An interrupted capture never replaces a completed one.
+
+For a capture made in Inference Mode the row is built the same way from the **inference frame metadata** instead, read through `inference_frame_and_metadata_mapping.csv`: an LED's `u` and `v` are the centre of the box the LED Recognition Model drew, and the 70% rule and the median are unchanged. The `Processed_Frames` of such a capture are still written and still hold what LED detection found.
 
 `LED_k_u_px` is the column and `LED_k_v_px` the row of LED k's blob centre, in pixels with sub-pixel precision. The origin is the centre of the top-left pixel; u grows to the right and v grows downward, in sensor-native orientation.
 
@@ -179,7 +224,7 @@ A capture is always a number of frames; there is no duration mode. The number is
 
 ### Fixed settings and research checks
 
-The **Factory Reset** section of Settings holds one button, **Factory Reset**. It asks for confirmation and then puts every setting back the way a new installation starts: the front camera, 1× zoom, a 10000 Hz rolling shutter rate and the lowest ISO on both cameras, 30 frames and Data Collection Mode, with no position chosen. Saved sessions and the auto-save folder are kept, and the next capture starts a new session. On each camera the app uses the resolution closest to the planned 1280 × 960 that covers the sensor, at 30 fps, and holds focus and white balance still. Resolution, frame-rate, focus and white-balance values saved by earlier versions are ignored. If a camera cannot meet these fixed values, a notice on the camera screen explains why and the other camera can be selected.
+The **Factory Reset** section of Settings holds one button, **Factory Reset**. It asks for confirmation and then puts every setting back the way a new installation starts: the front camera, 1× zoom, a 6000 Hz rolling shutter rate and ISO 100 on both cameras, 30 frames, Data Collection Mode, **Generate Post-Inference Files** ticked and **Enable CV Algorithms** unticked, with no position chosen. Saved sessions and the auto-save folder are kept, and the next capture starts a new session. On each camera the app uses the resolution closest to the planned 1280 × 960 that covers the sensor, at 30 fps, and holds focus and white balance still. Resolution, frame-rate, focus and white-balance values saved by earlier versions are ignored. If a camera cannot meet these fixed values, a notice on the camera screen explains why and the other camera can be selected.
 
 Capture is checked before the countdown and again immediately before camera capture. On the selected camera, 1× zoom, fixed full-aspect-ratio resolution, a rolling shutter rate from the list, manual ISO, target FPS and the app-held focus and white balance must be valid. Camera readiness also requires confirmed focus/white-balance controls and two stable actual exposure/ISO/frame-duration readings with the expected sensor crop. Unknown measurements or a reported frame duration longer than 33,350,000 ns prevent capture. Nominal 30 fps allows at most 0.05% sensor-timing rounding; the requested FPS must still be at least 30. Sensor frame duration confirms the reported cadence; sustained delivered FPS still needs measurement on the phone and is logged separately. Later drift generates capture warnings.
 
@@ -208,20 +253,22 @@ and [physical capture results](https://developer.android.com/reference/android/h
 
 The connected Pixel 8a reports 98.504 µs exposure and a 33,340,371 ns sensor frame duration (approximately 29.994 fps) with the full-frame 1280 × 960, 100 µs, ISO 50, 30 fps preset. Focus, white balance and 1× crop confirm correctly. Its advertised faster modes use a cropped 16:9 stream; the full-frame mode is nominal 30 fps. The selected policy keeps full-frame capture and accepts only tiny sensor-timing rounding (0.05%, maximum 33,350,000 ns). This is nominal 30 fps compatibility, not a claim of mathematically exact ≥30 measured fps. The limit rejects 29.97 fps and larger slowdowns; the other checks retain their existing limits.
 
-The information button shows the measured cadence to three decimal places and notes when nominal-timing tolerance is used. Saved timestamps and frame durations remain unmodified. No phone-model name is used to bypass validation; the same narrow measured-timing rule applies to supported cameras. The app continues to use 1×, 1280 × 960 where supported, nominal 30 fps and fixed/locked focus and white balance, with defaults of 10000 Hz (100 µs) and minimum ISO (50 on this phone).
+The information button shows the measured cadence to three decimal places and notes when nominal-timing tolerance is used. Saved timestamps and frame durations remain unmodified. No phone-model name is used to bypass validation; the same narrow measured-timing rule applies to supported cameras. The app continues to use 1×, 1280 × 960 where supported, nominal 30 fps and fixed/locked focus and white balance, with defaults of 6000 Hz (about 167 µs) and ISO 100. The measurements above were taken with the earlier defaults, 10000 Hz and ISO 50.
 
 Focus and white balance have no settings; the app picks a fixed or locked mode for each camera. On Pixel 8 and Pixel 8a it uses manual focus at 0.5 dioptres (about 2 m) and fixed Daylight white balance when supported, which avoids autofocus-lock failures on a blank or dark ceiling and removes white-balance convergence from startup. A fixed-focus lens, such as the Pixel 8a front camera, needs no focus control. Other phones use automatic focus and white balance that lock once after the camera opens. Check sharpness in a saved frame picture; the app does not certify focus quality. Focus and white-balance values saved by earlier versions are ignored.
 
 ## Remaining requirements
 
-This is the capture and LED-detection workflow, not a full implementation of the application description:
+This is the capture, LED-detection and LED-recognition workflow, not a full implementation of the application description:
 
 - Validate actual geometry, fixed settings and sustained capture rate on the mounted target phone. A successful build does not establish device compliance or the PDF's acceptance criteria.
 - Validate LED detection under the real LEDs: thresholds, the camera-reported row time and centroid repeatability have only been checked on simulated frames.
 - Add a settings screen for the detection thresholds and LED frequencies, a row-time calibration mode, and a live preview overlay of detected blobs. The document's `fingerprints.csv` (with per-LED counts and standard deviations) is not generated; `final.csv` carries the core fingerprint columns.
-- The on-device (instrumented) tests were updated for the new session layout but have not been run on a phone.
+- The on-device (instrumented) tests were updated for the new session layout but have not been run on a phone, except `LedRecognitionDeviceTest`, which runs the model on a frame of the test dataset and passes on a Pixel 8a.
+- Try Inference Mode under the real LEDs. On the phone, the model was run on frames of the test dataset (Local File Inference and the device test), and Inference Mode, its capture and its files were run with no LEDs in view. The boxes on the live preview have therefore not been seen on real LEDs. Their position on the preview was checked against a saved frame for the front camera only.
+- On the 200 test frames the app's one-box-per-LED rule names 724 of the 800 labelled LEDs and mislabels none. The 76 it leaves out are LED 4 at one camera position, where the model's own confidence is below 25%.
 
-`final.csv`, replacing a position and LED detection are implemented. No location estimates are produced in this version.
+`final.csv`, replacing a position, LED detection and LED recognition with the model are implemented. The CV algorithms behind **Enable CV Algorithms** are not, and no location estimates are produced in this version.
 
 Android references: [document import/export](https://developer.android.com/training/data-storage/shared/documents-files), [Camera2 capture controls](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest), [YUV planes](https://developer.android.com/reference/android/graphics/ImageFormat#YUV_420_888), and [temporary sharing permissions](https://developer.android.com/training/secure-file-sharing/share-file).
 
@@ -231,7 +278,7 @@ Use JDK 17 or 21 and the included Gradle wrapper. JDK 25 cannot run this project
 
 The existing build targets Android SDK 34 with minimum SDK 26. Configure the Android SDK location in the ignored `local.properties` file if necessary. Build with `./gradlew :app:assembleDebug` and run existing unit tests with `./gradlew :app:testDebugUnitTest`.
 
-Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the university logo used on the About screen are retained, together with original developer and lab attribution. LED detection and PNG encoding are written in Kotlin and need no CV library.
+Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the university logo used on the About screen are retained, together with original developer and lab attribution. LED detection and PNG encoding are written in Kotlin and need no CV library. The LED Recognition Model runs with PyTorch Android 2.1.0, the only native library in the app; it is packaged for 64-bit ARM phones (`arm64-v8a`) only, which keeps the APK near 40 MB.
 
 ## Installable release
 

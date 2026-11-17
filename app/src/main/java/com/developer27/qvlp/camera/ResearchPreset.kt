@@ -8,14 +8,15 @@ import kotlin.math.abs
  * the operator only chooses the rolling shutter rate and ISO.
  */
 internal object ResearchPreset {
-    /** The fixed values, with the two adjustable ones at their defaults: 10000 Hz and the lowest ISO. */
+    /** The fixed values, with the two adjustable ones at their defaults: 6000 Hz and ISO 100. */
     fun defaults(capabilities: CameraCapabilities): CameraProfile {
         val (stream, fps) = streamAndRate(capabilities)
-        // A camera that cannot expose as briefly as the default starts at the shortest exposure it has.
+        // A camera that cannot use a default starts at the nearest value it has.
         return CameraProfile(
             CaptureSettings.DEFAULT_EXPOSURE_NS.coerceIn(
                 capabilities.exposureRangeNs.lower, capabilities.maximumExposureNs(stream, fps)),
-            capabilities.isoRange.lower, stream, fps, controls(capabilities)
+            CaptureSettings.DEFAULT_ISO_RATE.coerceIn(capabilities.isoRange.lower, capabilities.isoRange.upper),
+            stream, fps, controls(capabilities)
         )
     }
 

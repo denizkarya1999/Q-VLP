@@ -39,6 +39,8 @@ import com.developer27.qvlp.capture.SessionCsv
 import com.developer27.qvlp.capture.SessionFiles
 import com.developer27.qvlp.capture.SessionPublisher
 import com.developer27.qvlp.databinding.ActivityMainBinding
+import com.developer27.qvlp.inference.LedRecognition
+import com.developer27.qvlp.inference.LiveInference
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -67,6 +69,11 @@ class MainActivity : AppCompatActivity() {
     private var resultDetails: String? = null
     private var storageState = SessionPublisher.State()
     private var stopObservingStorage: (() -> Unit)? = null
+    // Inference Mode: the model runs on the preview, and positions are captured only when their files are wanted.
+    private var inferenceMode = false
+    private var postInferenceFiles = false
+    private var liveInference: LiveInference? = null
+    private var inferenceResult: LiveInference.Result? = null
 
     private val textureListener = object : TextureView.SurfaceTextureListener {
         @SuppressLint("MissingPermission")
@@ -172,10 +179,56 @@ class MainActivity : AppCompatActivity() {
         cameraHelper.startBackgroundThread()
         cameraRecovery.restart() // Settings may have changed while the screen was away.
         if (FactoryReset.consume()) sessionChanged(resetPosition = true)
+        applyMode()
         openCameraWhenReady()
         updateControls()
         if (!captureBusy && !fileBusy) sessions.resumeSaving()
         refreshCapturedPositions()
+    }
+
+    /**
+     * Reads the mode chosen in Settings. Inference Mode runs the LED Recognition Model on the preview and draws
+     * what it finds. Called before the camera opens, because the camera then also has to deliver its frames.
+     */
+    private fun applyMode() {
+        inferenceMode = SettingsActivity.inferenceMode(preferences)
+        postInferenceFiles = SettingsActivity.postInferenceFiles(preferences)
+        // Captures of the two modes hold different files, so they never share a session.
+        val mode = if (inferenceMode) SettingsActivity.INFERENCE_MODE else SettingsActivity.MODE_KEYS.first()
+        if (preferences.getString(SESSION_MODE, SettingsActivity.MODE_KEYS.first()) != mode) {
+            preferences.edit().putString(SESSION_MODE, mode).apply()
+            SessionFiles.newSession(applicationContext)
+            sessionChanged(resetPosition = false)
+        }
+        liveInference?.stop()
+        inferenceResult = null
+        viewBinding.ledOverlay.clear()
+        var live: LiveInference? = null
+        if (inferenceMode) live = LiveInference(this) { result ->
+            runOnUiThread { if (liveInference === live) showInference(result) }
+        }
+        liveInference = live
+        cameraHelper.liveFrames = live?.let { running -> { image -> running.offer(image) } }
+    }
+
+    private fun stopInference() {
+        liveInference?.stop()
+        liveInference = null
+        cameraHelper.liveFrames = null
+        viewBinding.ledOverlay.clear()
+    }
+
+    /** The boxes go on the preview; everything else about a result is behind the information button. */
+    private fun showInference(result: LiveInference.Result) {
+        if (isDestroyed) return
+        val first = inferenceResult == null
+        inferenceResult = result
+        val geometry = cameraHelper.previewGeometry()
+        // While frames are being captured the preview boxes would belong to an older frame.
+        if (result.error != null || geometry == null || captureBusy) viewBinding.ledOverlay.clear()
+        else viewBinding.ledOverlay.show(result.detections, result.frameWidth, result.frameHeight, geometry)
+        if (result.error != null && first)
+            Toast.makeText(this, getString(R.string.inference_failed, result.error), Toast.LENGTH_LONG).show()
     }
 
     @SuppressLint("MissingPermission")
@@ -191,6 +244,7 @@ class MainActivity : AppCompatActivity() {
         captureTrigger.reset()
         cameraReady = false
         if (captureBusy) cancelFrameCapture("Capture interrupted while the app was not active.", restorePreview = false)
+        stopInference()
         cameraHelper.closeCamera()
         cameraHelper.stopBackgroundThread()
         super.onPause()
@@ -217,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         val supported = event.keyCode in setOf(KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN,
             KeyEvent.KEYCODE_CAMERA) || (event.keyCode == KeyEvent.KEYCODE_ENTER && event.device?.isVirtual == false &&
                 event.flags and KeyEvent.FLAG_SOFT_KEYBOARD == 0)
-        if (!supported || !resumed || !hasWindowFocus()) return super.dispatchKeyEvent(event)
+        if (!supported || !resumed || !hasWindowFocus() || !captureAvailable()) return super.dispatchKeyEvent(event)
         when (event.action) {
             KeyEvent.ACTION_DOWN -> if (captureTrigger.press(event.deviceId, event.keyCode, event.repeatCount)) triggerCapture()
             KeyEvent.ACTION_UP -> captureTrigger.release(event.deviceId, event.keyCode)
@@ -225,8 +279,11 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    /** Data Collection Mode always captures. Inference Mode captures only when its files are wanted. */
+    private fun captureAvailable(): Boolean = !inferenceMode || postInferenceFiles
+
     private fun triggerCapture() {
-        if (fileBusy || triggerBusy) return
+        if (fileBusy || triggerBusy || !captureAvailable()) return
         if (captureBusy) { cancelFrameCapture(); return }
         if (!cameraReady) {
             Toast.makeText(this, R.string.camera_wait_button, Toast.LENGTH_SHORT).show()
@@ -241,6 +298,7 @@ class MainActivity : AppCompatActivity() {
         if (!cameraPermissionGranted()) { cameraPermissionLauncher.launch(Manifest.permission.CAMERA); return }
         cameraReady = false // Capture waits for the other camera to confirm its settings.
         cameraRecovery.restart()
+        viewBinding.ledOverlay.clear()
         cameraHelper.switchCamera()
         updateControls()
     }
@@ -253,7 +311,8 @@ class MainActivity : AppCompatActivity() {
             cameraReady -> R.string.camera_ready
             else -> R.string.camera_preparing
         })
-        val sections = listOf(
+        val sections = listOfNotNull(
+            if (inferenceMode) getString(R.string.info_inference) to inferenceDetails() else null,
             getString(R.string.info_camera) to listOf(camera, cameraDetails).filter { it.isNotBlank() }.joinToString("\n"),
             getString(R.string.info_saving) to storageState.message,
             getString(R.string.info_last_capture) to (resultDetails ?: getString(R.string.info_no_capture))
@@ -261,6 +320,22 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this).setTitle(R.string.information)
             .setMessage(sections.joinToString("\n\n") { (title, text) -> "${title.uppercase()}\n$text" })
             .setPositiveButton(android.R.string.ok, null).show()
+    }
+
+    private fun inferenceDetails(): String {
+        val result = inferenceResult
+        val lines = mutableListOf(LedRecognition.MODEL_NAME)
+        when {
+            result == null -> lines.add(getString(R.string.inference_starting))
+            result.error != null -> lines.add(getString(R.string.inference_failed, result.error))
+            else -> {
+                lines.add(getString(R.string.inference_latest, result.milliseconds))
+                lines.add(if (result.detections.isEmpty()) getString(R.string.inference_no_leds)
+                    else result.detections.joinToString("\n") { it.label })
+            }
+        }
+        if (preferences.getBoolean(SettingsActivity.CV_ALGORITHMS_PREFERENCE, false)) lines.add(getString(R.string.cv_algorithms_on))
+        return lines.joinToString("\n")
     }
 
     /** A session ended or another became current: the last result and position no longer apply. */
@@ -366,7 +441,10 @@ class MainActivity : AppCompatActivity() {
             override fun onFinish() {
                 countdown = null
                 viewBinding.burstStatus.setText(R.string.capture_starting)
+                viewBinding.ledOverlay.clear()
                 cameraHelper.startBurst(position, length,
+                    // In Inference Mode the model also runs on every captured frame, for the post-inference files.
+                    inference = if (inferenceMode && postInferenceFiles) LedRecognition.frames(applicationContext) else null,
                     progress = { count -> runOnUiThread {
                         if (!isDestroyed && captureBusy) {
                             viewBinding.burstStatus.text = getString(R.string.capture_progress, count, length.frames)
@@ -449,6 +527,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateControls() {
         showStorageStatus()
+        // With nothing to capture, Inference Mode shows the preview and its boxes only.
+        viewBinding.buttonContainer.visibility = if (captureAvailable()) View.VISIBLE else View.GONE
         val busy = captureBusy || fileBusy
         viewBinding.titleContainer.isEnabled = !busy
         viewBinding.settingsButton.isEnabled = !busy
@@ -503,4 +583,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun cameraPermissionGranted(): Boolean =
         ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    internal companion object {
+        /** The mode the session being recorded belongs to. */
+        const val SESSION_MODE = "session_mode"
+    }
 }

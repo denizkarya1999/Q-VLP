@@ -34,9 +34,11 @@ import com.developer27.qvlp.capture.CaptureWindow
 import com.developer27.qvlp.capture.BurstWriter
 import com.developer27.qvlp.capture.BurstRequestTag
 import com.developer27.qvlp.capture.BurstSummary
+import com.developer27.qvlp.capture.FrameInference
 import com.developer27.qvlp.capture.FrameMetadata
 import com.developer27.qvlp.capture.Position
 import com.developer27.qvlp.capture.SessionFiles
+import com.developer27.qvlp.inference.PreviewGeometry
 import org.json.JSONObject
 import java.util.Locale
 
@@ -80,7 +82,13 @@ class CameraHelper(
     var backgroundHandler: Handler? = null
         private set
 
-    private var cameraCharacteristics: CameraCharacteristics? = null
+    @Volatile private var cameraCharacteristics: CameraCharacteristics? = null
+
+    /**
+     * Inference Mode: given every camera frame that is not part of a capture, on the camera thread. The frame
+     * is closed when this returns. Set before the camera is opened.
+     */
+    @Volatile internal var liveFrames: ((android.media.Image) -> Unit)? = null
     @Volatile private var fixedCamera: FixedCamera? = null
     @Volatile private var lensIssue: String? = null
     @Volatile private var activeCapabilities: CameraCapabilities? = null
@@ -253,7 +261,8 @@ class CameraHelper(
                         while (true) {
                             val image = source.acquireNextImage() ?: break
                             val writer = burstWriter
-                            if (writer != null) writer.onImage(image) else image.close()
+                            if (writer != null) writer.onImage(image)
+                            else try { liveFrames?.invoke(image) } finally { image.close() }
                         }
                     } catch (e: Exception) {
                         burstWriter?.warning("Camera image read failed: ${e.message}")
@@ -264,6 +273,8 @@ class CameraHelper(
             captureRequestBuilder = activeCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
             // Add the preview surface as a target
             captureRequestBuilder?.addTarget(previewSurface)
+            // Inference Mode also reads the frames while the preview runs.
+            if (liveFrames != null) captureRequestBuilder?.addTarget(reader.surface)
 
             applyCaptureSettings(submitRequest = false)
 
@@ -491,9 +502,9 @@ class CameraHelper(
         return true
     }
 
-    internal fun startBurst(position: Position, length: CaptureLength, progress: (Int) -> Unit,
+    internal fun startBurst(position: Position, length: CaptureLength, inference: FrameInference?, progress: (Int) -> Unit,
                             analyzing: (Int, Int) -> Unit, completed: (BurstSummary) -> Unit, failed: (String) -> Unit) {
-        if (dispatch { startBurst(position, length, progress, analyzing, completed, failed) }) return
+        if (dispatch { startBurst(position, length, inference, progress, analyzing, completed, failed) }) return
         if (burstRequested) { failed("A capture is already running."); return }
         val device = cameraDevice
         val session = cameraCaptureSession
@@ -530,7 +541,7 @@ class CameraHelper(
             return
         }
         BurstWriter.prepare(activity.applicationContext, profile, length, position, cameraInfo,
-            progress, analyzing, completed) { writer, error ->
+            progress, analyzing, completed, inference) { writer, error ->
             val posted = handler.post {
                 if (generation != burstGeneration || cameraDevice !== device || cameraCaptureSession !== session) {
                     writer?.finish("Capture interrupted before frames started.")
@@ -557,7 +568,8 @@ class CameraHelper(
                         builder.setTag(BurstRequestTag(originalTag, writer.id))
                         builder.build()
                     } finally {
-                        builder.removeTarget(reader.surface)
+                        // Inference Mode keeps reading frames after the capture.
+                        if (liveFrames == null) builder.removeTarget(reader.surface)
                         builder.setTag(originalTag)
                     }
                     val previewCallback = activeCaptureCallback
@@ -817,6 +829,12 @@ class CameraHelper(
         if (Build.VERSION.SDK_INT >= 31 && CaptureRequest.SCALER_ROTATE_AND_CROP in keys &&
             c[CameraCharacteristics.SCALER_AVAILABLE_ROTATE_AND_CROP_MODES]?.contains(CaptureRequest.SCALER_ROTATE_AND_CROP_NONE) == true)
             builder.set(CaptureRequest.SCALER_ROTATE_AND_CROP, CaptureRequest.SCALER_ROTATE_AND_CROP_NONE)
+    }
+
+    /** How the camera in use is mounted, for drawing over its preview. Null while no camera is open. */
+    internal fun previewGeometry(): PreviewGeometry? = cameraCharacteristics?.let {
+        PreviewGeometry(it[CameraCharacteristics.SENSOR_ORIENTATION] ?: 90,
+            it[CameraCharacteristics.LENS_FACING] == CameraCharacteristics.LENS_FACING_FRONT)
     }
 
     /** Fill the screen with the preview at its true proportions. Capture resolution, crop and saved pixels are unchanged. */

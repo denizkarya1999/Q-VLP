@@ -1,5 +1,6 @@
 package com.developer27.qvlp.capture
 
+import com.developer27.qvlp.inference.LedDetection
 import com.developer27.qvlp.vision.FrameLeds
 import com.developer27.qvlp.vision.FrameOverlay
 import com.developer27.qvlp.vision.FramePng
@@ -22,8 +23,13 @@ internal object CaptureProcessing {
         val seconds: Double? get() = microseconds?.let { it / 1_000_000.0 }
     }
 
-    /** [leds] holds the frames whose detection ran; [saved] the frame IDs whose files were all written. */
-    data class Result(val leds: Map<Int, FrameLeds>, val saved: Set<Int>)
+    /**
+     * [leds] holds the frames whose detection ran; [saved] the frame IDs whose files were all written;
+     * [inferred] what the LED Recognition Model found in each frame it ran on (Inference Mode captures only).
+     */
+    data class Result(val leds: Map<Int, FrameLeds>, val saved: Set<Int>, val inferred: Map<Int, List<LedDetection>> = emptyMap())
+
+    private class Frame(val id: Int, val leds: FrameLeds, val inferred: List<LedDetection>?)
 
     /** The camera's own report: its rolling-shutter skew spread over the rows of the frame. */
     fun rowTime(frames: Collection<JSONObject>): RowTime {
@@ -48,14 +54,21 @@ internal object CaptureProcessing {
      * Writes every file of the capture. Each frame is handled once, on its own core: LED detection, the colour
      * picture, the annotated picture and both metadata files. The mapping files are written last, so their
      * presence means the capture is complete.
+     *
+     * With [inference], the LED Recognition Model also runs on every frame and the capture gets its
+     * post-inference files: each frame with the model's boxes, and what the model found in it.
      */
     fun process(capture: File, frames: List<JSONObject>, rowTime: RowTime, settings: LedDetectionSettings,
-                cameraMetadata: (JSONObject) -> JSONObject, progress: (Int, Int) -> Unit): Result {
+                cameraMetadata: (JSONObject) -> JSONObject, inference: FrameInference? = null,
+                progress: (Int, Int) -> Unit): Result {
         if (frames.isEmpty()) return Result(emptyMap(), emptySet())
         val processed = SessionLayout.processedFolder(capture)
         val folders = listOf(File(capture, SessionLayout.FRAMES), File(capture, SessionLayout.METADATA),
             File(processed, SessionLayout.PROCESSED_FRAMES), File(processed, SessionLayout.PROCESSED_METADATA))
-        folders.forEach { check(it.isDirectory || it.mkdirs()) { "Cannot create ${it.name}." } }
+        val inferenceFolder = SessionLayout.inferenceFolder(capture)
+        val inferenceFolders = if (inference == null) emptyList() else listOf(
+            File(inferenceFolder, SessionLayout.INFERENCE_FRAMES), File(inferenceFolder, SessionLayout.INFERENCE_METADATA))
+        (folders + inferenceFolders).forEach { check(it.isDirectory || it.mkdirs()) { "Cannot create ${it.name}." } }
         val pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors().coerceIn(1, MAX_THREADS))
         val workspace = ThreadLocal.withInitial { Workspace(settings) }
         val saved = ConcurrentHashMap.newKeySet<Int>()
@@ -75,22 +88,32 @@ internal object CaptureProcessing {
                     val rgb = space.rgb(width * height * 3)
                     FramePng.toRgb(pixels, width, height, rgb)
                     val picture = FramePng.encode(rgb, width, height)
+                    // The model sees the frame before anything is drawn on it. A frame it cannot run on is still saved.
+                    val inferred = inference?.let { model -> runCatching { model.run(rgb, width, height) }.getOrNull() }
                     // A frame with nothing found looks the same processed, so its picture is reused as it is.
                     val annotated = if (FrameOverlay.draw(rgb, width, height, found)) FramePng.encode(rgb, width, height) else picture
                     write(File(folders[0], SessionLayout.frameName(id)), picture)
                     write(File(folders[1], SessionLayout.metadataName(id)), cameraMetadata(frame).toString(2).toByteArray())
                     write(File(folders[2], SessionLayout.frameName(id)), annotated)
                     write(File(folders[3], SessionLayout.metadataName(id)), processedMetadata(id, found, rowTime).toString(2).toByteArray())
+                    if (inferred != null) {
+                        write(File(inferenceFolders[0], SessionLayout.frameName(id)), inferred.picture)
+                        write(File(inferenceFolders[1], SessionLayout.metadataName(id)),
+                            PostInferenceFiles.metadata(id, inferred).toString(2).toByteArray())
+                    }
                     saved.add(id)
                     raw.delete()
                     progress(done.incrementAndGet(), frames.size)
-                    id to found
+                    Frame(id, found, inferred?.detections)
                 })
-            }.mapNotNull { task -> runCatching { task.get() }.getOrNull() }.toMap()
+            }.mapNotNull { task -> runCatching { task.get() }.getOrNull() }
             val ids = frames.map { it.getInt("frame_id") }.filter { it in saved }.sorted()
             write(File(capture, SessionLayout.MAPPING), SessionLayout.mapping(ids).toByteArray())
             write(File(processed, SessionLayout.PROCESSED_MAPPING), SessionLayout.mapping(ids).toByteArray())
-            return Result(leds, saved)
+            val inferred = leds.filter { it.inferred != null && it.id in saved }.associate { it.id to it.inferred!! }
+            if (inference != null) write(File(inferenceFolder, SessionLayout.INFERENCE_MAPPING),
+                SessionLayout.mapping(inferred.keys.sorted()).toByteArray())
+            return Result(leds.associate { it.id to it.leds }, saved, inferred)
         } finally {
             pool.shutdown()
         }

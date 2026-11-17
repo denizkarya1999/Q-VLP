@@ -12,6 +12,13 @@
         android:layout_height="match_parent"
         android:importantForAccessibility="no" />
 
+    <!-- Inference Mode draws the LEDs it finds here, over the preview and under the buttons. -->
+    <com.developer27.qvlp.inference.LedOverlayView
+        android:id="@+id/ledOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+
     <!-- Keep the original top/bottom arrangement; allow scrolling on short screens. -->
     <ScrollView
         android:layout_width="match_parent"

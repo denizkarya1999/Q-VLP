@@ -48,8 +48,11 @@ class CaptureSettingsTest {
     }
 
     @Test
-    fun theDefaultIsTenThousandHertz() {
-        assertEquals(10_000, CaptureSettings.shutterRateHz(CaptureSettings.DEFAULT_EXPOSURE_NS))
-        assertEquals(CaptureSettings.DEFAULT_EXPOSURE_NS, CaptureSettings.exposureNanos(10_000))
+    fun theDefaultsAreSixThousandHertzAndIsoOneHundred() {
+        assertEquals(6_000, CaptureSettings.shutterRateHz(CaptureSettings.DEFAULT_EXPOSURE_NS))
+        // The default is exactly the exposure of the listed 6000 Hz rate, so Settings shows it selected.
+        assertEquals(CaptureSettings.DEFAULT_EXPOSURE_NS, CaptureSettings.exposureNanos(6_000))
+        assertTrue(6_000 in CaptureSettings.SHUTTER_RATES_HZ)
+        assertEquals(100, CaptureSettings.DEFAULT_ISO_RATE)
     }
 }

@@ -52,11 +52,28 @@ internal object SessionCsv {
      * Every frame a processed capture lists in its mapping file, read from the metadata files it names.
      * Empty when the capture has not been processed.
      */
-    fun readProcessed(processed: File): List<List<LedPoint>> {
-        val folder = File(processed, SessionLayout.PROCESSED_METADATA)
-        return SessionLayout.readMapping(File(processed, SessionLayout.PROCESSED_MAPPING)).mapNotNull { (_, metadata) ->
+    fun readProcessed(processed: File): List<List<LedPoint>> =
+        read(processed, SessionLayout.PROCESSED_METADATA, SessionLayout.PROCESSED_MAPPING)
+
+    /** The same for the post-inference files of an Inference Mode capture: what the LED Recognition Model found. */
+    fun readInference(inference: File): List<List<LedPoint>> =
+        read(inference, SessionLayout.INFERENCE_METADATA, SessionLayout.INFERENCE_MAPPING)
+
+    private fun read(results: File, metadataFolder: String, mappingFile: String): List<List<LedPoint>> {
+        val folder = File(results, metadataFolder)
+        return SessionLayout.readMapping(File(results, mappingFile)).mapNotNull { (_, metadata) ->
             runCatching { points(JSONObject(File(folder, metadata).readText())) }.getOrNull()
         }
+    }
+
+    /**
+     * Where a capture's row of final.csv comes from: the LED Recognition Model's results when the capture was
+     * made in Inference Mode, otherwise LED detection's.
+     */
+    private fun source(capture: File): Pair<File, Boolean> {
+        val inference = SessionLayout.inferenceFolder(capture)
+        return if (File(inference, SessionLayout.INFERENCE_MAPPING).isFile) inference to true
+            else SessionLayout.processedFolder(capture) to false
     }
 
     private fun median(values: List<Double>): Double? {
@@ -76,7 +93,8 @@ internal object SessionCsv {
         val metadata = SessionFiles.readJson(metadataFile)
         val folders = SessionLayout.captures(session).filter { !SessionFiles.isActive(it) }.sortedBy { it.name }
         val signature = sha(folders.joinToString("\n") { folder ->
-            "${folder.name}:${stamp(File(folder, "burst.json"))}:${stamp(File(SessionLayout.processedFolder(folder), SessionLayout.PROCESSED_MAPPING))}"
+            "${folder.name}:${stamp(File(folder, "burst.json"))}:${stamp(File(SessionLayout.processedFolder(folder), SessionLayout.PROCESSED_MAPPING))}" +
+                ":${stamp(File(SessionLayout.inferenceFolder(folder), SessionLayout.INFERENCE_MAPPING))}"
         }.toByteArray())
         val output = File(session, SessionLayout.FINAL)
         val previous = metadata.optJSONObject("export")
@@ -103,12 +121,13 @@ internal object SessionCsv {
         val lines = ArrayList<String>()
         lines.add(finalHeader)
         attempts.forEach { attempt ->
-            val processed = SessionLayout.processedFolder(attempt.folder)
-            val version = stamp(File(processed, SessionLayout.PROCESSED_MAPPING))
-            val leds = fingerprints[processed.path]?.takeIf { it.first == version }?.second
-                ?: fingerprint(readProcessed(processed)).also { fingerprints[processed.path] = version to it }
+            val (results, inferred) = source(attempt.folder)
+            val version = stamp(File(results, if (inferred) SessionLayout.INFERENCE_MAPPING else SessionLayout.PROCESSED_MAPPING))
+            val leds = fingerprints[results.path]?.takeIf { it.first == version }?.second
+                ?: fingerprint(if (inferred) readInference(results) else readProcessed(results)).also { fingerprints[results.path] = version to it }
             lines.add(finalRow(attempt.position.toString(), leds))
             selection.put(JSONObject().put("position_id", attempt.position).put("attempt", attempt.folder.name)
+                .put("source", if (inferred) "led_recognition_model" else "led_detection")
                 .put("frames", leds.firstOrNull()?.frames ?: 0).put("finished_at", attempt.finished.toString()))
         }
         val atomic = AtomicFile(output)

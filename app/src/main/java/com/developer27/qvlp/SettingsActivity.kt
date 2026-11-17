@@ -51,8 +51,18 @@ class SettingsActivity : AppCompatActivity() {
         const val EXTRA_CAMERA_ID = "camera_id"
         const val EXTRA_PREFERENCE_KEY = "preference_key"
         const val MODE_PREFERENCE = "app_mode"
-        /** Data Collection is the default and, until inference exists, the only mode that can be chosen. */
-        val MODE_KEYS = listOf("data_collection_mode", "inference_mode")
+        const val INFERENCE_MODE = "inference_mode"
+        const val CV_ALGORITHMS_PREFERENCE = "enable_cv_algorithms"
+        const val POST_INFERENCE_FILES_PREFERENCE = "generate_post_inference_files"
+        /** Data Collection is the default mode. */
+        val MODE_KEYS = listOf("data_collection_mode", INFERENCE_MODE)
+
+        fun inferenceMode(preferences: android.content.SharedPreferences): Boolean =
+            preferences.getString(MODE_PREFERENCE, null) == INFERENCE_MODE
+
+        /** Ticked unless the operator unticks it. */
+        fun postInferenceFiles(preferences: android.content.SharedPreferences): Boolean =
+            preferences.getBoolean(POST_INFERENCE_FILES_PREFERENCE, true)
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
@@ -71,6 +81,10 @@ class SettingsActivity : AppCompatActivity() {
             // Bound first: the reset must work even when the camera's own settings cannot be shown.
             requireNotNull(findPreference<Preference>("factory_reset")).setOnPreferenceClickListener {
                 (requireActivity() as SettingsActivity).confirmFactoryReset()
+                true
+            }
+            requireNotNull(findPreference<Preference>("local_file_inference")).setOnPreferenceClickListener {
+                startActivity(android.content.Intent(requireContext(), LocalFileInferenceActivity::class.java))
                 true
             }
             bindModes()
@@ -123,7 +137,13 @@ class SettingsActivity : AppCompatActivity() {
         private fun bindModes() {
             val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
             val modes = MODE_KEYS.map { requireNotNull(findPreference<CheckBoxPreference>(it)) }
-            fun show(selected: String) = modes.forEach { it.isChecked = it.key == selected }
+            val inferenceSettings = listOf(POST_INFERENCE_FILES_PREFERENCE, CV_ALGORITHMS_PREFERENCE)
+                .map { requireNotNull(findPreference<CheckBoxPreference>(it)) }
+            fun show(selected: String) {
+                modes.forEach { it.isChecked = it.key == selected }
+                // The Inference settings can be reached in Inference Mode only. Their values are kept either way.
+                inferenceSettings.forEach { it.isEnabled = selected == INFERENCE_MODE }
+            }
             modes.forEach { mode ->
                 mode.setOnPreferenceChangeListener { _, checked ->
                     // Tapping the selected mode leaves it selected; a mode is only left by choosing another.

@@ -24,8 +24,8 @@ class ResearchPresetTest {
     @Test fun selectsTheCompleteResearchPreset() {
         val profile = ResearchPreset.defaults(capabilities())
         assertEquals(Size(1280, 960), profile.stream.size)
-        assertEquals(100_000L, profile.exposureNs)
-        assertEquals(50, profile.iso)
+        assertEquals(166_666L, profile.exposureNs) // 6000 Hz
+        assertEquals(100, profile.iso)
         assertEquals(30, profile.fps)
         assertEquals(FocusMode.LOCK, profile.controls.focusMode)
         assertEquals(FocusWhiteBalanceCapabilities.WB_LOCK, profile.controls.whiteBalanceMode)
@@ -36,8 +36,8 @@ class ResearchPresetTest {
         for (profile in listOf(caps.defaults(), ResearchPreset.defaults(caps))) {
             assertEquals(Size(1280, 960), profile.stream.size)
             assertEquals(30, profile.fps)
-            assertEquals(100_000L, profile.exposureNs)
-            assertEquals(50, profile.iso)
+            assertEquals(166_666L, profile.exposureNs)
+            assertEquals(100, profile.iso)
             assertEquals(FocusMode.MANUAL, profile.controls.focusMode)
             assertEquals(0.5f, profile.controls.focusDistance, 0f)
             assertEquals(CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT, profile.controls.whiteBalanceMode)

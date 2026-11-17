@@ -19,6 +19,11 @@ import java.time.format.DateTimeFormatter
  *           processed_frames/frame_00000.png …
  *           processed_frame_metadata/frame_00000_metadata.json …
  *           processed_frame_and_metadata_mapping.csv
+ *       Inference_Frames/                               only for captures made in Inference Mode
+ *         inference_position_frames_<id>_<timestamp>/   the same capture after the LED Recognition Model
+ *           inference_frames/frame_00000.png …
+ *           inference_frame_metadata/frame_00000_metadata.json …
+ *           inference_frame_and_metadata_mapping.csv
  */
 internal object SessionLayout {
     const val FINAL = "final.csv"
@@ -30,9 +35,14 @@ internal object SessionLayout {
     const val PROCESSED_FRAMES = "processed_frames"
     const val PROCESSED_METADATA = "processed_frame_metadata"
     const val PROCESSED_MAPPING = "processed_frame_and_metadata_mapping.csv"
+    const val INFERENCE = "Inference_Frames"
+    const val INFERENCE_FRAMES = "inference_frames"
+    const val INFERENCE_METADATA = "inference_frame_metadata"
+    const val INFERENCE_MAPPING = "inference_frame_and_metadata_mapping.csv"
     const val MAPPING_HEADER = "frame_file,metadata_file"
     private const val CAPTURE_PREFIX = "position_"
     private const val PROCESSED_PREFIX = "processed_position_frames_"
+    private const val INFERENCE_PREFIX = "inference_position_frames_"
     private val STAMP = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
 
     fun captureName(positionId: Int, time: LocalDateTime): String = "$CAPTURE_PREFIX${positionId}_${STAMP.format(time)}"
@@ -49,6 +59,10 @@ internal object SessionLayout {
 
     fun processedFolder(capture: File): File =
         File(File(session(capture), PROCESSED), PROCESSED_PREFIX + capture.name.removePrefix(CAPTURE_PREFIX))
+
+    /** Where an Inference Mode capture keeps the frames with the model's boxes. Other captures have no such folder. */
+    fun inferenceFolder(capture: File): File =
+        File(File(session(capture), INFERENCE), INFERENCE_PREFIX + capture.name.removePrefix(CAPTURE_PREFIX))
 
     /**
      * Moves the captures of a session saved before Original_Frames and Processed_Frames existed into them.

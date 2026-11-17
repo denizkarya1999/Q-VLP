@@ -11,8 +11,13 @@ android {
         applicationId = "com.developer27.qvlp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.0.0"
+        versionCode = 11
+        versionName = "1.1.0"
+
+        // The LED Recognition Model runs with PyTorch, whose library is large: ship it for 64-bit ARM phones only.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -40,6 +45,18 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    androidResources {
+        // The model is read straight from the APK.
+        noCompress += "pt"
+    }
+
+    packaging {
+        // Compressed in the APK and unpacked when the app is installed: PyTorch's library is 76 MB otherwise.
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
@@ -54,6 +71,9 @@ dependencies {
 
     // Splash screen
     implementation("androidx.core:core-splashscreen:1.0.0")
+
+    // Runs the LED Recognition Model (TorchScript .pt) on the phone
+    implementation("org.pytorch:pytorch_android:2.1.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

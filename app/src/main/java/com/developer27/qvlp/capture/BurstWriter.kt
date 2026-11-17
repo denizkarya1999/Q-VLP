@@ -65,7 +65,8 @@ internal class BurstWriter private constructor(
     private val cameraInfo: JSONObject,
     private val progress: (Int) -> Unit,
     private val analyzing: (Int, Int) -> Unit,
-    private val completed: (BurstSummary) -> Unit
+    private val completed: (BurstSummary) -> Unit,
+    private val inference: FrameInference?
 ) {
     val id = UUID.randomUUID().toString()
     private val accepting = AtomicBoolean(true)
@@ -84,6 +85,7 @@ internal class BurstWriter private constructor(
     private val createdAt = Instant.now().toString()
     private val ledSettings = LedDetectionSettings()
     private var ledDetection: JSONObject? = null
+    private var ledRecognition: JSONObject? = null
     private var rowTimeUs: Double? = null
 
     private fun manifest(state: String) = JSONObject().apply {
@@ -98,6 +100,7 @@ internal class BurstWriter private constructor(
         put("frames_saved", saved.size)
         put("frames", JSONArray(saved.values.toList()))
         ledDetection?.let { put("led_detection", it) }
+        ledRecognition?.let { put("led_recognition", it) }
         put("warnings", JSONArray(warnings.toList()))
     }
 
@@ -214,6 +217,7 @@ internal class BurstWriter private constructor(
         SessionFiles.io.execute {
             if (reason != null) warnings.add(reason)
             // Keep images with a known request ID even if the device omitted its result.
+            val firstStart = starts.keys.minOrNull()
             images.values.toList().forEach { frame ->
                 val frameId = starts[frame.timestamp]
                 if (frameId != null) {
@@ -221,7 +225,10 @@ internal class BurstWriter private constructor(
                     writeFrame(frame, allMetadata[frameId]
                         ?: FrameMetadata(frameId, frame.timestamp, null, null, JSONObject()))
                 } else {
-                    warnings.add("An image had no matching capture timestamp and was excluded.")
+                    // In Inference Mode the preview reads frames too. One exposed before the capture's first
+                    // frame was on its way when the capture started and was never part of it.
+                    if (firstStart == null || frame.timestamp >= firstStart)
+                        warnings.add("An image had no matching capture timestamp and was excluded.")
                     slots.release()
                 }
             }
@@ -288,13 +295,14 @@ internal class BurstWriter private constructor(
         val rowTime = CaptureProcessing.rowTime(frames)
         rowTimeUs = rowTime.microseconds
         val started = System.nanoTime()
-        val result = CaptureProcessing.process(location.directory, frames, rowTime, ledSettings, ::cameraMetadata, analyzing)
+        val result = CaptureProcessing.process(location.directory, frames, rowTime, ledSettings, ::cameraMetadata, inference, analyzing)
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        val recognised = if (inference == null) null else recognise(frames, result)
         // A frame whose files could not be written has no picture to point at.
         frames.filterNot { it.getInt("frame_id") in result.saved }.forEach { it.put("file", JSONObject.NULL) }
         val lost = frames.size - result.saved.size
         if (lost > 0) warnings.add("$lost of ${frames.size} frames could not be saved as pictures.")
-        if (result.leds.isEmpty()) return null
+        if (result.leds.isEmpty()) return recognised
         val fingerprint = SessionCsv.fingerprint(frames.mapNotNull { frame ->
             result.leds[frame.getInt("frame_id")]?.let { found ->
                 found.leds.map { SessionCsv.LedPoint(it.detected, it.blob?.u, it.blob?.v) }
@@ -312,9 +320,32 @@ internal class BurstWriter private constructor(
                     .put("u_px", if (led.detected) led.u else JSONObject.NULL)
                     .put("v_px", if (led.detected) led.v else JSONObject.NULL)
             }))
+        // An Inference Mode capture reports what the model found: that is what its row of final.csv holds.
+        if (recognised != null) return recognised
         if (rowTime.microseconds == null) warnings.add(
             "LEDs could not be identified: this camera did not report its row time.")
         else if (detected.size < 2) warnings.add("Fewer than 2 LEDs were detected at this position (${detected.size} of ${fingerprint.size}).")
+        return detected
+    }
+
+    /** The LED numbers the LED Recognition Model found at this position, by the same 70% rule as final.csv. */
+    private fun recognise(frames: List<JSONObject>, result: CaptureProcessing.Result): List<Int> {
+        val failed = result.saved.size - result.inferred.size
+        if (failed > 0) warnings.add("The LED Recognition Model could not run on $failed of ${result.saved.size} frames.")
+        val fingerprint = SessionCsv.fingerprint(frames.mapNotNull { frame ->
+            result.inferred[frame.getInt("frame_id")]?.let(PostInferenceFiles::points)
+        })
+        val detected = fingerprint.indices.filter { fingerprint[it].detected }.map { it + 1 }
+        ledRecognition = JSONObject().put("model", com.developer27.qvlp.inference.LedRecognition.MODEL_FILE)
+            .put("min_confidence", com.developer27.qvlp.inference.LedBoxes.MIN_CONFIDENCE.toDouble())
+            .put("frames_processed", result.inferred.size).put("min_valid_share", SessionCsv.MIN_VALID_SHARE)
+            .put("leds", JSONArray(fingerprint.mapIndexed { index, led ->
+                JSONObject().put("led", index + 1).put("frames_valid", led.valid).put("detected", led.detected)
+                    .put("u_px", if (led.detected) led.u else JSONObject.NULL)
+                    .put("v_px", if (led.detected) led.v else JSONObject.NULL)
+            }))
+        if (result.inferred.isNotEmpty() && detected.size < 2)
+            warnings.add("Fewer than 2 LEDs were recognised at this position (${detected.size} of ${fingerprint.size}).")
         return detected
     }
 
@@ -348,7 +379,7 @@ internal class BurstWriter private constructor(
 
         fun prepare(context: Context, profile: CameraProfile, length: CaptureLength, position: Position,
                     cameraInfo: JSONObject, progress: (Int) -> Unit, analyzing: (Int, Int) -> Unit,
-                    completed: (BurstSummary) -> Unit, prepared: (BurstWriter?, String?) -> Unit) {
+                    completed: (BurstSummary) -> Unit, inference: FrameInference?, prepared: (BurstWriter?, String?) -> Unit) {
             SessionFiles.io.execute {
                 try {
                     val reserveFrames = length.frames.toLong()
@@ -360,7 +391,7 @@ internal class BurstWriter private constructor(
                     check(StatFs(context.filesDir.absolutePath).availableBytes >= Math.multiplyExact(required, 2L)) { "Not enough free storage for the selected capture length. Choose fewer frames or a shorter duration." }
                     check(PublicSessionStorage.configured(context)) { "Tap the auto-save status on the camera screen and choose Pictures/Q-VLP before recording." }
                     val writer = BurstWriter(context.applicationContext, SessionFiles.createBurst(context, position), profile, length,
-                        position, cameraInfo, progress, analyzing, completed)
+                        position, cameraInfo, progress, analyzing, completed, inference)
                     SessionFiles.writeJson(File(writer.location.directory, "burst.json"), writer.manifest("preparing"))
                     SessionFiles.activeCapture = writer.location.directory
                     prepared(writer, null)
