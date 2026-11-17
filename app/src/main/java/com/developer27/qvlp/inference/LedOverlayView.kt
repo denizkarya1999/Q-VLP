@@ -6,7 +6,7 @@ import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.View
 
-/** Lies over the camera preview in Inference Mode and draws the LEDs the model found in the latest frame. */
+/** Lies over the camera preview in Inference Mode and draws the LEDs the models found in the latest frame. */
 class LedOverlayView @JvmOverloads constructor(context: Context, attributes: AttributeSet? = null) : View(context, attributes) {
     private val painter = LedBoxPainter(
         stroke = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2f, resources.displayMetrics),

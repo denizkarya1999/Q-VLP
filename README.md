@@ -1,16 +1,16 @@
 # Q-VLP — Quantum-based Location Estimation
 
-Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. It has two modes. **Data Collection Mode** records frames of the ceiling LEDs at numbered positions, detects the LEDs in every frame and builds the fingerprint file `final.csv`. **Inference Mode** runs the **LED Recognition Model** on the camera preview, draws a box round each LED it recognises and, for each captured position, saves the frames with those boxes together with `final.csv`. Location estimation is planned.
+Q-VLP is an Android research app for **Quantum-based Location Estimation** using visible-light positioning. It has two modes. **Data Collection Mode** records frames of the ceiling LEDs at numbered positions, detects the LEDs in every frame and builds the fingerprint file `final.csv`. **Inference Mode** runs two models on the camera preview: the **Physical LED Detection Model** finds each LED and the **OOK-Based LED Recognition Model** names it. The app draws a box round each LED and, for each captured position, saves the frames with those boxes together with `final.csv`. Location estimation is planned.
 
 The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplate). Open this directory in Android Studio; `app` is the application module.
 
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
-- Version: 1.1.0
+- Version: 1.2.0
 - Release date: November 16, 2026
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
-**Topics:** `android` · `kotlin` · `camera2` · `pytorch` · `yolo` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
+**Topics:** `android` · `kotlin` · `camera2` · `pytorch` · `yolo` · `resnet` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
 
 ## Authors
 
@@ -41,7 +41,7 @@ No LEDs were in front of the camera when screenshots 12, 13 and 15 were taken, s
 
 ## Using Q-VLP
 
-**Settings** has six sections. **Modes** is two radio buttons: **Data Collection Mode**, selected on a new installation, runs the recording workflow below; **Inference Mode** adds the LED Recognition Model (see [Inference Mode](#inference-mode)). **Inference** has two checkboxes that can be changed while Inference Mode is selected: **Generate Post-Inference Files** and **Enable CV Algorithms**. **Options** has **Local File Inference** and **FPS Rate**. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. **Factory Reset** has the **Factory Reset** button. There is no Help section.
+**Settings** has six sections. **Modes** is two radio buttons: **Data Collection Mode**, selected on a new installation, runs the recording workflow below; **Inference Mode** adds the two LED models (see [Inference Mode](#inference-mode)). **Inference** has two checkboxes that can be changed while Inference Mode is selected: **Generate Post-Inference Files** and **Enable CV Algorithms**. **Options** has **Local File Inference** and **FPS Rate**. **Camera Settings** has **Rolling Shutter Rate** and **ISO Rate**. **Recording** has **Number of Frames**. **Factory Reset** has the **Factory Reset** button. There is no Help section.
 
 1. Tap **Position** and enter the position ID. Only the ID is typed: there are no X/Y coordinates and no list to import.
 2. Mount the phone with the camera lens over the mark, at the same height for every position.
@@ -66,7 +66,7 @@ No LEDs were in front of the camera when screenshots 12, 13 and 15 were taken, s
 
 The **i** button under the camera-switch button opens everything the screen no longer shows:
 
-- **Inference** (Inference Mode only) — the model, how long the latest frame took and the LEDs found in it.
+- **Inference** (Inference Mode only) — the two models, how long the latest frame took and the LEDs found in it.
 - **Camera** — whether the camera is ready, and the requested and reported settings.
 - **Saving** — the auto-save progress of the session folder.
 - **Last capture** — frames saved, measured fps, which LEDs were detected, any warnings, and the session folder.
@@ -95,28 +95,29 @@ The preview always fills the screen at the camera image's true proportions, on b
 
 ## Inference Mode
 
-Choose **Settings → Modes → Inference Mode**. The camera screen stays as it is, and the **LED Recognition Model** now runs on the preview: every LED it recognises gets a box in that LED's colour (LED 1 red, LED 2 blue, LED 3 green, LED 4 purple) with a tag such as `LED 1 | 98%`, the LED's name and the model's confidence. Nothing else is written on the screen; the **i** button has the details.
+Choose **Settings → Modes → Inference Mode**. The camera screen stays as it is, and two models now run on the preview, one after the other. The **Physical LED Detection Model** finds the LEDs in the frame. The **OOK-Based LED Recognition Model** then names each of them from the on-off keying (OOK) signal it sends. Every named LED gets a box in that LED's colour (LED 1 red, LED 2 blue, LED 3 green, LED 4 purple) with a tag such as `LED 1 | 98%`: the LED's name and how sure the recognition model is of it. An LED that was found but not named gets a grey box tagged `LED Detected | 93%`, with the detection model's confidence. Nothing else is written on the screen; the **i** button has the details.
 
-- **One box per LED.** The model answers with thousands of candidate boxes. The app shows at most one box for each of the four LED classes, so at most four, and never two boxes on the same light: the most confident candidate of each class wins, and a light already given to one class is not given to another. A candidate the model is less than 25% sure of is not shown.
-- **The model.** `app/src/main/assets/qvlp_led_detection_model.pt` is the YOLO26n network trained on Q-VLP frames (1280 × 960, the four LEDs as classes `LED_1` to `LED_4`), exported to TorchScript by the training notebook. The app loads that file as it is with PyTorch (`org.pytorch:pytorch_android`), so a newly trained export can replace it without conversion. It takes a 1 × 3 × 960 × 1280 RGB picture with values from 0 to 1 and answers with 1 × 8 × 25200 values: centre, width, height and four class scores for each candidate.
-- **Frames.** The model is given camera frames in sensor-native orientation, converted to RGB exactly as saved frames are, which is how it was trained. The camera delivers the frames of the FPS rate, one a second by default and up to 30. At the faster rates one model run takes longer than a frame, so a frame is taken whenever the model is free and the others are skipped; the boxes always belong to a recent frame.
-- **Camera settings.** The model was trained on frames taken at a 6000 Hz rolling shutter rate, the default. A very different rate or ISO changes how the LEDs look and can lower its confidence.
-- **Speed on a Pixel 8a.** The model is large for a phone (1280 × 960 input). One run takes about 0.45 s on a still picture and 0.7 to 1.2 s while the camera is running, so the boxes are renewed about once a second at any FPS rate, and more slowly when the phone is warm. The first run also loads the model, which takes about 2 s. After a 30-frame capture the post-inference files take about 30 s.
+- **One box per LED.** The detection model answers with thousands of candidate boxes. The app keeps at most four, one for each LED of the rig, and never two on the same light: the most confident candidates win, and a candidate that overlaps a box already kept is dropped. A candidate the model is less than 25% sure of is not an LED. No two boxes get the same name either: when the recognition model gives two lights the same name, the one it is surest of keeps it and the other stays `LED Detected`. So does an LED whose name the recognition model is less than 50% sure of.
+- **Five frames per LED.** The recognition model was trained on sequences of five frames of one LED, each frame cut out along the LED's box. The app follows each LED from frame to frame (an LED is the same LED when its box overlaps the one in the frame before), keeps its last five crops, resizes each to 128 × 128 pixels and puts them side by side, the earliest on the left. An LED is named from its first frame, as five copies of that frame, and named again from every five new frames; in between it keeps the name it has. An LED that moves away, or is not found in more than five frames, starts again.
+- **The models.** Both are in `app/src/main/assets` as the TorchScript exports of their training notebooks. The app loads them as they are with PyTorch (`org.pytorch:pytorch_android`), so a newly trained export can replace either file without conversion. `qvlp_physical_led_detection_model.pt` is a YOLO26n network trained on Q-VLP frames (1280 × 960) with one class, `LED Detected`. It takes a 1 × 3 × 960 × 1280 RGB picture with values from 0 to 1 and answers with 1 × 5 × 25200 values: centre, width, height and one score for each candidate. `qvlp_ook_led_recognition_model.pt` is a ResNet-50 network. It takes N × 3 × 128 × 640 RGB strips with values from 0 to 1, one strip per LED, and answers with N × 4 probabilities: for LED 1 (signal 1010), LED 2 (1100), LED 3 (1011) and LED 4 (1001).
+- **Frames.** The models are given camera frames in sensor-native orientation, converted to RGB exactly as saved frames are, which is how they were trained. The camera delivers the frames of the FPS rate, one a second by default and up to 30. At the faster rates one run takes longer than a frame, so a frame is taken whenever the models are free and the others are skipped; the boxes always belong to a recent frame, and an LED's five frames are the last five that were taken.
+- **Camera settings.** Both models were trained on frames taken at a 6000 Hz rolling shutter rate, the default. A very different rate or ISO changes how the LEDs look and can lower their confidence.
+- **Speed on a Pixel 8a.** Both models are large for a phone: the detection model because of its 1280 × 960 input, the recognition model because it is a ResNet-50. Measured on a still picture by the on-device test, finding the LEDs takes about 0.45 s and naming four LEDs about 1.8 s more. In a series of frames the LEDs are named at the first frame and at every fifth, so those frames take about 2.3 s and the others about 0.45 s. While the camera is running a run takes longer (the detection model alone took 0.7 to 1.2 s in version 1.1.0); the two models together have not been timed on the live preview or on a capture's post-inference files. The first run also loads the models.
 - **Where a box can be.** The preview fills the screen and crops what does not fit, so an LED near the edge of the frame can be outside the visible preview. Its box is then off screen; the saved inference frames always show the whole frame.
 
 ### Post-inference files
 
-**Settings → Inference → Generate Post-Inference Files** is ticked on a new installation. While it is ticked, Inference Mode also has the capture workflow of Data Collection Mode: choose a position, tap **Start Capture**, and the frames of that position are saved. After the capture the model runs on every saved frame, and the session gets these files:
+**Settings → Inference → Generate Post-Inference Files** is ticked on a new installation. While it is ticked, Inference Mode also has the capture workflow of Data Collection Mode: choose a position, tap **Start Capture**, and the frames of that position are saved. After the capture the two models run on every saved frame, in the order the frames were taken, and the session gets these files:
 
-- `final.csv`, with the position's row built from what the model found (see [What a session contains](#what-a-session-contains));
-- `Inference_Frames`, each frame as a PNG with the inference bounding boxes drawn on it exactly as on the preview, and beside it a metadata file with each LED's centre, confidence and box;
+- `final.csv`, with the position's row built from what the models found (see [What a session contains](#what-a-session-contains));
+- `Inference_Frames`, each frame as a PNG with the inference bounding boxes drawn on it exactly as on the preview, and beside it a metadata file with each LED's centre, box, the recognition model's confidence in its name and the detection model's confidence, and any LED that was found but not named;
 - `Processed_Frames`, the frames after LED detection, as in Data Collection Mode. `Original_Frames` is kept too.
 
 Untick the checkbox and Inference Mode saves nothing: the capture controls disappear and the screen shows the preview with its boxes only. During a capture the preview boxes are hidden, because the frames are going to the capture.
 
 ### Local File Inference
 
-**Settings → Options → Local File Inference** opens a screen with one button, **Choose Image**. Pick an image stored on the phone, for example one of the test frames in **Pictures/Q-VLP Local Inference Test Dataset**, and the app runs the same model on it and shows the picture with the same boxes and tags, a list such as `LED 1 | 98%` under it, and the file name, size and time taken. A picture that is not 1280 × 960 is scaled to fit with grey around it, as in training, and its boxes are drawn on the original. This screen works in either mode and saves no files.
+**Settings → Options → Local File Inference** opens a screen with one button, **Choose Image**. Pick an image stored on the phone, for example one of the test frames in **Pictures/Q-VLP Local Inference Test Dataset**, and the app runs the same two models on it and shows the picture with the same boxes and tags, a list such as `LED 1 | 98%` under it, and the file name, size and time taken. The image is a single frame, so each LED is named from five copies of it. A picture that is not 1280 × 960 is scaled to fit with grey around it for the detection model, as in training; its LEDs are cut out of the original and its boxes are drawn on the original. This screen works in either mode and saves no files.
 
 ### Enable CV Algorithms
 
@@ -152,7 +153,7 @@ session_<id>/
       processed_frame_metadata/
         frame_00000_metadata.json ...              LED_k_u_px, LED_k_v_px, LED_k_detected
       processed_frame_and_metadata_mapping.csv     pairs each processed frame with its metadata file
-  Inference_Frames/                                the frames after the LED Recognition Model (Inference Mode only)
+  Inference_Frames/                                the frames after the two LED models (Inference Mode only)
     inference_position_frames_<id>_<attempt_timestamp>/   one folder per capture
       inference_frames/
         frame_00000.png ...                        the frames, in colour, with the inference bounding boxes
@@ -183,7 +184,7 @@ session_<id>/
 
 **final.csv.** One row per position with 13 columns: `position_id` (the typed ID) and, for LEDs 1–4, `LED_k_u_px`, `LED_k_v_px` and `LED_k_detected`. It is built from the processed frame metadata, read through `Processed_Frames/processed_position_frames_…/processed_frame_and_metadata_mapping.csv`, of the **latest completed capture of each position**, and its rows are in order of position ID. An LED is detected at a position when it was valid in at least 70% of that capture's frames; its coordinates are the median over those valid frames. An LED that is not detected has `0` and empty coordinates. An interrupted capture never replaces a completed one.
 
-For a capture made in Inference Mode the row is built the same way from the **inference frame metadata** instead, read through `inference_frame_and_metadata_mapping.csv`: an LED's `u` and `v` are the centre of the box the LED Recognition Model drew, and the 70% rule and the median are unchanged. The `Processed_Frames` of such a capture are still written and still hold what LED detection found.
+For a capture made in Inference Mode the row is built the same way from the **inference frame metadata** instead, read through `inference_frame_and_metadata_mapping.csv`: an LED's `u` and `v` are the centre of the box of the light the recognition model gave that LED's name, and the 70% rule and the median are unchanged. A light that was found but not named is in no column. The `Processed_Frames` of such a capture are still written and still hold what LED detection found.
 
 `LED_k_u_px` is the column and `LED_k_v_px` the row of LED k's blob centre, in pixels with sub-pixel precision. The origin is the centre of the top-left pixel; u grows to the right and v grows downward, in sensor-native orientation.
 
@@ -268,12 +269,13 @@ This is the capture, LED-detection and LED-recognition workflow, not a full impl
 - Validate actual geometry, fixed settings and sustained capture rate on the mounted target phone. A successful build does not establish device compliance or the PDF's acceptance criteria.
 - Validate LED detection under the real LEDs: thresholds, the camera-reported row time and centroid repeatability have only been checked on simulated frames.
 - Add a settings screen for the detection thresholds and LED frequencies, a row-time calibration mode, and a live preview overlay of detected blobs. The document's `fingerprints.csv` (with per-LED counts and standard deviations) is not generated; `final.csv` carries the core fingerprint columns.
-- The on-device (instrumented) tests were updated for the new session layout but have not been run on a phone, except `LedRecognitionDeviceTest`, which runs the model on a frame of the test dataset and passes on a Pixel 8a.
-- Try Inference Mode under the real LEDs. On the phone, the model was run on frames of the test dataset (Local File Inference and the device test), and Inference Mode, its capture and its files were run with no LEDs in view. The boxes on the live preview have therefore not been seen on real LEDs. Their position on the preview was checked against a saved frame for the front camera only.
+- The on-device (instrumented) tests were updated for the new session layout but have not been run on a phone, except `LedRecognitionDeviceTest`, which runs both models on a frame of the test dataset and passes on a Pixel 8a.
+- Try Inference Mode under the real LEDs. On the phone, the two models have been run by the device test only, on a frame of the test dataset: as one picture, as a series of frames, and through the path that writes a capture's post-inference files. Inference Mode itself, a capture in it and Local File Inference have not been opened on the phone since the two models replaced the earlier single model, and the boxes on the live preview have never been seen on real LEDs. Their position on the preview was checked against a saved frame for the front camera only, in version 1.1.0.
 - **FPS Rate** was tried on a Pixel 8a front camera at 1, 7, 15, 29 and 30 fps: the camera was ready at each and reported 1.000, 7.000, 14.998, 28.999 and 29.990 fps. Captures of 30 frames at 1 fps saved 30 of 30 frames in both modes. The rear camera and other phones were not tried.
-- On the 200 test frames the app's one-box-per-LED rule names 724 of the 800 labelled LEDs and mislabels none. The 76 it leaves out are LED 4 at one camera position, where the model's own confidence is below 25%.
+- On the 200 test frames, taken at two camera positions neither model was trained on, the app's rules find and name all 800 labelled LEDs, name none wrongly and put no box anywhere else. The detection model's lowest confidence there is 87%, and the recognition model's lowest probability for a right name is 89%. This was computed on a computer, with the two model files and the app's rules step for step; on the phone the same answers were confirmed for one of these frames.
+- The recognition model may be telling the LEDs apart by how each one looks rather than by the signal it sends. In its training data every LED has its own look and its own signal, so the data cannot separate the two, and the model names the LEDs of the test sequences just as well from five copies of one frame as from five different frames (100 of 100 either way). Whether it reads the OOK signal can only be shown with recordings in which the same LED sends different signals.
 
-`final.csv`, replacing a position, LED detection and LED recognition with the model are implemented. The CV algorithms behind **Enable CV Algorithms** are not, and no location estimates are produced in this version.
+`final.csv`, replacing a position, LED detection and LED recognition with the two models are implemented. The CV algorithms behind **Enable CV Algorithms** are not, and no location estimates are produced in this version.
 
 Android references: [document import/export](https://developer.android.com/training/data-storage/shared/documents-files), [Camera2 capture controls](https://developer.android.com/reference/android/hardware/camera2/CaptureRequest), [YUV planes](https://developer.android.com/reference/android/graphics/ImageFormat#YUV_420_888), and [temporary sharing permissions](https://developer.android.com/training/secure-file-sharing/share-file).
 
@@ -283,7 +285,7 @@ Use JDK 17 or 21 and the included Gradle wrapper. JDK 25 cannot run this project
 
 The existing build targets Android SDK 34 with minimum SDK 26. Configure the Android SDK location in the ignored `local.properties` file if necessary. Build with `./gradlew :app:assembleDebug` and run existing unit tests with `./gradlew :app:testDebugUnitTest`.
 
-Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the university logo used on the About screen are retained, together with original developer and lab attribution. LED detection and PNG encoding are written in Kotlin and need no CV library. The LED Recognition Model runs with PyTorch Android 2.1.0, the only native library in the app; it is packaged for 64-bit ARM phones (`arm64-v8a`) only, which keeps the APK near 40 MB.
+Generated Gradle and IDE files are ignored. The Q-VLP launcher artwork and the university logo used on the About screen are retained, together with original developer and lab attribution. LED detection and PNG encoding are written in Kotlin and need no CV library. The two LED models run with PyTorch Android 2.1.0, the only native library in the app; it is packaged for 64-bit ARM phones (`arm64-v8a`) only. The APK is about 130 MB, of which the recognition model is 95 MB.
 
 ## Installable release
 

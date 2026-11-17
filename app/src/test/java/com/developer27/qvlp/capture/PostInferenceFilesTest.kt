@@ -8,7 +8,9 @@ import java.io.File
 import java.time.LocalDateTime
 
 class PostInferenceFilesTest {
-    private val leds = listOf(LedDetection(1, 0.98f, 721f, 594f, 760f, 636f), LedDetection(4, 0.5f, 1084f, 6f, 1125f, 44f))
+    // LED 1 and LED 4 were found and named; a third light was found and not named.
+    private val leds = listOf(LedDetection(1, 0.98f, 721f, 594f, 760f, 636f, detected = 0.91f), LedDetection(4, 0.5f, 1084f, 6f, 1125f, 44f),
+        LedDetection(LedDetection.UNNAMED, 0.6f, 300f, 310f, 340f, 350f))
 
     @Test fun anLedIsAtTheCentreOfItsBox() {
         val points = PostInferenceFiles.points(leds)
@@ -29,13 +31,25 @@ class PostInferenceFilesTest {
         assertTrue(data.isNull("LED_2_u_px"))
         assertEquals(0, data.getInt("LED_2_detected"))
         val details = data.getJSONObject("details")
-        assertEquals("qvlp_led_detection_model.pt", details.getString("model"))
+        assertEquals("qvlp_physical_led_detection_model.pt", details.getString("detection_model"))
+        assertEquals("qvlp_ook_led_recognition_model.pt", details.getString("recognition_model"))
+        assertEquals(0.25, details.getDouble("min_confidence"), 1e-6)
+        assertEquals(0.5, details.getDouble("min_recognition_probability"), 1e-6)
+        assertEquals(3, details.getInt("leds_found"))
         assertEquals(240L, details.getLong("inference_ms"))
         val first = details.getJSONArray("leds").getJSONObject(0)
+        // The recognition model is 98% sure it is LED 1; the detection model was 91% sure it is an LED.
         assertEquals(0.98, first.getDouble("confidence"), 1e-6)
+        assertEquals(0.91, first.getDouble("detection_confidence"), 1e-6)
         assertEquals(721.0, first.getDouble("box_left_px"), 0.0)
         assertEquals(636.0, first.getDouble("box_bottom_px"), 0.0)
         assertFalse(details.getJSONArray("leds").getJSONObject(1).has("confidence"))
+        // The light without a name is listed apart and is no part of final.csv.
+        val unnamed = details.getJSONArray("unnamed_leds")
+        assertEquals(1, unnamed.length())
+        assertEquals(0.6, unnamed.getJSONObject(0).getDouble("detection_confidence"), 1e-6)
+        assertEquals(300.0, unnamed.getJSONObject(0).getDouble("box_left_px"), 0.0)
+        assertFalse(unnamed.getJSONObject(0).has("confidence"))
     }
 
     @Test fun theInferenceFolderIsNamedLikeTheCaptureItBelongsTo() {

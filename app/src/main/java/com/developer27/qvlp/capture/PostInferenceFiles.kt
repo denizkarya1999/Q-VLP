@@ -3,12 +3,15 @@ package com.developer27.qvlp.capture
 import com.developer27.qvlp.inference.LedBoxes
 import com.developer27.qvlp.inference.LedDetection
 import com.developer27.qvlp.inference.LedRecognition
+import com.developer27.qvlp.inference.LedTracks
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Runs the LED Recognition Model on one frame of a capture. Given to a capture made in Inference Mode with
- * Generate Post-Inference Files ticked; a Data Collection capture has none.
+ * Runs the Physical LED Detection Model and the OOK-Based LED Recognition Model on one frame of a capture.
+ * Given to a capture made in Inference Mode with Generate Post-Inference Files ticked; a Data Collection
+ * capture has none. The frames of a capture are given in the order they were taken, one at a time: an LED is
+ * named from its last five frames.
  */
 internal fun interface FrameInference {
     /** [rgb] holds [width] × [height] pixels as red, green, blue bytes. It must be left as it is. */
@@ -18,11 +21,12 @@ internal fun interface FrameInference {
 /** [picture] is the frame as a PNG with a box round every LED in [detections], drawn as on the preview. */
 internal class InferredFrame(val picture: ByteArray, val detections: List<LedDetection>, val milliseconds: Long)
 
-/** The post-inference files of a capture: what the LED Recognition Model found in each of its frames. */
+/** The post-inference files of a capture: the LEDs the two models found and named in each of its frames. */
 internal object PostInferenceFiles {
     /**
      * One entry per LED, in the form final.csv is built from. An LED's position is the centre of its box,
-     * measured like every other coordinate in a session: from the centre of the top-left pixel.
+     * measured like every other coordinate in a session: from the centre of the top-left pixel. An LED that
+     * was found but not named belongs to none of the four entries.
      */
     fun points(detections: List<LedDetection>): List<SessionCsv.LedPoint> = (1..SessionCsv.LEDS).map { led ->
         val found = detections.firstOrNull { it.led == led }
@@ -40,17 +44,27 @@ internal object PostInferenceFiles {
             data.put("LED_${index + 1}_v_px", point.v?.let(::rounded) ?: JSONObject.NULL)
             data.put("LED_${index + 1}_detected", if (point.detected) 1 else 0)
         }
-        return data.put("details", JSONObject().put("model", LedRecognition.MODEL_FILE)
-            .put("min_confidence", LedBoxes.MIN_CONFIDENCE.toDouble()).put("inference_ms", frame.milliseconds)
+        return data.put("details", JSONObject()
+            .put("detection_model", LedRecognition.DETECTION_MODEL_FILE)
+            .put("recognition_model", LedRecognition.RECOGNITION_MODEL_FILE)
+            .put("min_confidence", LedBoxes.MIN_CONFIDENCE.toDouble())
+            .put("min_recognition_probability", LedTracks.MIN_PROBABILITY.toDouble())
+            .put("inference_ms", frame.milliseconds).put("leds_found", frame.detections.size)
             .put("leds", JSONArray((1..SessionCsv.LEDS).map { led ->
                 val found = frame.detections.firstOrNull { it.led == led }
                 JSONObject().put("led", led).put("detected", found != null).apply {
-                    if (found != null) put("confidence", rounded(found.confidence.toDouble()))
-                        .put("box_left_px", rounded(found.left.toDouble())).put("box_top_px", rounded(found.top.toDouble()))
-                        .put("box_right_px", rounded(found.right.toDouble())).put("box_bottom_px", rounded(found.bottom.toDouble()))
+                    // confidence is how sure the recognition model is of the name; detection_confidence how sure
+                    // the detection model is that there is an LED.
+                    if (found != null) box(put("confidence", rounded(found.confidence.toDouble())), found)
                 }
-            })))
+            }))
+            .put("unnamed_leds", JSONArray(frame.detections.filter { !it.named }.map { box(JSONObject(), it) })))
     }
+
+    private fun box(data: JSONObject, found: LedDetection): JSONObject = data
+        .put("detection_confidence", rounded(found.detected.toDouble()))
+        .put("box_left_px", rounded(found.left.toDouble())).put("box_top_px", rounded(found.top.toDouble()))
+        .put("box_right_px", rounded(found.right.toDouble())).put("box_bottom_px", rounded(found.bottom.toDouble()))
 
     private fun rounded(value: Double): Double = Math.round(value * 1000.0) / 1000.0
 }

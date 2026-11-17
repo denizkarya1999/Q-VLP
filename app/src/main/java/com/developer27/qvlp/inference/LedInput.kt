@@ -1,7 +1,7 @@
 package com.developer27.qvlp.inference
 
 /**
- * The picture the LED Recognition Model takes: 1280 × 960 pixels, the size of the camera frames it was trained
+ * The picture the Physical LED Detection Model takes: 1280 × 960 pixels, the size of the camera frames it was trained
  * on, as red, green and blue planes with values from 0 to 1.
  */
 internal object LedInput {

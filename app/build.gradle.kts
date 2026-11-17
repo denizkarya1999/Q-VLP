@@ -11,10 +11,10 @@ android {
         applicationId = "com.developer27.qvlp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.1.0"
+        versionCode = 13
+        versionName = "1.2.0"
 
-        // The LED Recognition Model runs with PyTorch, whose library is large: ship it for 64-bit ARM phones only.
+        // The two LED models run with PyTorch, whose library is large: ship it for 64-bit ARM phones only.
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -47,7 +47,7 @@ android {
     }
 
     androidResources {
-        // The model is read straight from the APK.
+        // The models are read straight from the APK.
         noCompress += "pt"
     }
 
@@ -72,7 +72,7 @@ dependencies {
     // Splash screen
     implementation("androidx.core:core-splashscreen:1.0.0")
 
-    // Runs the LED Recognition Model (TorchScript .pt) on the phone
+    // Runs the Physical LED Detection Model and the OOK-Based LED Recognition Model (TorchScript .pt) on the phone
     implementation("org.pytorch:pytorch_android:2.1.0")
 
     // Testing

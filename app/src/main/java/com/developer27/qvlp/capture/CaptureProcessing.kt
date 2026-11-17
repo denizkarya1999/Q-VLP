@@ -15,6 +15,8 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** Turns the raw frames of one finished capture into its saved files. Called on SessionFiles.io. */
 internal object CaptureProcessing {
@@ -25,7 +27,7 @@ internal object CaptureProcessing {
 
     /**
      * [leds] holds the frames whose detection ran; [saved] the frame IDs whose files were all written;
-     * [inferred] what the LED Recognition Model found in each frame it ran on (Inference Mode captures only).
+     * [inferred] the LEDs the two models found and named in each frame they ran on (Inference Mode captures only).
      */
     data class Result(val leds: Map<Int, FrameLeds>, val saved: Set<Int>, val inferred: Map<Int, List<LedDetection>> = emptyMap())
 
@@ -55,8 +57,9 @@ internal object CaptureProcessing {
      * picture, the annotated picture and both metadata files. The mapping files are written last, so their
      * presence means the capture is complete.
      *
-     * With [inference], the LED Recognition Model also runs on every frame and the capture gets its
-     * post-inference files: each frame with the model's boxes, and what the model found in it.
+     * With [inference], the two LED models also run on every frame and the capture gets its post-inference
+     * files: each frame with the models' boxes, and what they found in it. The models are given the frames one
+     * at a time in the order they were taken, because an LED is named from its last five frames.
      */
     fun process(capture: File, frames: List<JSONObject>, rowTime: RowTime, settings: LedDetectionSettings,
                 cameraMetadata: (JSONObject) -> JSONObject, inference: FrameInference? = null,
@@ -74,8 +77,12 @@ internal object CaptureProcessing {
         val saved = ConcurrentHashMap.newKeySet<Int>()
         val done = AtomicInteger()
         try {
-            val leds = frames.map { frame ->
+            // Started in the order the frames were taken, so the frame whose turn it is at the models is always under way.
+            val ordered = frames.sortedBy { it.getInt("frame_id") }
+            val order = if (inference == null) null else InOrder(ordered.size)
+            val leds = ordered.mapIndexed { index, frame ->
                 pool.submit(Callable {
+                  try {
                     val id = frame.getInt("frame_id")
                     val width = frame.getInt("width")
                     val height = frame.getInt("height")
@@ -89,7 +96,7 @@ internal object CaptureProcessing {
                     FramePng.toRgb(pixels, width, height, rgb)
                     val picture = FramePng.encode(rgb, width, height)
                     // The model sees the frame before anything is drawn on it. A frame it cannot run on is still saved.
-                    val inferred = inference?.let { model -> runCatching { model.run(rgb, width, height) }.getOrNull() }
+                    val inferred = inference?.let { model -> order!!.turn(index) { runCatching { model.run(rgb, width, height) }.getOrNull() } }
                     // A frame with nothing found looks the same processed, so its picture is reused as it is.
                     val annotated = if (FrameOverlay.draw(rgb, width, height, found)) FramePng.encode(rgb, width, height) else picture
                     write(File(folders[0], SessionLayout.frameName(id)), picture)
@@ -105,6 +112,10 @@ internal object CaptureProcessing {
                     raw.delete()
                     progress(done.incrementAndGet(), frames.size)
                     Frame(id, found, inferred?.detections)
+                  } finally {
+                    // A frame that failed before its turn must not keep the later ones waiting.
+                    order?.pass(index)
+                  }
                 })
             }.mapNotNull { task -> runCatching { task.get() }.getOrNull() }
             val ids = frames.map { it.getInt("frame_id") }.filter { it in saved }.sorted()
@@ -152,6 +163,34 @@ internal object CaptureProcessing {
 
     private val warmed = java.util.concurrent.atomic.AtomicBoolean(false)
     private const val WARM_UP_RUNS = 60
+
+    /**
+     * Lets the frames of a capture through to the LED models one at a time and in the order they were taken,
+     * while everything else about them is still done side by side.
+     */
+    private class InOrder(count: Int) {
+        private val passed = BooleanArray(count)
+        private var next = 0
+        private val lock = ReentrantLock()
+        private val moved = lock.newCondition()
+
+        /** Waits until every earlier frame has passed, then runs [work]. */
+        fun <T> turn(index: Int, work: () -> T): T {
+            lock.withLock { while (next != index) moved.await() }
+            try {
+                return work()
+            } finally {
+                pass(index)
+            }
+        }
+
+        /** Frame [index] has been to the models, or never will: the frames after it need not wait for it. */
+        fun pass(index: Int) = lock.withLock {
+            passed[index] = true
+            while (next < passed.size && passed[next]) next++
+            moved.signalAll()
+        }
+    }
 
     /** Buffers one worker reuses from frame to frame. */
     private class Workspace(settings: LedDetectionSettings) {

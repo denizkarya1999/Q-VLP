@@ -187,7 +187,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Reads the mode chosen in Settings. Inference Mode runs the LED Recognition Model on the preview and draws
+     * Reads the mode chosen in Settings. Inference Mode runs the two LED models on the preview and draws
      * what it finds. Called before the camera opens, because the camera then also has to deliver its frames.
      */
     private fun applyMode() {
@@ -324,7 +324,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun inferenceDetails(): String {
         val result = inferenceResult
-        val lines = mutableListOf(LedRecognition.MODEL_NAME)
+        val lines = mutableListOf(LedRecognition.DETECTION_MODEL_NAME, LedRecognition.RECOGNITION_MODEL_NAME)
         when {
             result == null -> lines.add(getString(R.string.inference_starting))
             result.error != null -> lines.add(getString(R.string.inference_failed, result.error))

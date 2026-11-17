@@ -7,7 +7,7 @@ import android.graphics.Typeface
 
 /**
  * Draws one LED the way Inference Mode and Local File Inference both show it: a box in the LED's colour with
- * its name and confidence on a tag, for example "LED 1 | 98%".
+ * its name and confidence on a tag, for example "LED 1 | 98%". An LED without a name gets a grey box.
  */
 internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke }
@@ -39,8 +39,10 @@ internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
     companion object {
         /** One colour per LED, as in the project's figures and the processed frames: red, blue, green, purple. */
         private val COLOURS = intArrayOf(0xFFD62728.toInt(), 0xFF1F77B4.toInt(), 0xFF2CA02C.toInt(), 0xFF9467BD.toInt())
+        /** An LED that was found but not named. */
+        private const val UNNAMED_COLOUR = 0xFF7F7F7F.toInt()
 
-        fun colour(led: Int): Int = COLOURS[(led - 1).coerceIn(0, COLOURS.size - 1)]
+        fun colour(led: Int): Int = if (led in 1..COLOURS.size) COLOURS[led - 1] else UNNAMED_COLOUR
 
         /** For drawing on a picture itself: lines and letters sized to stay readable at the picture's width. */
         fun forPicture(width: Int) = LedBoxPainter(stroke = maxOf(2f, width / 420f), textSize = maxOf(14f, width / 38f))

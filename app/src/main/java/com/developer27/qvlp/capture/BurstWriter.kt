@@ -328,16 +328,19 @@ internal class BurstWriter private constructor(
         return detected
     }
 
-    /** The LED numbers the LED Recognition Model found at this position, by the same 70% rule as final.csv. */
+    /** The LED numbers the two models found and named at this position, by the same 70% rule as final.csv. */
     private fun recognise(frames: List<JSONObject>, result: CaptureProcessing.Result): List<Int> {
         val failed = result.saved.size - result.inferred.size
-        if (failed > 0) warnings.add("The LED Recognition Model could not run on $failed of ${result.saved.size} frames.")
+        if (failed > 0) warnings.add("The LED models could not run on $failed of ${result.saved.size} frames.")
         val fingerprint = SessionCsv.fingerprint(frames.mapNotNull { frame ->
             result.inferred[frame.getInt("frame_id")]?.let(PostInferenceFiles::points)
         })
         val detected = fingerprint.indices.filter { fingerprint[it].detected }.map { it + 1 }
-        ledRecognition = JSONObject().put("model", com.developer27.qvlp.inference.LedRecognition.MODEL_FILE)
+        ledRecognition = JSONObject()
+            .put("detection_model", com.developer27.qvlp.inference.LedRecognition.DETECTION_MODEL_FILE)
+            .put("recognition_model", com.developer27.qvlp.inference.LedRecognition.RECOGNITION_MODEL_FILE)
             .put("min_confidence", com.developer27.qvlp.inference.LedBoxes.MIN_CONFIDENCE.toDouble())
+            .put("min_recognition_probability", com.developer27.qvlp.inference.LedTracks.MIN_PROBABILITY.toDouble())
             .put("frames_processed", result.inferred.size).put("min_valid_share", SessionCsv.MIN_VALID_SHARE)
             .put("leds", JSONArray(fingerprint.mapIndexed { index, led ->
                 JSONObject().put("led", index + 1).put("frames_valid", led.valid).put("detected", led.detected)

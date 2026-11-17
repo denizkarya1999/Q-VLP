@@ -17,13 +17,13 @@ class CaptureProcessingTest {
     private val height = 480
     private val rowTime = CaptureProcessing.RowTime(30.0, "test")
 
-    /** A raw camera frame: a dark ceiling with one round light whose rows blink at 1800 Hz. */
-    private fun rawFrame(): ByteArray {
+    /** A raw camera frame: a dark ceiling of brightness [ceiling] with one round light whose rows blink at 1800 Hz. */
+    private fun rawFrame(ceiling: Int = 20): ByteArray {
         val frame = ByteArray(FramePng.i420Size(width, height)) { 128.toByte() } // Neutral colour planes.
         val periodRows = 1.0 / (1800.0 * 30e-6)
         for (row in 0 until height) for (column in 0 until width) {
             val inside = (column - 320.0) * (column - 320.0) + (row - 240.0) * (row - 240.0) <= 60.0 * 60.0
-            frame[row * width + column] = (if (inside) 130 + 70 * sin(2 * PI * row / periodRows) else 20.0).toInt().toByte()
+            frame[row * width + column] = (if (inside) 130 + 70 * sin(2 * PI * row / periodRows) else ceiling.toDouble()).toInt().toByte()
         }
         return frame
     }
@@ -89,7 +89,7 @@ class CaptureProcessingTest {
             assertTrue(File(capture, SessionLayout.FRAMES).mkdirs())
             val frames = (0..2).map { JSONObject().put("frame_id", it).put("width", width).put("height", height) }
             frames.forEach { CaptureProcessing.rawFile(capture, it.getInt("frame_id")).writeBytes(rawFrame()) }
-            // Stands in for the LED Recognition Model: it finds LED 2 in every frame.
+            // Stands in for the two LED models: they find LED 2 in every frame.
             val calls = java.util.concurrent.atomic.AtomicInteger()
             val untouched = java.util.concurrent.atomic.AtomicBoolean(true)
             val model = FrameInference { rgb, _, _ ->
@@ -131,6 +131,53 @@ class CaptureProcessingTest {
             assertEquals(0.97, leds.getJSONObject("details").getJSONArray("leds").getJSONObject(1).getDouble("confidence"), 1e-6)
             val fingerprint = SessionCsv.fingerprint(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)))
             assertEquals("4,,,0,319.500,239.500,1,,,0,,,0", SessionCsv.finalRow("4", fingerprint))
+        } finally { session.deleteRecursively() }
+    }
+
+    @Test(timeout = 60_000) fun theModelIsGivenTheFramesInTheOrderTheyWereTaken() {
+        val session = Files.createTempDirectory("session_").toFile()
+        try {
+            val capture = File(SessionLayout.originals(session), SessionLayout.captureName(5, LocalDateTime.of(2026, 11, 17, 17, 0, 0)))
+            assertTrue(File(capture, SessionLayout.FRAMES).mkdirs())
+            // Listed out of order, and each frame's ceiling is as bright as its number says.
+            val frames = listOf(6, 0, 11, 3, 9, 1, 7, 4, 10, 2, 8, 5).map { JSONObject().put("frame_id", it).put("width", width).put("height", height) }
+            frames.forEach { CaptureProcessing.rawFile(capture, it.getInt("frame_id")).writeBytes(rawFrame(ceiling = 20 + 10 * it.getInt("frame_id"))) }
+            val seen = java.util.Collections.synchronizedList(ArrayList<Int>())
+            val running = java.util.concurrent.atomic.AtomicInteger()
+            val together = java.util.concurrent.atomic.AtomicBoolean(false)
+            val model = FrameInference { rgb, _, _ ->
+                if (running.incrementAndGet() > 1) together.set(true)
+                seen.add(((rgb[0].toInt() and 0xFF) - 20) / 10)
+                Thread.sleep(5)
+                running.decrementAndGet()
+                InferredFrame(byteArrayOf(1), emptyList(), 1L)
+            }
+
+            val result = CaptureProcessing.process(capture, frames, rowTime, LedDetectionSettings(),
+                { JSONObject().put("frame_id", it.getInt("frame_id")) }, model) { _, _ -> }
+
+            assertEquals((0..11).toList(), seen.toList())
+            assertFalse(together.get())
+            assertEquals((0..11).toSet(), result.saved)
+        } finally { session.deleteRecursively() }
+    }
+
+    @Test(timeout = 60_000) fun aFrameThatCannotBeReadDoesNotKeepTheLaterOnesFromTheModel() {
+        val session = Files.createTempDirectory("session_").toFile()
+        try {
+            val capture = File(SessionLayout.originals(session), SessionLayout.captureName(6, LocalDateTime.of(2026, 11, 17, 17, 5, 0)))
+            assertTrue(File(capture, SessionLayout.FRAMES).mkdirs())
+            val frames = (0..5).map { JSONObject().put("frame_id", it).put("width", width).put("height", height) }
+            // Frame 2 has no raw file.
+            frames.filter { it.getInt("frame_id") != 2 }.forEach { CaptureProcessing.rawFile(capture, it.getInt("frame_id")).writeBytes(rawFrame()) }
+            val calls = java.util.concurrent.atomic.AtomicInteger()
+            val model = FrameInference { _, _, _ -> calls.incrementAndGet(); InferredFrame(byteArrayOf(1), emptyList(), 1L) }
+
+            val result = CaptureProcessing.process(capture, frames, rowTime, LedDetectionSettings(),
+                { JSONObject().put("frame_id", it.getInt("frame_id")) }, model) { _, _ -> }
+
+            assertEquals(setOf(0, 1, 3, 4, 5), result.saved)
+            assertEquals(5, calls.get())
         } finally { session.deleteRecursively() }
     }
 

@@ -17,8 +17,10 @@ import com.developer27.qvlp.inference.LedDetection
 import com.developer27.qvlp.inference.LedRecognition
 
 /**
- * Settings → Options → Local File Inference: opens an image stored on the phone and runs the LED Recognition
- * Model on it. The LEDs are shown exactly as in Inference Mode: one box per LED with its name and confidence.
+ * Settings → Options → Local File Inference: opens an image stored on the phone and runs the Physical LED
+ * Detection Model and the OOK-Based LED Recognition Model on it. The LEDs are shown exactly as in Inference
+ * Mode: one box per LED with its name and confidence. The image is one frame, so each LED is named from five
+ * copies of it.
  */
 class LocalFileInferenceActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLocalFileInferenceBinding

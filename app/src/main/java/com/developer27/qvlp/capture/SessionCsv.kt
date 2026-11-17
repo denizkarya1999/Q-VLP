@@ -55,7 +55,7 @@ internal object SessionCsv {
     fun readProcessed(processed: File): List<List<LedPoint>> =
         read(processed, SessionLayout.PROCESSED_METADATA, SessionLayout.PROCESSED_MAPPING)
 
-    /** The same for the post-inference files of an Inference Mode capture: what the LED Recognition Model found. */
+    /** The same for the post-inference files of an Inference Mode capture: the LEDs the two models found and named. */
     fun readInference(inference: File): List<List<LedPoint>> =
         read(inference, SessionLayout.INFERENCE_METADATA, SessionLayout.INFERENCE_MAPPING)
 
@@ -67,7 +67,7 @@ internal object SessionCsv {
     }
 
     /**
-     * Where a capture's row of final.csv comes from: the LED Recognition Model's results when the capture was
+     * Where a capture's row of final.csv comes from: the two LED models' results when the capture was
      * made in Inference Mode, otherwise LED detection's.
      */
     private fun source(capture: File): Pair<File, Boolean> {
