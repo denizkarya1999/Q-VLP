@@ -48,6 +48,29 @@ class CaptureSettingsTest {
     }
 
     @Test
+    fun theFpsRateIsAnyWholeNumberFromTheSlowestToTheFastestTheCameraLists() {
+        // The Pixel 8a at 1280 x 960.
+        val range = CaptureSettings.fpsRange(listOf(1, 5, 10, 15, 24, 25, 30))
+        assertEquals(1..30, range)
+        assertEquals(1, CaptureSettings.parseFps("1", range))
+        assertEquals(7, CaptureSettings.parseFps(" 7 ", range))
+        assertEquals(30, CaptureSettings.parseFps("30", range))
+        for (raw in listOf("0", "31", "-5", "12.5", "fast", "", null)) assertNull(CaptureSettings.parseFps(raw, range))
+        // A camera that lists 60 fps offers it; one that cannot go below 5 fps does not offer less.
+        assertEquals(5..60, CaptureSettings.fpsRange(listOf(60, 30, 5)))
+        assertEquals(30..30, CaptureSettings.fpsRange(emptyList()))
+    }
+
+    @Test
+    fun aCameraStartsAtOneFps() {
+        assertEquals(1, CaptureSettings.DEFAULT_FPS_RATE)
+        assertEquals(1, CaptureSettings.defaultFps(listOf(1, 5, 10, 15, 24, 25, 30)))
+        // A camera that cannot go as slowly as 1 fps starts at the slowest rate it has.
+        assertEquals(5, CaptureSettings.defaultFps(listOf(5, 30, 60)))
+        assertEquals(30, CaptureSettings.defaultFps(emptyList()))
+    }
+
+    @Test
     fun theDefaultsAreSixThousandHertzAndIsoOneHundred() {
         assertEquals(6_000, CaptureSettings.shutterRateHz(CaptureSettings.DEFAULT_EXPOSURE_NS))
         // The default is exactly the exposure of the listed 6000 Hz rate, so Settings shows it selected.

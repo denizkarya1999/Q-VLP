@@ -484,7 +484,7 @@ class CameraHelper(
         return ResearchCapturePolicy.settingsIssue(
             zoom = zoomLevel, fixedResolution = fixedResolution, exposureNs = profile.exposureNs,
             fixedIso = capabilities.isoRange.contains(profile.iso),
-            fps = profile.fps.takeIf { it in profile.stream.frameRates } ?: 0,
+            fps = profile.fps.takeIf { it in CaptureSettings.fpsRange(profile.stream.frameRates) } ?: 0,
             fixedFocus = profile.controls.focusMode in listOf(FocusMode.LOCK, FocusMode.MANUAL, FocusMode.FIXED),
             fixedWhiteBalance = ResearchPreset.isFixedWhiteBalance(profile.controls.whiteBalanceMode)
         )
@@ -752,7 +752,7 @@ class CameraHelper(
                     reportedResearchIssue = researchConfirmation.observe(ResearchCapturePolicy.Reading(
                         reading[CaptureResult.SENSOR_EXPOSURE_TIME], reading[CaptureResult.SENSOR_SENSITIVITY],
                         reading[CaptureResult.SENSOR_FRAME_DURATION], cropMatches
-                    ))
+                    ), profile.fps)
                 } else resetResearchConfirmation()
                 val timestamp = reading[CaptureResult.SENSOR_TIMESTAMP]
                 if (timestamp != null) {
@@ -781,8 +781,8 @@ class CameraHelper(
                 val block = recordingBlockReason()
                 val issue = researchConfigurationIssue() ?: reportedResearchIssue
                 val timingNote = reading[CaptureResult.SENSOR_FRAME_DURATION]
-                    ?.takeIf { block == null && ResearchCapturePolicy.usesFrameTimingTolerance(it) }
-                    ?.let { "\n" + activity.getString(R.string.capture_nominal_cadence, 1_000_000_000.0 / it) }.orEmpty()
+                    ?.takeIf { block == null && ResearchCapturePolicy.usesFrameTimingTolerance(it, profile.fps) }
+                    ?.let { "\n" + activity.getString(R.string.capture_nominal_cadence, profile.fps, 1_000_000_000.0 / it) }.orEmpty()
                 val text = requestedText(profile) + "\n" + fixedCamera?.description.orEmpty() + "\n" + activity.getString(
                     R.string.capture_reported, reportedExposure, reportedIso, cadence
                 ) + "\n" + controls.status() + timingNote + (block?.let { "\n$it" } ?: "")

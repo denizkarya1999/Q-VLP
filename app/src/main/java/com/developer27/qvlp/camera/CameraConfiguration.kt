@@ -59,7 +59,8 @@ internal data class CameraCapabilities(
         return CameraProfile(
             CaptureSettings.DEFAULT_EXPOSURE_NS.coerceIn(
                 exposureRangeNs.lower, maximumExposureNs(stream, fps)
-            ), isoRange.lower, stream, fps, controls.defaults(preferFixedControlDefaults)
+            ), CaptureSettings.DEFAULT_ISO_RATE.coerceIn(isoRange.lower, isoRange.upper), stream, fps,
+            controls.defaults(preferFixedControlDefaults)
         )
     }
 
@@ -119,16 +120,18 @@ internal data class CameraCapabilities(
     }
 }
 
-/** Each camera keeps its own rolling shutter rate (stored as its exposure) and ISO. Everything else is fixed. */
+/** Each camera keeps its own rolling shutter rate (stored as its exposure), ISO and FPS rate. Everything else is fixed. */
 internal class CameraSettingsStore(private val preferences: SharedPreferences, private val cameraId: String) {
     private fun key(name: String) = "camera_${cameraId}_$name"
 
     fun load(capabilities: CameraCapabilities): CameraProfile {
-        // Resolution, frame rate, focus and white balance come from the preset, never from saved settings.
+        // Resolution, focus and white balance come from the preset, never from saved settings.
         // A camera that cannot meet the preset still previews, and the capture gate explains what is missing.
         val defaults = runCatching { ResearchPreset.defaults(capabilities) }.getOrElse { capabilities.defaults() }
         val stream = defaults.stream
-        val fps = defaults.fps
+        // The FPS rate is the operator's choice within what the camera lists for this resolution.
+        val rates = CaptureSettings.fpsRange(stream.frameRates)
+        val fps = preferences.getInt(key(FPS_RATE), CaptureSettings.defaultFps(stream.frameRates)).coerceIn(rates.first, rates.last)
         val firstProfile = !preferences.contains(key("exposure_ns"))
         // Import existing manual choices once. New installations start with the Q-VLP defaults.
         val importLegacy = firstProfile && !preferences.getBoolean("camera_settings_migrated", false) &&
@@ -142,19 +145,25 @@ internal class CameraSettingsStore(private val preferences: SharedPreferences, p
         return CameraProfile(exposure, iso, stream, fps, defaults.controls).also { save(it) }
     }
 
-    /** Forgets the chosen rolling shutter rate and ISO, so the next [load] returns the defaults. */
+    /** Forgets the chosen rolling shutter rate, ISO and FPS rate, so the next [load] returns the defaults. */
     fun reset() {
-        preferences.edit().remove(key("exposure_ns")).remove(key("iso")).apply()
+        preferences.edit().remove(key("exposure_ns")).remove(key("iso")).remove(key(FPS_RATE)).apply()
     }
 
     fun save(profile: CameraProfile) {
         preferences.edit()
             .putLong(key("exposure_ns"), profile.exposureNs)
             .putInt(key("iso"), profile.iso)
+            .putInt(key(FPS_RATE), profile.fps)
             .remove(key("resolution")).remove(key("fps"))
             .remove(key("focus_mode")).remove(key("focus_distance")).remove(key("white_balance_mode"))
             .putBoolean("camera_settings_migrated", true)
             .remove("shutter_speed").remove("iso_value").remove("manual_iso_enabled")
             .apply()
+    }
+
+    private companion object {
+        // Not "fps": earlier versions saved a rate under that name, and it is ignored.
+        const val FPS_RATE = "fps_rate"
     }
 }

@@ -45,6 +45,15 @@
             android:summary="@string/local_file_inference_summary"
             android:persistent="false"
             android:layout="@layout/preference_list_layout" />
+        <EditTextPreference
+            android:key="fps_rate"
+            android:layout="@layout/preference_list_layout"
+            android:title="@string/fps_rate"
+            android:dialogTitle="@string/fps_rate"
+            android:dialogLayout="@layout/dialog_camera_value"
+            android:positiveButtonText="@string/save_setting"
+            android:negativeButtonText="@android:string/cancel"
+            android:persistent="false" />
     </PreferenceCategory>
     <PreferenceCategory
         android:title="@string/camera_settings"

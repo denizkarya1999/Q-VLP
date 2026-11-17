@@ -26,7 +26,9 @@ class ResearchPresetTest {
         assertEquals(Size(1280, 960), profile.stream.size)
         assertEquals(166_666L, profile.exposureNs) // 6000 Hz
         assertEquals(100, profile.iso)
-        assertEquals(30, profile.fps)
+        // The default FPS rate is 1 fps; this camera's slowest listed rate is 15.
+        assertEquals(15, profile.fps)
+        assertEquals(1, ResearchPreset.defaults(capabilities().copy(streams = listOf(stream(1280, 960, listOf(1, 15, 30))))).fps)
         assertEquals(FocusMode.LOCK, profile.controls.focusMode)
         assertEquals(FocusWhiteBalanceCapabilities.WB_LOCK, profile.controls.whiteBalanceMode)
     }
@@ -35,7 +37,6 @@ class ResearchPresetTest {
         val caps = capabilities().copy(preferFixedControlDefaults = true)
         for (profile in listOf(caps.defaults(), ResearchPreset.defaults(caps))) {
             assertEquals(Size(1280, 960), profile.stream.size)
-            assertEquals(30, profile.fps)
             assertEquals(166_666L, profile.exposureNs)
             assertEquals(100, profile.iso)
             assertEquals(FocusMode.MANUAL, profile.controls.focusMode)

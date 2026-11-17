@@ -5,8 +5,8 @@ import org.junit.Test
 
 class FactoryResetTest {
     @Test fun removesEverySettingOfEveryCamera() {
-        val stored = setOf("camera_0_exposure_ns", "camera_0_iso", "camera_0_zoom", "camera_0_physical_id",
-            "camera_1_exposure_ns", "camera_1_iso", "camera_1_zoom", "capture_camera", "capture_frame_count", "app_mode",
+        val stored = setOf("camera_0_exposure_ns", "camera_0_iso", "camera_0_fps_rate", "camera_0_zoom", "camera_0_physical_id",
+            "camera_1_exposure_ns", "camera_1_iso", "camera_1_fps_rate", "camera_1_zoom", "capture_camera", "capture_frame_count", "app_mode",
             "enable_cv_algorithms", "generate_post_inference_files", "session_mode", "position_id", "last_capture_position")
         assertEquals(stored, FactoryReset.keys(stored))
     }

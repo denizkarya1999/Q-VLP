@@ -11,7 +11,7 @@ android {
         applicationId = "com.developer27.qvlp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
+        versionCode = 12
         versionName = "1.1.0"
 
         // The LED Recognition Model runs with PyTorch, whose library is large: ship it for 64-bit ARM phones only.

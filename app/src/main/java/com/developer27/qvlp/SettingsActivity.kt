@@ -75,6 +75,7 @@ class SettingsActivity : AppCompatActivity() {
         private lateinit var profile: CameraProfile
         private lateinit var shutterRate: ListPreference
         private lateinit var iso: EditTextPreference
+        private lateinit var fpsRate: EditTextPreference
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.root_preferences, rootKey)
@@ -91,6 +92,7 @@ class SettingsActivity : AppCompatActivity() {
             CaptureLengthPreferences.bind(this)
             shutterRate = requireNotNull(findPreference("shutter_rate"))
             iso = requireNotNull(findPreference("iso"))
+            fpsRate = requireNotNull(findPreference("fps_rate"))
             val status = requireNotNull(findPreference<Preference>("camera_status"))
             try {
                 val manager = requireContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -107,7 +109,7 @@ class SettingsActivity : AppCompatActivity() {
                 status.isVisible = true
                 status.title = getString(R.string.camera_settings_unavailable)
                 status.summary = error.message ?: getString(R.string.camera_settings_unavailable)
-                listOf(shutterRate, iso).forEach { it.isEnabled = false }
+                listOf(shutterRate, iso, fpsRate).forEach { it.isEnabled = false }
                 return
             }
 
@@ -120,6 +122,19 @@ class SettingsActivity : AppCompatActivity() {
                 (value as? String)?.toIntOrNull()?.takeIf { it in shutterRates() }
                     ?.let { save(profile.copy(exposureNs = CaptureSettings.exposureNanos(it))) }
                 false // Persist the validated profile together, not the raw preference value.
+            }
+            fpsRate.setOnBindEditTextListener {
+                it.inputType = InputType.TYPE_CLASS_NUMBER
+                it.selectAll()
+            }
+            fpsRate.setOnPreferenceChangeListener { _, value ->
+                val range = CaptureSettings.fpsRange(profile.stream.frameRates)
+                val fps = CaptureSettings.parseFps(value as? String, range)
+                if (fps == null) message(getString(R.string.fps_rate_range, range.first, range.last))
+                // An exposure cannot be longer than a frame: a faster FPS rate shortens one that no longer fits.
+                else save(profile.copy(fps = fps, exposureNs = profile.exposureNs
+                    .coerceAtMost(capabilities.maximumExposureNs(profile.stream, fps))))
+                false
             }
             iso.setOnPreferenceChangeListener { _, value ->
                 val sensitivity = (value as? String)?.trim()?.toIntOrNull()
@@ -178,6 +193,10 @@ class SettingsActivity : AppCompatActivity() {
             iso.text = profile.iso.toString()
             iso.summary = getString(R.string.iso_summary, profile.iso)
             iso.dialogMessage = getString(R.string.iso_range, capabilities.isoRange.lower, capabilities.isoRange.upper)
+            val fpsRange = CaptureSettings.fpsRange(profile.stream.frameRates)
+            fpsRate.text = profile.fps.toString()
+            fpsRate.summary = getString(R.string.fps_rate_value, profile.fps)
+            fpsRate.dialogMessage = getString(R.string.fps_rate_range, fpsRange.first, fpsRange.last)
         }
 
         private fun message(text: String) {

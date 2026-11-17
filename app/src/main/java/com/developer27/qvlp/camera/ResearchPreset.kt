@@ -8,9 +8,11 @@ import kotlin.math.abs
  * the operator only chooses the rolling shutter rate and ISO.
  */
 internal object ResearchPreset {
-    /** The fixed values, with the two adjustable ones at their defaults: 6000 Hz and ISO 100. */
+    /** The fixed values, with the three adjustable ones at their defaults: 6000 Hz, ISO 100 and 1 fps. */
     fun defaults(capabilities: CameraCapabilities): CameraProfile {
-        val (stream, fps) = streamAndRate(capabilities)
+        // The resolution is chosen for 30 fps; the camera then starts at the default FPS rate.
+        val stream = streamAndRate(capabilities).first
+        val fps = CaptureSettings.defaultFps(stream.frameRates)
         // A camera that cannot use a default starts at the nearest value it has.
         return CameraProfile(
             CaptureSettings.DEFAULT_EXPOSURE_NS.coerceIn(
