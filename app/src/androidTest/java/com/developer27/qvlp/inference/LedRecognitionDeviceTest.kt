@@ -12,20 +12,24 @@ import java.util.concurrent.FutureTask
 
 /**
  * Runs the Physical LED Detection Model and the OOK-Based LED Recognition Model on the phone, on a frame of
- * the test dataset whose LEDs are known. It touches no session: run it alone with
+ * the test split of the second session's datasets, whose LEDs are known. It touches no session: run it alone with
  * `adb shell am instrument -w -e class com.developer27.qvlp.inference.LedRecognitionDeviceTest …`.
  */
 @RunWith(AndroidJUnit4::class)
 class LedRecognitionDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
-    /** pos10_frame_00000.png of the test dataset: the labelled box of each LED, as left, top, right, bottom. */
+    /**
+     * pos10_frame_00000.png of "Physical LED Light Detection Dataset 2": the labelled box of each LED, as left,
+     * top, right, bottom. The LEDs are numbered by their place on the rig, as in "OOK-Based LED Recognition
+     * Dataset 2": LED 1 bottom-left, LED 2 bottom-right, LED 3 top-left, LED 4 top-right.
+     */
     private val labelled = mapOf(
-        1 to floatArrayOf(769f, 744f, 808f, 785f), 2 to floatArrayOf(1164f, 751f, 1202f, 790f),
-        3 to floatArrayOf(777f, 171f, 815f, 210f), 4 to floatArrayOf(1136f, 153f, 1176f, 193f)
+        1 to floatArrayOf(773f, 797f, 807f, 837f), 2 to floatArrayOf(1167f, 794f, 1206f, 831f),
+        3 to floatArrayOf(784f, 117f, 818f, 149f), 4 to floatArrayOf(1149f, 131f, 1184f, 166f)
     )
 
-    private fun frame(): Bitmap = instrumentation.context.assets.open("pos10_frame_00000.png").use {
+    private fun frame(): Bitmap = instrumentation.context.assets.open("dataset2_pos10_frame_00000.png").use {
         BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 })!!
     }
 
@@ -45,7 +49,7 @@ class LedRecognitionDeviceTest {
             val box = labelled.getValue(found.led)
             val label = LedDetection(found.led, 1f, box[0], box[1], box[2], box[3])
             assertTrue("LED ${found.led} is not where it is labelled: $found", found.overlap(label) > 0.8f)
-            // On a computer the detection model is 89% to 90% sure of each of these LEDs and the recognition model 100%.
+            // On a computer the detection model is 86% to 91% sure of each of these LEDs and the recognition model 100%.
             assertTrue("LED ${found.led} was detected with ${found.detected}", found.detected > 0.8f)
             assertTrue("LED ${found.led} was named with ${found.confidence}", found.confidence > 0.95f)
         }
