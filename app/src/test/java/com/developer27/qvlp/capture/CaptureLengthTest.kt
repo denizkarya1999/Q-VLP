@@ -11,7 +11,7 @@ class CaptureLengthTest {
         }
         assertNotNull(CaptureLength.parse("1"))
         assertNotNull(CaptureLength.parse("1000"))
-        assertEquals(30, CaptureLength().frames)
+        assertEquals(50, CaptureLength().frames)
         assertTrue(runCatching { CaptureLength(0) }.isFailure)
     }
 

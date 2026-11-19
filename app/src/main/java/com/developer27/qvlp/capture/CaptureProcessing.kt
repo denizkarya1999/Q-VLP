@@ -26,12 +26,14 @@ internal object CaptureProcessing {
     }
 
     /**
-     * [leds] holds the frames whose detection ran; [saved] the frame IDs whose files were all written;
-     * [inferred] the LEDs the two models found and named in each frame they ran on (Inference Mode captures only).
+     * [leds] holds the frames LED detection ran on: every frame of a Data Collection capture, and of an
+     * Inference Mode capture only a frame the models could not run on. [saved] holds the frame IDs whose files
+     * were all written; [inferred] the LEDs the two models found and named in each frame they ran on
+     * (Inference Mode captures only).
      */
     data class Result(val leds: Map<Int, FrameLeds>, val saved: Set<Int>, val inferred: Map<Int, List<LedDetection>> = emptyMap())
 
-    private class Frame(val id: Int, val leds: FrameLeds, val inferred: List<LedDetection>?)
+    private class Frame(val id: Int, val leds: FrameLeds?, val inferred: List<LedDetection>?)
 
     /** The camera's own report: its rolling-shutter skew spread over the rows of the frame. */
     fun rowTime(frames: Collection<JSONObject>): RowTime {
@@ -57,9 +59,11 @@ internal object CaptureProcessing {
      * picture, the annotated picture and both metadata files. The mapping files are written last, so their
      * presence means the capture is complete.
      *
-     * With [inference], the two LED models also run on every frame and the capture gets its post-inference
-     * files: each frame with the models' boxes, and what they found in it. The models are given the frames one
-     * at a time in the order they were taken, because an LED is named from its last five frames.
+     * With [inference], the two LED models run on every frame instead of LED detection, and the capture gets its
+     * post-inference files: each frame with the models' boxes, what they found in it, and processed frames
+     * that show the same LEDs. The models are given the frames one at a time in the order they were taken,
+     * because an LED is named from its last five frames. A frame they cannot run on is processed by LED
+     * detection, as in a Data Collection capture.
      */
     fun process(capture: File, frames: List<JSONObject>, rowTime: RowTime, settings: LedDetectionSettings,
                 cameraMetadata: (JSONObject) -> JSONObject, inference: FrameInference? = null,
@@ -90,23 +94,28 @@ internal object CaptureProcessing {
                     val raw = rawFile(capture, id)
                     val pixels = space.pixels(FramePng.i420Size(width, height))
                     DataInputStream(raw.inputStream()).use { it.readFully(pixels, 0, FramePng.i420Size(width, height)) }
-                    // Detection reads the luminance plane, which comes first in the raw frame.
-                    val found = space.detector.detect(pixels, width, height, rowTime.seconds)
                     val rgb = space.rgb(width * height * 3)
                     FramePng.toRgb(pixels, width, height, rgb)
                     val picture = FramePng.encode(rgb, width, height)
-                    // The model sees the frame before anything is drawn on it. A frame it cannot run on is still saved.
+                    // The models see the frame before anything is drawn on it. A frame they cannot run on is still saved.
                     val inferred = inference?.let { model -> order!!.turn(index) { runCatching { model.run(rgb, width, height) }.getOrNull() } }
+                    // The processed frame of an Inference Mode capture holds what the two models found. LED detection
+                    // runs where they did not; it reads the luminance plane, which comes first in the raw frame.
+                    val found = if (inferred == null) space.detector.detect(pixels, width, height, rowTime.seconds) else null
+                    val drawn = if (inferred != null) FrameOverlay.drawInferred(rgb, width, height, inferred.detections)
+                        else FrameOverlay.draw(rgb, width, height, found!!)
                     // A frame with nothing found looks the same processed, so its picture is reused as it is.
-                    val annotated = if (FrameOverlay.draw(rgb, width, height, found)) FramePng.encode(rgb, width, height) else picture
+                    val annotated = if (drawn) FramePng.encode(rgb, width, height) else picture
+                    // What the models found is the processed metadata too: it starts with the same fields.
+                    val inferredData = inferred?.let { PostInferenceFiles.metadata(id, it, inference!!.models).toString(2).toByteArray() }
                     write(File(folders[0], SessionLayout.frameName(id)), picture)
                     write(File(folders[1], SessionLayout.metadataName(id)), cameraMetadata(frame).toString(2).toByteArray())
                     write(File(folders[2], SessionLayout.frameName(id)), annotated)
-                    write(File(folders[3], SessionLayout.metadataName(id)), processedMetadata(id, found, rowTime).toString(2).toByteArray())
+                    write(File(folders[3], SessionLayout.metadataName(id)),
+                        inferredData ?: processedMetadata(id, found!!, rowTime).toString(2).toByteArray())
                     if (inferred != null) {
                         write(File(inferenceFolders[0], SessionLayout.frameName(id)), inferred.picture)
-                        write(File(inferenceFolders[1], SessionLayout.metadataName(id)),
-                            PostInferenceFiles.metadata(id, inferred, inference!!.models).toString(2).toByteArray())
+                        write(File(inferenceFolders[1], SessionLayout.metadataName(id)), inferredData!!)
                     }
                     saved.add(id)
                     raw.delete()
@@ -124,7 +133,7 @@ internal object CaptureProcessing {
             val inferred = leds.filter { it.inferred != null && it.id in saved }.associate { it.id to it.inferred!! }
             if (inference != null) write(File(inferenceFolder, SessionLayout.INFERENCE_MAPPING),
                 SessionLayout.mapping(inferred.keys.sorted()).toByteArray())
-            return Result(leds.associate { it.id to it.leds }, saved, inferred)
+            return Result(leds.filter { it.leds != null }.associate { it.id to it.leds!! }, saved, inferred)
         } finally {
             pool.shutdown()
         }

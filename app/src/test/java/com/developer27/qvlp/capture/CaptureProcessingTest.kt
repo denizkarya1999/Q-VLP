@@ -116,10 +116,25 @@ class CaptureProcessingTest {
                 "$inference/inference_frames/frame_00000.png", "$inference/inference_frames/frame_00001.png",
                 "$inference/inference_frames/frame_00002.png",
             ), files.filter { it.startsWith("Inference_Frames/") })
-            // The original and processed frames are written exactly as in Data Collection Mode.
+            // The original and processed frames have the same files as in Data Collection Mode.
             assertEquals(7, files.count { it.startsWith("Original_Frames/") })
             assertEquals(7, files.count { it.startsWith("Processed_Frames/") })
             assertArrayEquals(byteArrayOf(1, 2, 3), File(session, "$inference/inference_frames/frame_00000.png").readBytes())
+
+            // The processed frames hold what the two models found, not what LED detection finds in this frame:
+            // LED 2 in its box, where LED detection would name the 1800 Hz light LED 1.
+            assertTrue(result.leds.isEmpty())
+            val processed = "Processed_Frames/processed_position_frames_4_20261116_210000"
+            val processedData = File(session, "$processed/processed_frame_metadata/frame_00002_metadata.json").readText()
+            assertEquals(File(session, "$inference/inference_frame_metadata/frame_00002_metadata.json").readText(), processedData)
+            assertEquals(1, JSONObject(processedData).getInt("LED_2_detected"))
+            assertEquals(0, JSONObject(processedData).getInt("LED_1_detected"))
+            assertEquals(com.developer27.qvlp.inference.LedRecognition.RECOGNITION_MODEL_FILE,
+                JSONObject(processedData).getJSONObject("details").getString("recognition_model"))
+            val drawn = FramePng.i420Size(width, height).let { ByteArray(width * height * 3).also { rgb -> FramePng.toRgb(rawFrame(), width, height, rgb) } }
+            assertTrue(com.developer27.qvlp.vision.FrameOverlay.drawInferred(drawn, width, height, listOf(LedDetection(2, 0.97f, 300f, 220f, 340f, 260f))))
+            assertArrayEquals(FramePng.encode(drawn, width, height), File(session, "$processed/processed_frames/frame_00002.png").readBytes())
+            assertEquals(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)), SessionCsv.readProcessed(SessionLayout.processedFolder(capture)))
 
             // The inference metadata gives the centre of the model's box, and final.csv is built from it.
             val leds = JSONObject(File(session, "$inference/inference_frame_metadata/frame_00002_metadata.json").readText())
@@ -195,6 +210,11 @@ class CaptureProcessingTest {
 
             assertEquals(setOf(0, 1), result.saved)
             assertTrue(result.inferred.isEmpty())
+            // Its processed frames come from LED detection, as in a Data Collection capture.
+            assertEquals(setOf(0, 1), result.leds.keys)
+            val details = JSONObject(File(SessionLayout.processedFolder(capture), "processed_frame_metadata/frame_00001_metadata.json").readText()).getJSONObject("details")
+            assertTrue(details.has("blobs_found"))
+            assertFalse(details.has("recognition_model"))
             // The mapping file exists and lists no frame, so the position's LEDs count as not found rather than unknown.
             assertEquals("frame_file,metadata_file\n",
                 File(SessionLayout.inferenceFolder(capture), SessionLayout.INFERENCE_MAPPING).readText())

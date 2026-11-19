@@ -5,14 +5,25 @@ import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.developer27.qvlp.capture.CaptureProcessing
+import com.developer27.qvlp.capture.SessionCsv
+import com.developer27.qvlp.capture.SessionLayout
+import com.developer27.qvlp.vision.FramePng
+import com.developer27.qvlp.vision.LedDetectionSettings
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.time.LocalDateTime
 import java.util.concurrent.FutureTask
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Runs the Physical LED Detection Model and the OOK-Based LED Recognition Model on the phone, on a frame of
- * the test split of the third session's datasets, whose LEDs are known. It touches no session: run it alone with
+ * the test split of the third session's datasets, whose LEDs are known. It touches no session (the capture it
+ * processes is written into the app's cache and deleted): run it alone with
  * `adb shell am instrument -w -e class com.developer27.qvlp.inference.LedRecognitionDeviceTest …`.
  */
 @RunWith(AndroidJUnit4::class)
@@ -90,6 +101,69 @@ class LedRecognitionDeviceTest {
         }
         assertArrayEquals(untouched, rgb)
         Log.i("QvlpLedModelTest", "the frames of a capture: ${frames.map { it.milliseconds }} ms; ${describe(frames.last().detections)}")
+    }
+
+    @Test fun aCaptureGetsItsProcessedFramesFromBothModels() {
+        // A whole Inference Mode capture of six frames, as the camera gives them: luminance with half-resolution colour.
+        val picture = frame()
+        val width = picture.width
+        val height = picture.height
+        val pixels = IntArray(width * height)
+        picture.getPixels(pixels, 0, width, 0, 0, width, height)
+        val raw = ByteArray(FramePng.i420Size(width, height))
+        val chromaWidth = (width + 1) / 2
+        val uPlane = width * height
+        val vPlane = uPlane + chromaWidth * ((height + 1) / 2)
+        for (y in 0 until height) for (x in 0 until width) {
+            val colour = pixels[y * width + x]
+            val red = (colour shr 16) and 0xFF; val green = (colour shr 8) and 0xFF; val blue = colour and 0xFF
+            raw[y * width + x] = (0.299 * red + 0.587 * green + 0.114 * blue).roundToInt().coerceIn(0, 255).toByte()
+            if (y % 2 == 0 && x % 2 == 0) {
+                val at = (y / 2) * chromaWidth + x / 2
+                raw[uPlane + at] = (128 - 0.168736 * red - 0.331264 * green + 0.5 * blue).roundToInt().coerceIn(0, 255).toByte()
+                raw[vPlane + at] = (128 + 0.5 * red - 0.418688 * green - 0.081312 * blue).roundToInt().coerceIn(0, 255).toByte()
+            }
+        }
+        val session = File(instrumentation.targetContext.cacheDir, "device_test_session_${System.nanoTime()}")
+        try {
+            val capture = File(SessionLayout.originals(session), SessionLayout.captureName(28, LocalDateTime.of(2026, 11, 18, 23, 0, 0)))
+            assertTrue(File(capture, SessionLayout.FRAMES).mkdirs())
+            val frames = (0..5).map { JSONObject().put("frame_id", it).put("width", width).put("height", height) }
+            frames.forEach { CaptureProcessing.rawFile(capture, it.getInt("frame_id")).writeBytes(raw) }
+
+            val result = CaptureProcessing.process(capture, frames, CaptureProcessing.RowTime(null, "unknown"), LedDetectionSettings(),
+                { JSONObject().put("frame_id", it.getInt("frame_id")) }, LedRecognition.frames(instrumentation.targetContext)) { _, _ -> }
+
+            assertEquals((0..5).toSet(), result.saved)
+            assertEquals((0..5).toSet(), result.inferred.keys)
+            // LED detection did not run: the processed frames are the two models' alone.
+            assertTrue(result.leds.isEmpty())
+            val processed = SessionLayout.processedFolder(capture)
+            val colours = intArrayOf(0xD62728, 0x1F77B4, 0x2CA02C, 0x9467BD)
+            for (id in 0..5) {
+                val text = File(processed, "${SessionLayout.PROCESSED_METADATA}/${SessionLayout.metadataName(id)}").readText()
+                val data = JSONObject(text)
+                assertEquals(LedRecognition.DETECTION_MODEL_FILE, data.getJSONObject("details").getString("detection_model"))
+                assertEquals(LedRecognition.RECOGNITION_MODEL_FILE, data.getJSONObject("details").getString("recognition_model"))
+                val drawn = BitmapFactory.decodeFile(File(processed, "${SessionLayout.PROCESSED_FRAMES}/${SessionLayout.frameName(id)}").path)
+                for ((led, box) in labelled) {
+                    // Each LED is named and is where it is labelled, and its cross is on the picture in its colour.
+                    assertEquals("frame $id: $text", 1, data.getInt("LED_${led}_detected"))
+                    val u = data.getDouble("LED_${led}_u_px")
+                    val v = data.getDouble("LED_${led}_v_px")
+                    assertTrue("frame $id LED $led at $u, $v", abs(u - ((box[0] + box[2]) / 2 - 0.5)) < 4 && abs(v - ((box[1] + box[3]) / 2 - 0.5)) < 4)
+                    assertEquals("frame $id LED $led", colours[led - 1], drawn.getPixel(u.roundToInt(), v.roundToInt()) and 0xFFFFFF)
+                }
+            }
+            // Both folders give final.csv the same row.
+            assertEquals(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)), SessionCsv.readProcessed(processed))
+            // One processed frame is kept where it can be looked at from a computer.
+            instrumentation.targetContext.getExternalFilesDir(null)?.let { folder ->
+                File(processed, "${SessionLayout.PROCESSED_FRAMES}/${SessionLayout.frameName(5)}").copyTo(File(folder, "device_test_processed_frame.png"), overwrite = true)
+            }
+        } finally {
+            session.deleteRecursively()
+        }
     }
 
     @Test fun onlyTheTickedModelsRun() {

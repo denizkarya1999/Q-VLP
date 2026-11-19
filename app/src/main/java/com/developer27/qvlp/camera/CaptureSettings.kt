@@ -3,12 +3,12 @@ package com.developer27.qvlp.camera
 import java.math.BigDecimal
 
 internal object CaptureSettings {
-    /** A new installation starts at a 6000 Hz rolling shutter rate, ISO 100 and 1 fps. */
+    /** A new installation starts at a 6000 Hz rolling shutter rate, ISO 100 and 30 fps. */
     const val DEFAULT_SHUTTER_RATE_HZ = 6000
     const val DEFAULT_EXPOSURE_NS = 1_000_000_000L / DEFAULT_SHUTTER_RATE_HZ
     const val DEFAULT_ISO_RATE = 100
-    const val DEFAULT_FPS_RATE = 1
-    /** The rate the fixed resolution has to support. It is not the default FPS rate. */
+    const val DEFAULT_FPS_RATE = 30
+    /** The rate the fixed resolution has to support. */
     const val DEFAULT_FPS = 30
 
     /** Accept microseconds with at most nanosecond precision; reject overflow and zero. */
@@ -49,7 +49,7 @@ internal object CaptureSettings {
     fun fpsRange(frameRates: List<Int>): IntRange =
         if (frameRates.isEmpty()) DEFAULT_FPS..DEFAULT_FPS else frameRates.min()..frameRates.max()
 
-    /** The FPS rate a camera starts with: 1 fps, or the slowest rate it has when it cannot go that slowly. */
+    /** The FPS rate a camera starts with: 30 fps, or the rate nearest to it that the camera has. */
     fun defaultFps(frameRates: List<Int>): Int = fpsRange(frameRates).let { DEFAULT_FPS_RATE.coerceIn(it.first, it.last) }
 
     /** A typed FPS rate, or null when it is not a whole number inside [range]. */

@@ -103,7 +103,7 @@
     <PreferenceCategory android:title="@string/recording_settings"
         android:layout="@layout/preference_category_layout">
         <EditTextPreference android:key="capture_frame_count" android:title="@string/capture_frame_count"
-            android:dialogTitle="@string/capture_frame_count" android:defaultValue="30"
+            android:dialogTitle="@string/capture_frame_count" android:defaultValue="50"
             android:dialogLayout="@layout/dialog_camera_value" android:positiveButtonText="@string/save_setting"
             android:negativeButtonText="@android:string/cancel" android:layout="@layout/preference_list_layout" />
     </PreferenceCategory>

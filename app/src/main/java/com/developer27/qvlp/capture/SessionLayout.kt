@@ -15,7 +15,7 @@ import java.time.format.DateTimeFormatter
  *           metadata/frame_00000_metadata.json …        camera settings of each frame
  *           frame_and_metadata_mapping.csv
  *       Processed_Frames/
- *         processed_position_frames_<id>_<timestamp>/   the same capture after LED detection
+ *         processed_position_frames_<id>_<timestamp>/   the same capture after LED detection, or after the two LED models
  *           processed_frames/frame_00000.png …
  *           processed_frame_metadata/frame_00000_metadata.json …
  *           processed_frame_and_metadata_mapping.csv

@@ -1,5 +1,6 @@
 package com.developer27.qvlp.vision
 
+import com.developer27.qvlp.inference.LedDetection
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -34,6 +35,29 @@ class FrameOverlayTest {
         // An accepted LED has a solid box; a rejected one is dashed, so part of its edge stays clear.
         assertTrue((98..141).all { pixel(rgb, it, 78) == 0xD62728 })
         assertTrue((228..271).any { pixel(rgb, it, 158) == 0 })
+    }
+
+    @Test fun marksWhatTheModelsFoundTheSameWay() {
+        val rgb = ByteArray(width * height * 3)
+        assertFalse(FrameOverlay.drawInferred(rgb, width, height, emptyList()))
+        assertTrue(rgb.all { it.toInt() == 0 })
+        val second = LedDetection(2, 0.97f, 100f, 80f, 140f, 120f)
+        val fourth = LedDetection(4, 0.99f, 230.4f, 160.2f, 270.6f, 199.8f)
+        val unnamed = LedDetection(LedDetection.UNNAMED, 0.9f, 20f, 180f, 60f, 220f)
+        assertTrue(FrameOverlay.drawInferred(rgb, width, height, listOf(second, fourth, unnamed)))
+        // The cross is at the centre the metadata gives, 119.5 and 99.5, rounded.
+        assertEquals(0x1F77B4, pixel(rgb, 120, 100))
+        // A solid box just outside the pixels the model's box covers, columns 100 to 139 and rows 80 to 119.
+        assertTrue((98..141).all { pixel(rgb, it, 78) == 0x1F77B4 && pixel(rgb, it, 121) == 0x1F77B4 })
+        assertTrue((78..121).all { pixel(rgb, 98, it) == 0x1F77B4 && pixel(rgb, 141, it) == 0x1F77B4 })
+        assertEquals(0, pixel(rgb, 105, 85))
+        assertEquals(0x9467BD, pixel(rgb, 250, 180))   // LED 4
+        assertEquals(0x9467BD, pixel(rgb, 228, 158))   // its box holds the part-covered edge pixels too
+        assertEquals(0xFFD400, pixel(rgb, 40, 200))    // found by the detection model, not named
+        assertEquals(0, pixel(rgb, 5, 5))
+        // Drawing never leaves the frame.
+        assertTrue(FrameOverlay.drawInferred(ByteArray(width * height * 3), width, height,
+            listOf(LedDetection(1, 1f, -4f, -4f, 6f, 6f), LedDetection(3, 1f, 300f, 220f, 330f, 250f))))
     }
 
     @Test fun drawingNeverLeavesTheFrame() {

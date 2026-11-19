@@ -7,7 +7,7 @@ import com.developer27.qvlp.capture.SessionFiles
 
 /**
  * Puts the settings back the way a new installation starts: the front camera, 1× zoom, the default rolling
- * shutter rate (6000 Hz), ISO 100 and 1 fps on every camera, 30 frames, Inference Mode with both Inference Models
+ * shutter rate (6000 Hz), ISO 100 and 30 fps on every camera, 50 frames, Inference Mode with both Inference Models
  * ticked, Generate Post-Inference Files ticked, Enable CV Algorithms unticked and no position chosen.
  * Recorded sessions and the auto-save folder are not settings and are kept.
  */

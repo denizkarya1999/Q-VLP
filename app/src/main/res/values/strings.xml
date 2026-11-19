@@ -140,7 +140,7 @@
     <string name="factory_reset">Factory Reset</string>
     <string name="factory_reset_summary">Restore all settings to their defaults.</string>
     <string name="factory_reset_title">Restore the default settings?</string>
-    <string name="factory_reset_message">This selects the front camera and restores 1× zoom, a 6000 Hz rolling shutter rate, ISO 100 and 1 fps on both cameras, 30 frames, Inference Mode with both Inference Models ticked, Generate Post-Inference Files ticked and Enable CV Algorithms unticked. The chosen position is cleared.\n\nSaved sessions and the auto-save folder are kept. The next capture starts a new session.</string>
+    <string name="factory_reset_message">This selects the front camera and restores 1× zoom, a 6000 Hz rolling shutter rate, ISO 100 and 30 fps on both cameras, 50 frames, Inference Mode with both Inference Models ticked, Generate Post-Inference Files ticked and Enable CV Algorithms unticked. The chosen position is cleared.\n\nSaved sessions and the auto-save folder are kept. The next capture starts a new session.</string>
     <string name="factory_reset_confirm">Reset</string>
     <string name="factory_reset_done">Settings restored to defaults.</string>
     <string name="camera_permission_help">Tap here to allow camera access.</string>

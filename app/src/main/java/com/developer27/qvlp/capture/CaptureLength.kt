@@ -10,7 +10,7 @@ internal data class CaptureLength(val frames: Int = DEFAULT_FRAMES) {
     }
 
     companion object {
-        const val DEFAULT_FRAMES = 30
+        const val DEFAULT_FRAMES = 50
         const val COUNTDOWN_SECONDS = 3
         val RANGE = 1..1000
         fun parse(raw: String?): CaptureLength? =

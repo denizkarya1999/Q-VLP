@@ -1,10 +1,14 @@
 package com.developer27.qvlp.vision
 
+import com.developer27.qvlp.inference.LedDetection
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
  * Draws what LED detection found onto a frame: a box around every blob, a cross at its centre and its LED name.
  * This is the "processed" picture of a frame. A dashed box marks a blob that was found but not accepted.
+ * A capture made in Inference Mode gets the same picture from what the two LED models found.
  */
 internal object FrameOverlay {
     /** One colour per LED, as in the project's figures: red, blue, green, purple. */
@@ -27,6 +31,29 @@ internal object FrameOverlay {
             val textHeight = 7 * TEXT_SCALE
             val above = blob.top - LINE - textHeight - 4
             text(rgb, width, height, blob.left - LINE, if (above >= 0) above else blob.top + blob.height + LINE + 4, label, colour)
+        }
+        return true
+    }
+
+    /**
+     * The processed picture of a frame from an Inference Mode capture: a box round every LED the detection
+     * model found, a cross at its centre and the name the recognition model gave it. An LED that was found but
+     * not named is yellow and marked "LED ?". Returns false when there was nothing to draw.
+     */
+    fun drawInferred(rgb: ByteArray, width: Int, height: Int, found: List<LedDetection>): Boolean {
+        if (found.isEmpty()) return false
+        for (led in found) {
+            val colour = if (led.named) LED_COLOURS[(led.led - 1).mod(LED_COLOURS.size)] else UNKNOWN
+            // The pixels the box covers; the line is drawn just outside them, as round a blob.
+            val left = floor(led.left).toInt()
+            val top = floor(led.top).toInt()
+            val right = maxOf(left, ceil(led.right).toInt() - 1)
+            val bottom = maxOf(top, ceil(led.bottom).toInt() - 1)
+            box(rgb, width, height, left - LINE, top - LINE, right + LINE, bottom + LINE, colour, dashed = false)
+            // The centre as the metadata gives it: measured from the centre of the top-left pixel.
+            cross(rgb, width, height, ((led.left + led.right) / 2f - 0.5f).roundToInt(), ((led.top + led.bottom) / 2f - 0.5f).roundToInt(), colour)
+            val above = top - LINE - 7 * TEXT_SCALE - 4
+            text(rgb, width, height, left - LINE, if (above >= 0) above else bottom + LINE + 5, if (led.named) "LED ${led.led}" else "LED ?", colour)
         }
         return true
     }

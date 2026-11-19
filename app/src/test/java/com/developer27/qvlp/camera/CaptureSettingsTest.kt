@@ -62,11 +62,13 @@ class CaptureSettingsTest {
     }
 
     @Test
-    fun aCameraStartsAtOneFps() {
-        assertEquals(1, CaptureSettings.DEFAULT_FPS_RATE)
-        assertEquals(1, CaptureSettings.defaultFps(listOf(1, 5, 10, 15, 24, 25, 30)))
-        // A camera that cannot go as slowly as 1 fps starts at the slowest rate it has.
-        assertEquals(5, CaptureSettings.defaultFps(listOf(5, 30, 60)))
+    fun aCameraStartsAtThirtyFps() {
+        assertEquals(30, CaptureSettings.DEFAULT_FPS_RATE)
+        assertEquals(30, CaptureSettings.defaultFps(listOf(1, 5, 10, 15, 24, 25, 30)))
+        assertEquals(30, CaptureSettings.defaultFps(listOf(5, 30, 60)))
+        // A camera that cannot reach 30 fps starts at the fastest rate it has, and one that cannot go that slowly at its slowest.
+        assertEquals(24, CaptureSettings.defaultFps(listOf(1, 15, 24)))
+        assertEquals(60, CaptureSettings.defaultFps(listOf(60, 120)))
         assertEquals(30, CaptureSettings.defaultFps(emptyList()))
     }
 
