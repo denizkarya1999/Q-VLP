@@ -151,6 +151,21 @@ class LedCentroidsTest {
         assertTrue(centroids.centres(emptyList()).leds.isEmpty())
     }
 
+    @Test fun thePixelsOfAPictureGiveTheLuminanceTheCameraGave() {
+        // A saved frame's grey pixels hold the camera's luminance in all three colours: they give it back exactly.
+        val greys = IntArray(256) { level -> (0xFF shl 24) or (level shl 16) or (level shl 8) or level }
+        val luma = ByteArray(258)
+        LedCentroids.luma(greys, 256, luma, 1)
+        assertEquals(0, luma[0].toInt())
+        assertTrue((0..255).all { luma[it + 1].toInt() and 0xFF == it })
+        assertEquals(0, luma[257].toInt())
+        // Colours count by the usual weights: 0.299 red, 0.587 green, 0.114 blue.
+        val colours = intArrayOf(0xFF0000, 0x00FF00, 0x0000FF, 0x804020)
+        val weighed = ByteArray(4)
+        LedCentroids.luma(colours, 4, weighed, 0)
+        assertEquals(listOf(77, 149, 29, 80), weighed.map { it.toInt() and 0xFF })
+    }
+
     @Test fun aFrameOfAnotherSizeStartsAgain() {
         val centroids = LedCentroids()
         repeat(5) { centroids.add(frame(it * 4), width, height) }

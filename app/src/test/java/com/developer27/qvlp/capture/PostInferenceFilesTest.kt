@@ -26,7 +26,7 @@ class PostInferenceFilesTest {
     }
 
     @Test fun theMetadataReadsLikeAProcessedFramesAndAddsTheBoxAndConfidence() {
-        val data = JSONObject(PostInferenceFiles.metadata(7, InferredFrame(ByteArray(0), leds, 240L)).toString())
+        val data = JSONObject(PostInferenceFiles.metadata(7, InferredFrame(leds, 240L)).toString())
         assertEquals(7, data.getInt("frame_id"))
         assertEquals("frame_00007.png", data.getString("frame_file"))
         // final.csv reads these fields the same way it reads a processed frame.
@@ -72,7 +72,7 @@ class PostInferenceFilesTest {
     }
 
     @Test fun theCentroidMetadataHoldsTheBlobCentroidInTheSameFieldsAndSaysWhatWasFound() {
-        val frame = InferredFrame(ByteArray(0), leds, 240L)
+        val frame = InferredFrame(leds, 240L)
         val data = JSONObject(PostInferenceFiles.centroidMetadata(7, frame, FrameCentres(blobs, 2.0, 5)).toString())
         assertEquals(7, data.getInt("frame_id"))
         assertEquals("frame_00007.png", data.getString("frame_file"))
@@ -116,7 +116,7 @@ class PostInferenceFilesTest {
         assertEquals(318.0, unnamed.getDouble("blob_u_px"), 1e-9)
         assertTrue(unnamed.getBoolean("saturated"))
         assertTrue(unnamed.getBoolean("touches_box_edge"))
-        // The inference frame's own metadata is not changed by any of this.
+        // Without blob centroids the metadata does not say where the centre comes from: it is the centre of the box.
         assertEquals("box_centre", PostInferenceFiles.CENTRE_BOX)
         assertFalse(JSONObject(PostInferenceFiles.metadata(7, frame).toString()).getJSONObject("details").has("centre"))
     }
@@ -125,7 +125,7 @@ class PostInferenceFilesTest {
         // Only the detection model ran: the LEDs were found and none has a name.
         val found = listOf(LedDetection(LedDetection.UNNAMED, 0.9f, 721f, 594f, 760f, 636f))
         val detectionOnly = InferenceModels(detection = true, recognition = false)
-        val details = JSONObject(PostInferenceFiles.metadata(3, InferredFrame(ByteArray(0), found, 40L), detectionOnly).toString()).getJSONObject("details")
+        val details = JSONObject(PostInferenceFiles.metadata(3, InferredFrame(found, 40L), detectionOnly).toString()).getJSONObject("details")
         assertEquals("qvlp_physical_led_detection_model.pt", details.getString("detection_model"))
         assertTrue(details.isNull("recognition_model"))
         assertEquals(1, details.getJSONArray("unnamed_leds").length())
@@ -134,7 +134,7 @@ class PostInferenceFilesTest {
         assertTrue(none.isNull("recognition_model"))
     }
 
-    @Test fun theInferenceFolderIsNamedLikeTheCaptureItBelongsTo() {
+    @Test fun theInferenceFolderOfAnEarlierVersionIsNamedLikeTheCaptureItBelongsTo() {
         val capture = File(File("session_x", "Original_Frames"), SessionLayout.captureName(12, LocalDateTime.of(2026, 11, 16, 9, 5, 7)))
         assertEquals(File(File("session_x", "Inference_Frames"), "inference_position_frames_12_20261116_090507"),
             SessionLayout.inferenceFolder(capture))

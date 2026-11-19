@@ -80,7 +80,7 @@ class LedRecognitionDeviceTest {
         Log.i("QvlpLedModelTest", "a series of frames: ${runs.map { it.milliseconds }} ms")
     }
 
-    @Test fun theFramesOfACaptureAreNamedAndDrawn() {
+    @Test fun theFramesOfACaptureAreNamed() {
         // The path of a capture's post-inference files: frames as red, green, blue bytes, one after the other.
         val picture = frame()
         val pixels = IntArray(picture.width * picture.height)
@@ -94,10 +94,6 @@ class LedRecognitionDeviceTest {
         val frames = (1..6).map { capture.run(rgb, picture.width, picture.height) }
         for (inferred in frames) {
             assertEquals(describe(inferred.detections), listOf(1, 2, 3, 4), inferred.detections.map { it.led })
-            // A PNG of the frame with the boxes on it.
-            val drawn = BitmapFactory.decodeByteArray(inferred.picture, 0, inferred.picture.size)
-            assertEquals(picture.width, drawn.width)
-            assertEquals(picture.height, drawn.height)
         }
         assertArrayEquals(untouched, rgb)
         Log.i("QvlpLedModelTest", "the frames of a capture: ${frames.map { it.milliseconds }} ms; ${describe(frames.last().detections)}")
@@ -155,8 +151,10 @@ class LedRecognitionDeviceTest {
                     assertEquals("frame $id LED $led", colours[led - 1], drawn.getPixel(u.roundToInt(), v.roundToInt()) and 0xFFFFFF)
                 }
             }
-            // Both folders give final.csv the same row.
-            assertEquals(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)), SessionCsv.readProcessed(processed))
+            // The capture has its two folders and no other, and final.csv reads every frame as the models'.
+            assertEquals(listOf(SessionLayout.ORIGINALS, SessionLayout.PROCESSED), session.list()!!.sorted())
+            assertEquals(SessionCsv.readProcessed(processed), SessionCsv.readModels(processed))
+            assertEquals(6, SessionCsv.readModels(processed).size)
             // One processed frame is kept where it can be looked at from a computer.
             instrumentation.targetContext.getExternalFilesDir(null)?.let { folder ->
                 File(processed, "${SessionLayout.PROCESSED_FRAMES}/${SessionLayout.frameName(5)}").copyTo(File(folder, "device_test_processed_frame.png"), overwrite = true)

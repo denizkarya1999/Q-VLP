@@ -32,10 +32,13 @@ internal fun interface FrameInference {
     fun run(rgb: ByteArray, width: Int, height: Int): InferredFrame
 }
 
-/** [picture] is the frame as a PNG with a box round every LED in [detections], drawn as on the preview. */
-internal class InferredFrame(val picture: ByteArray, val detections: List<LedDetection>, val milliseconds: Long)
+/** The LEDs the two models found and named in one frame, and how long finding and naming them took. */
+internal class InferredFrame(val detections: List<LedDetection>, val milliseconds: Long)
 
-/** The post-inference files of a capture: the LEDs the two models found and named in each of its frames. */
+/**
+ * The post-inference files of a capture: the LEDs the two models found and named in each of its frames. They are
+ * the processed frame metadata of a capture made in Inference Mode.
+ */
 internal object PostInferenceFiles {
     /**
      * One entry per LED, in the form final.csv is built from. An LED's position is the centre of its box,
@@ -58,10 +61,9 @@ internal object PostInferenceFiles {
     }
 
     /**
-     * The processed frame metadata of a capture made with Enable CV Algorithms. It reads like the metadata
-     * beside the inference frame, with two differences: LED_k_u_px and LED_k_v_px are the blob centroid, and
-     * every LED in details also says what blob was found in its box. LED_k_detected is 1 only when the LED
-     * was named and its box holds a blob.
+     * The processed frame metadata of a capture made with Enable CV Algorithms. It reads like [metadata], with
+     * two differences: LED_k_u_px and LED_k_v_px are the blob centroid, and every LED in details also says what
+     * blob was found in its box. LED_k_detected is 1 only when the LED was named and its box holds a blob.
      */
     fun centroidMetadata(frameId: Int, frame: InferredFrame, centres: FrameCentres, models: InferenceModels = InferenceModels.BOTH,
                          settings: LedDetectionSettings = LedDetectionSettings()): JSONObject {
@@ -103,8 +105,9 @@ internal object PostInferenceFiles {
     const val CENTRE_BLOB = "blob_centroid"
 
     /**
-     * The metadata file beside one inference frame. The first fields are the same as in a processed frame's
-     * metadata (LED_k_u_px, LED_k_v_px, LED_k_detected), so final.csv reads both the same way.
+     * The processed frame metadata of a capture made in Inference Mode. Its first fields are the same as LED
+     * detection's (LED_k_u_px, LED_k_v_px, LED_k_detected), so final.csv reads both the same way. details names
+     * the models that ran, which is also how final.csv tells such a frame from one LED detection had to fill in.
      */
     fun metadata(frameId: Int, frame: InferredFrame, models: InferenceModels = InferenceModels.BOTH): JSONObject {
         val data = JSONObject().put("frame_id", frameId).put("frame_file", SessionLayout.frameName(frameId))

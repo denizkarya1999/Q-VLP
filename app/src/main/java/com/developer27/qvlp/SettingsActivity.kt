@@ -78,9 +78,12 @@ class SettingsActivity : AppCompatActivity() {
         fun postInferenceFiles(preferences: android.content.SharedPreferences): Boolean =
             preferences.getBoolean(POST_INFERENCE_FILES_PREFERENCE, true)
 
-        /** Unticked unless the operator ticks it. Ticked, a captured position also gets the blob centroid of each LED. */
+        /**
+         * Unticked unless the operator ticks it. Ticked, the blob centroid of each LED is found wherever the
+         * models run. Like the other Inference settings it belongs to Inference Mode: outside it nothing extra runs.
+         */
         fun cvAlgorithms(preferences: android.content.SharedPreferences): Boolean =
-            preferences.getBoolean(CV_ALGORITHMS_PREFERENCE, false)
+            inferenceMode(preferences) && preferences.getBoolean(CV_ALGORITHMS_PREFERENCE, false)
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {

@@ -63,15 +63,15 @@ internal object CaptureProcessing {
      * picture, the annotated picture and both metadata files. The mapping files are written last, so their
      * presence means the capture is complete.
      *
-     * With [inference], the two LED models run on every frame instead of LED detection, and the capture gets its
-     * post-inference files: each frame with the models' boxes, what they found in it, and processed frames
-     * that show the same LEDs. The models are given the frames one at a time in the order they were taken,
-     * because an LED is named from its last five frames. A frame they cannot run on is processed by LED
+     * With [inference], the two LED models run on every frame instead of LED detection, and the processed
+     * frames and their metadata hold what the models found. A capture has the same two folders in both modes:
+     * Original_Frames and Processed_Frames. The models are given the frames one at a time in the order they were
+     * taken, because an LED is named from its last five frames. A frame they cannot run on is processed by LED
      * detection, as in a Data Collection capture.
      *
      * When [inference] also asks for blob centroids (Enable CV Algorithms), the blob of each LED is looked for
      * inside its box. The processed frames then show the blobs and their centres, and the processed frame
-     * metadata holds the blob centroids; the inference frames and their metadata stay as the models gave them.
+     * metadata holds the blob centroids beside the models' boxes.
      */
     fun process(capture: File, frames: List<JSONObject>, rowTime: RowTime, settings: LedDetectionSettings,
                 cameraMetadata: (JSONObject) -> JSONObject, inference: FrameInference? = null,
@@ -80,10 +80,7 @@ internal object CaptureProcessing {
         val processed = SessionLayout.processedFolder(capture)
         val folders = listOf(File(capture, SessionLayout.FRAMES), File(capture, SessionLayout.METADATA),
             File(processed, SessionLayout.PROCESSED_FRAMES), File(processed, SessionLayout.PROCESSED_METADATA))
-        val inferenceFolder = SessionLayout.inferenceFolder(capture)
-        val inferenceFolders = if (inference == null) emptyList() else listOf(
-            File(inferenceFolder, SessionLayout.INFERENCE_FRAMES), File(inferenceFolder, SessionLayout.INFERENCE_METADATA))
-        (folders + inferenceFolders).forEach { check(it.isDirectory || it.mkdirs()) { "Cannot create ${it.name}." } }
+        folders.forEach { check(it.isDirectory || it.mkdirs()) { "Cannot create ${it.name}." } }
         val pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors().coerceIn(1, MAX_THREADS))
         val workspace = ThreadLocal.withInitial { Workspace(settings) }
         val saved = ConcurrentHashMap.newKeySet<Int>()
@@ -127,21 +124,17 @@ internal object CaptureProcessing {
                     }
                     // A frame with nothing found looks the same processed, so its picture is reused as it is.
                     val annotated = if (drawn) FramePng.encode(rgb, width, height) else picture
-                    // What the models found is the processed metadata too: it starts with the same fields. With blob
-                    // centroids the processed metadata holds those in the same fields.
-                    val inferredData = inferred?.let { PostInferenceFiles.metadata(id, it, inference!!.models).toString(2).toByteArray() }
-                    val centredData = centres?.let {
-                        PostInferenceFiles.centroidMetadata(id, inferred!!, it, inference!!.models, settings).toString(2).toByteArray()
+                    // What the models found is the processed metadata: it starts with the same fields as LED detection's.
+                    // With blob centroids those fields hold the centroids.
+                    val inferredData = inferred?.let { frame ->
+                        (centres?.let { PostInferenceFiles.centroidMetadata(id, frame, it, inference!!.models, settings) }
+                            ?: PostInferenceFiles.metadata(id, frame, inference!!.models)).toString(2).toByteArray()
                     }
                     write(File(folders[0], SessionLayout.frameName(id)), picture)
                     write(File(folders[1], SessionLayout.metadataName(id)), cameraMetadata(frame).toString(2).toByteArray())
                     write(File(folders[2], SessionLayout.frameName(id)), annotated)
                     write(File(folders[3], SessionLayout.metadataName(id)),
-                        centredData ?: inferredData ?: processedMetadata(id, found!!, rowTime).toString(2).toByteArray())
-                    if (inferred != null) {
-                        write(File(inferenceFolders[0], SessionLayout.frameName(id)), inferred.picture)
-                        write(File(inferenceFolders[1], SessionLayout.metadataName(id)), inferredData!!)
-                    }
+                        inferredData ?: processedMetadata(id, found!!, rowTime).toString(2).toByteArray())
                     saved.add(id)
                     raw.delete()
                     progress(done.incrementAndGet(), frames.size)
@@ -156,8 +149,6 @@ internal object CaptureProcessing {
             write(File(capture, SessionLayout.MAPPING), SessionLayout.mapping(ids).toByteArray())
             write(File(processed, SessionLayout.PROCESSED_MAPPING), SessionLayout.mapping(ids).toByteArray())
             val inferred = leds.filter { it.inferred != null && it.id in saved }.associate { it.id to it.inferred!! }
-            if (inference != null) write(File(inferenceFolder, SessionLayout.INFERENCE_MAPPING),
-                SessionLayout.mapping(inferred.keys.sorted()).toByteArray())
             val centres = leds.filter { it.centres != null && it.id in inferred }.associate { it.id to it.centres!! }
             return Result(leds.filter { it.leds != null }.associate { it.id to it.leds!! }, saved, inferred, centres)
         } finally {

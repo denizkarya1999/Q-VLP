@@ -90,12 +90,12 @@ class CaptureProcessingTest {
             val fingerprint = SessionCsv.fingerprint(SessionCsv.readProcessed(SessionLayout.processedFolder(capture)))
             assertTrue(SessionCsv.finalRow("4", fingerprint).startsWith("4,3"))
             assertTrue(SessionCsv.finalRow("4", fingerprint).endsWith(",1,,,0,,,0,,,0"))
-            // A Data Collection capture has no post-inference files.
-            assertFalse(File(session, SessionLayout.INFERENCE).exists())
+            // No frame of it was processed by the LED models.
+            assertTrue(SessionCsv.readModels(SessionLayout.processedFolder(capture)).isEmpty())
         } finally { session.deleteRecursively() }
     }
 
-    @Test fun anInferenceModeCaptureAlsoGetsItsPostInferenceFiles() {
+    @Test fun anInferenceModeCaptureHasTheSameTwoFoldersWithWhatTheModelsFound() {
         val session = Files.createTempDirectory("session_").toFile()
         try {
             val capture = File(SessionLayout.originals(session), SessionLayout.captureName(4, LocalDateTime.of(2026, 11, 16, 21, 0, 0)))
@@ -109,7 +109,7 @@ class CaptureProcessingTest {
                 calls.incrementAndGet()
                 // The model is given the frame before LED detection draws on it: the dark ceiling is still dark.
                 if (rgb[0].toInt() != 20) untouched.set(false)
-                InferredFrame(byteArrayOf(1, 2, 3), listOf(LedDetection(2, 0.97f, 300f, 220f, 340f, 260f)), 12L)
+                InferredFrame(listOf(LedDetection(2, 0.97f, 300f, 220f, 340f, 260f)), 12L)
             }
 
             val result = CaptureProcessing.process(capture, frames, rowTime, LedDetectionSettings(),
@@ -119,27 +119,21 @@ class CaptureProcessingTest {
             assertEquals(3, calls.get())
             assertTrue(untouched.get())
             assertEquals(setOf(0, 1, 2), result.inferred.keys)
-            val inference = "Inference_Frames/inference_position_frames_4_20261116_210000"
+            // Only Original_Frames and Processed_Frames, with the same files as in Data Collection Mode: for each
+            // frame a picture and its metadata, and one mapping file. Fifty frames would be 202 files.
             val files = session.walkTopDown().filter { it.isFile }.map { it.relativeTo(session).invariantSeparatorsPath }.sorted().toList()
-            assertEquals(listOf(
-                "$inference/inference_frame_and_metadata_mapping.csv",
-                "$inference/inference_frame_metadata/frame_00000_metadata.json",
-                "$inference/inference_frame_metadata/frame_00001_metadata.json",
-                "$inference/inference_frame_metadata/frame_00002_metadata.json",
-                "$inference/inference_frames/frame_00000.png", "$inference/inference_frames/frame_00001.png",
-                "$inference/inference_frames/frame_00002.png",
-            ), files.filter { it.startsWith("Inference_Frames/") })
-            // The original and processed frames have the same files as in Data Collection Mode.
-            assertEquals(7, files.count { it.startsWith("Original_Frames/") })
-            assertEquals(7, files.count { it.startsWith("Processed_Frames/") })
-            assertArrayEquals(byteArrayOf(1, 2, 3), File(session, "$inference/inference_frames/frame_00000.png").readBytes())
+            assertEquals(listOf(SessionLayout.ORIGINALS, SessionLayout.PROCESSED), session.list()!!.sorted())
+            assertEquals(2 * (2 * 3 + 1), files.size)
+            assertEquals(7, files.count { it.startsWith("Original_Frames/position_4_20261116_210000/") })
+            assertEquals(7, files.count { it.startsWith("Processed_Frames/processed_position_frames_4_20261116_210000/") })
+            assertEquals(0, files.count { it.endsWith(".part") })
 
             // The processed frames hold what the two models found, not what LED detection finds in this frame:
             // LED 2 in its box, where LED detection would name the 1800 Hz light LED 1.
             assertTrue(result.leds.isEmpty())
             val processed = "Processed_Frames/processed_position_frames_4_20261116_210000"
             val processedData = File(session, "$processed/processed_frame_metadata/frame_00002_metadata.json").readText()
-            assertEquals(File(session, "$inference/inference_frame_metadata/frame_00002_metadata.json").readText(), processedData)
+            assertEquals(PostInferenceFiles.metadata(2, InferredFrame(listOf(LedDetection(2, 0.97f, 300f, 220f, 340f, 260f)), 12L)).toString(2), processedData)
             assertEquals(1, JSONObject(processedData).getInt("LED_2_detected"))
             assertEquals(0, JSONObject(processedData).getInt("LED_1_detected"))
             assertEquals(com.developer27.qvlp.inference.LedRecognition.RECOGNITION_MODEL_FILE,
@@ -147,17 +141,17 @@ class CaptureProcessingTest {
             val drawn = FramePng.i420Size(width, height).let { ByteArray(width * height * 3).also { rgb -> FramePng.toRgb(rawFrame(), width, height, rgb) } }
             assertTrue(com.developer27.qvlp.vision.FrameOverlay.drawInferred(drawn, width, height, listOf(LedDetection(2, 0.97f, 300f, 220f, 340f, 260f))))
             assertArrayEquals(FramePng.encode(drawn, width, height), File(session, "$processed/processed_frames/frame_00002.png").readBytes())
-            assertEquals(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)), SessionCsv.readProcessed(SessionLayout.processedFolder(capture)))
 
-            // The inference metadata gives the centre of the model's box, and final.csv is built from it.
-            val leds = JSONObject(File(session, "$inference/inference_frame_metadata/frame_00002_metadata.json").readText())
+            // The metadata gives the centre of the model's box, and final.csv is built from it.
+            val leds = JSONObject(processedData)
             assertEquals(1, leds.getInt("LED_2_detected"))
             assertEquals(319.5, leds.getDouble("LED_2_u_px"), 1e-9)
             assertEquals(239.5, leds.getDouble("LED_2_v_px"), 1e-9)
             assertEquals(0, leds.getInt("LED_1_detected"))
             assertTrue(leds.isNull("LED_1_u_px"))
             assertEquals(0.97, leds.getJSONObject("details").getJSONArray("leds").getJSONObject(1).getDouble("confidence"), 1e-6)
-            val fingerprint = SessionCsv.fingerprint(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)))
+            val fingerprint = SessionCsv.fingerprint(SessionCsv.readModels(SessionLayout.processedFolder(capture)))
+            assertEquals(3, fingerprint[1].frames)
             assertEquals("4,,,0,319.500,239.500,1,,,0,,,0", SessionCsv.finalRow("4", fingerprint))
         } finally { session.deleteRecursively() }
     }
@@ -175,7 +169,7 @@ class CaptureProcessingTest {
             val found = listOf(LedDetection(2, 0.97f, 300f, 225f, 340f, 275f), LedDetection(3, 0.8f, 40f, 40f, 80f, 80f))
             val model = object : FrameInference {
                 override val blobCentroids = true
-                override fun run(rgb: ByteArray, width: Int, height: Int) = InferredFrame(byteArrayOf(1, 2, 3), found, 12L)
+                override fun run(rgb: ByteArray, width: Int, height: Int) = InferredFrame(found, 12L)
             }
 
             val result = CaptureProcessing.process(capture, frames, rowTime, LedDetectionSettings(),
@@ -185,18 +179,13 @@ class CaptureProcessingTest {
             assertEquals((0..5).toSet(), result.inferred.keys)
             assertEquals((0..5).toSet(), result.centres.keys)
             val processed = "Processed_Frames/processed_position_frames_4_20261119_100000"
-            val inference = "Inference_Frames/inference_position_frames_4_20261119_100000"
             fun processedData(frame: Int) = JSONObject(File(session, "$processed/processed_frame_metadata/${SessionLayout.metadataName(frame)}").readText())
-            fun inferenceData(frame: Int) = JSONObject(File(session, "$inference/inference_frame_metadata/${SessionLayout.metadataName(frame)}").readText())
+            // Still only the two folders.
+            assertEquals(listOf(SessionLayout.ORIGINALS, SessionLayout.PROCESSED), session.list()!!.sorted())
+            assertEquals(2 * (2 * 6 + 1), session.walkTopDown().count { it.isFile })
 
-            // The inference frame's metadata is what the models gave: the centre of each box, also for the dark one.
-            val boxes = inferenceData(5)
-            assertEquals(319.5, boxes.getDouble("LED_2_u_px"), 1e-9)
-            assertEquals(249.5, boxes.getDouble("LED_2_v_px"), 1e-9)
-            assertEquals(1, boxes.getInt("LED_3_detected"))
-            assertFalse(boxes.getJSONObject("details").has("centre"))
-
-            // The processed frame's metadata holds the centre of the LED itself, ten rows above the centre of its box.
+            // The processed frame's metadata holds the centre of the LED itself, ten rows above the centre of its box,
+            // which is at 319.5, 249.5.
             // From the fifth frame on the last five frames show every row of the LED.
             for (frame in 4..5) {
                 val centroids = processedData(frame)
@@ -220,20 +209,17 @@ class CaptureProcessingTest {
             assertEquals(result.centres.getValue(0).leds[0]!!.v, first.getDouble("LED_2_v_px"), 1e-3)
             assertNull(result.centres.getValue(0).leds[1])
 
-            // The processed picture shows the blob and its centre; the inference picture is the models' own.
+            // The processed picture shows the blob and its centre.
             val drawn = ByteArray(width * height * 3).also { FramePng.toRgb(keyedFrame(shift = 20), width, height, it) }
             assertTrue(com.developer27.qvlp.vision.FrameOverlay.drawCentres(drawn, width, height, found, result.centres.getValue(5).leds))
             assertArrayEquals(FramePng.encode(drawn, width, height), File(session, "$processed/processed_frames/frame_00005.png").readBytes())
-            assertArrayEquals(byteArrayOf(1, 2, 3), File(session, "$inference/inference_frames/frame_00005.png").readBytes())
 
             // final.csv takes the blob centroids: the median of the six frames, and LED 3 is not at this position.
-            val centroids = SessionCsv.fingerprint(SessionCsv.readCentroids(SessionLayout.processedFolder(capture), SessionLayout.inferenceFolder(capture)))
+            val centroids = SessionCsv.fingerprint(SessionCsv.readModels(SessionLayout.processedFolder(capture)))
             assertEquals(6, centroids[1].frames)
             assertEquals(320.0, centroids[1].u!!, 1e-9)
             assertEquals(240.0, centroids[1].v!!, 2.0)
             assertTrue(SessionCsv.finalRow("4", centroids).endsWith(",1,,,0,,,0"))
-            assertEquals("4,,,0,319.500,249.500,1,59.500,59.500,1,,,0",
-                SessionCsv.finalRow("4", SessionCsv.fingerprint(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)))))
         } finally { session.deleteRecursively() }
     }
 
@@ -253,7 +239,7 @@ class CaptureProcessingTest {
                 seen.add(((rgb[0].toInt() and 0xFF) - 20) / 10)
                 Thread.sleep(5)
                 running.decrementAndGet()
-                InferredFrame(byteArrayOf(1), emptyList(), 1L)
+                InferredFrame(emptyList(), 1L)
             }
 
             val result = CaptureProcessing.process(capture, frames, rowTime, LedDetectionSettings(),
@@ -274,7 +260,7 @@ class CaptureProcessingTest {
             // Frame 2 has no raw file.
             frames.filter { it.getInt("frame_id") != 2 }.forEach { CaptureProcessing.rawFile(capture, it.getInt("frame_id")).writeBytes(rawFrame()) }
             val calls = java.util.concurrent.atomic.AtomicInteger()
-            val model = FrameInference { _, _, _ -> calls.incrementAndGet(); InferredFrame(byteArrayOf(1), emptyList(), 1L) }
+            val model = FrameInference { _, _, _ -> calls.incrementAndGet(); InferredFrame(emptyList(), 1L) }
 
             val result = CaptureProcessing.process(capture, frames, rowTime, LedDetectionSettings(),
                 { JSONObject().put("frame_id", it.getInt("frame_id")) }, model) { _, _ -> }
@@ -303,9 +289,10 @@ class CaptureProcessingTest {
             val details = JSONObject(File(SessionLayout.processedFolder(capture), "processed_frame_metadata/frame_00001_metadata.json").readText()).getJSONObject("details")
             assertTrue(details.has("blobs_found"))
             assertFalse(details.has("recognition_model"))
-            // The mapping file exists and lists no frame, so the position's LEDs count as not found rather than unknown.
-            assertEquals("frame_file,metadata_file\n",
-                File(SessionLayout.inferenceFolder(capture), SessionLayout.INFERENCE_MAPPING).readText())
+            // Those frames are no part of the models' row of final.csv: LED detection names the LEDs another way.
+            assertTrue(SessionCsv.readModels(SessionLayout.processedFolder(capture)).isEmpty())
+            assertEquals(2, SessionCsv.readProcessed(SessionLayout.processedFolder(capture)).size)
+            assertFalse(File(session, SessionLayout.INFERENCE).exists())
             assertTrue(File(capture, "frames/frame_00001.png").isFile)
         } finally { session.deleteRecursively() }
     }

@@ -148,6 +148,18 @@ internal class LedCentroids(private val settings: LedDetectionSettings = LedDete
     }
 
     companion object {
+        /**
+         * The luminance of [count] pixels of a picture, given as red, green and blue in the low three bytes of
+         * each of [colours], written to [target] from [offset] on. The weights are those of the camera's frames,
+         * so a grey pixel of a saved frame gets back the luminance the camera gave it.
+         */
+        fun luma(colours: IntArray, count: Int, target: ByteArray, offset: Int) {
+            for (index in 0 until count) {
+                val colour = colours[index]
+                target[offset + index] = ((77 * ((colour shr 16) and 0xFF) + 150 * ((colour shr 8) and 0xFF) + 29 * (colour and 0xFF) + 128) shr 8).toByte()
+            }
+        }
+
         /** The frames a blob is read from: this one and the four before it, like the five frames an LED is named from. */
         const val FRAMES = 5
         /**

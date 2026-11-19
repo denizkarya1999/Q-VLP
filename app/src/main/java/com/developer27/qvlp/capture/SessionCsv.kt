@@ -55,39 +55,56 @@ internal object SessionCsv {
     fun readProcessed(processed: File): List<List<LedPoint>> =
         read(File(processed, SessionLayout.PROCESSED_METADATA), File(processed, SessionLayout.PROCESSED_MAPPING))
 
-    /** The same for the post-inference files of an Inference Mode capture: the LEDs the two models found and named. */
+    /**
+     * The same for a capture made in Inference Mode: the LEDs the two models found and named, or, with Enable CV
+     * Algorithms, the blob centroid of each. Only the frames the models ran on count. A frame they could not run
+     * on was processed by LED detection, which names the LEDs another way, and is left out.
+     */
+    fun readModels(processed: File): List<List<LedPoint>> =
+        read(File(processed, SessionLayout.PROCESSED_METADATA), File(processed, SessionLayout.PROCESSED_MAPPING), ::fromModels)
+
+    /** Whether the two LED models ran on the frame this processed metadata belongs to: its details name them. */
+    fun fromModels(metadata: JSONObject): Boolean = metadata.optJSONObject("details")?.has("detection_model") == true
+
+    /**
+     * For an Inference Mode capture of version 1.4.0 or earlier, which keeps the models' results in
+     * Inference_Frames: the LEDs the two models found and named.
+     */
     fun readInference(inference: File): List<List<LedPoint>> =
         read(File(inference, SessionLayout.INFERENCE_METADATA), File(inference, SessionLayout.INFERENCE_MAPPING))
 
     /**
-     * The same for an Inference Mode capture made with Enable CV Algorithms: the blob centroid of each named
-     * LED. They are in the processed frame metadata, and only the frames the models ran on count, which are
-     * the ones the inference mapping lists. A frame's metadata file has the same name in both folders.
+     * For a capture of version 1.4.0 made with Enable CV Algorithms: the blob centroid of each named LED. They
+     * are in the processed frame metadata, and only the frames the models ran on count, which are the ones the
+     * inference mapping lists. A frame's metadata file has the same name in both folders.
      */
     fun readCentroids(processed: File, inference: File): List<List<LedPoint>> =
         read(File(processed, SessionLayout.PROCESSED_METADATA), File(inference, SessionLayout.INFERENCE_MAPPING))
 
-    private fun read(folder: File, mapping: File): List<List<LedPoint>> =
+    private fun read(folder: File, mapping: File, counts: (JSONObject) -> Boolean = { true }): List<List<LedPoint>> =
         SessionLayout.readMapping(mapping).mapNotNull { (_, metadata) ->
-            runCatching { points(JSONObject(File(folder, metadata).readText())) }.getOrNull()
+            runCatching { JSONObject(File(folder, metadata).readText()).takeIf(counts)?.let(::points) }.getOrNull()
         }
 
     /** [mapping] is the file whose presence and contents say the frames behind [read] are complete. */
     private class Source(val name: String, val mapping: File, val read: () -> List<List<LedPoint>>)
 
     /**
-     * Where a capture's row of final.csv comes from. A Data Collection capture: LED detection. An Inference
-     * Mode capture: the two LED models' results, and with [centroids] (Enable CV Algorithms was ticked) the
-     * blob centroid found inside each of their boxes.
+     * Where a capture's row of final.csv comes from. A Data Collection capture: LED detection. A capture made in
+     * Inference Mode ([inferred]): the two LED models' results, and with [centroids] (Enable CV Algorithms was
+     * ticked) the blob centroid found inside each of their boxes. Both are in the processed frame metadata.
      */
-    private fun source(capture: File, centroids: Boolean): Source {
+    private fun source(capture: File, inferred: Boolean, centroids: Boolean): Source {
         val processed = SessionLayout.processedFolder(capture)
+        val processedMapping = File(processed, SessionLayout.PROCESSED_MAPPING)
         val inference = SessionLayout.inferenceFolder(capture)
         val inferenceMapping = File(inference, SessionLayout.INFERENCE_MAPPING)
+        val models = if (centroids) "led_blob_centroid" else "led_recognition_model"
         return when {
-            !inferenceMapping.isFile -> Source("led_detection", File(processed, SessionLayout.PROCESSED_MAPPING)) { readProcessed(processed) }
-            centroids -> Source("led_blob_centroid", inferenceMapping) { readCentroids(processed, inference) }
-            else -> Source("led_recognition_model", inferenceMapping) { readInference(inference) }
+            // A capture of version 1.4.0 or earlier, with its Inference_Frames folder.
+            inferenceMapping.isFile -> Source(models, inferenceMapping) { if (centroids) readCentroids(processed, inference) else readInference(inference) }
+            inferred -> Source(models, processedMapping) { readModels(processed) }
+            else -> Source("led_detection", processedMapping) { readProcessed(processed) }
         }
     }
 
@@ -97,8 +114,11 @@ internal object SessionCsv {
         return (sorted[(sorted.size - 1) / 2] + sorted[sorted.size / 2]) / 2.0
     }
 
-    /** [centroids]: the capture's record says its LED positions are blob centroids. */
-    private data class Attempt(val folder: File, val position: Int, val finished: Instant, val centroids: Boolean)
+    /**
+     * [inferred]: the capture's record says the two LED models ran on it, so it was made in Inference Mode.
+     * [centroids]: it says the LED positions are blob centroids.
+     */
+    private data class Attempt(val folder: File, val position: Int, val finished: Instant, val inferred: Boolean, val centroids: Boolean)
     // A capture never changes once processed, so its fingerprint is read from its files only once per run.
     private val fingerprints = HashMap<String, Pair<String, List<LedFingerprint>>>()
 
@@ -124,7 +144,7 @@ internal object SessionCsv {
                 excluded.put(JSONObject().put("attempt", folder.name).put("reason", data?.optString("state") ?: "unreadable_metadata"))
                 null
             } else Attempt(folder, data.getJSONObject("position").getInt("position_id"), Instant.parse(data.getString("finished_at")),
-                data.optJSONObject("led_recognition")?.optString("centre") == PostInferenceFiles.CENTRE_BLOB)
+                data.has("led_recognition"), data.optJSONObject("led_recognition")?.optString("centre") == PostInferenceFiles.CENTRE_BLOB)
         }
         // A position captured again is replaced: only its latest completed capture counts.
         val selected = completed.groupBy { it.position }.mapValues { (_, attempts) ->
@@ -138,7 +158,7 @@ internal object SessionCsv {
         val lines = ArrayList<String>()
         lines.add(finalHeader)
         attempts.forEach { attempt ->
-            val source = source(attempt.folder, attempt.centroids)
+            val source = source(attempt.folder, attempt.inferred, attempt.centroids)
             val version = "${source.name}:${stamp(source.mapping)}"
             val leds = fingerprints[source.mapping.path]?.takeIf { it.first == version }?.second
                 ?: fingerprint(source.read()).also { fingerprints[source.mapping.path] = version to it }

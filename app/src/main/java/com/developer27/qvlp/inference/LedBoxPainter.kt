@@ -10,7 +10,7 @@ import android.graphics.Typeface
  * its name and confidence on a tag, for example "LED 1 | 98%". An LED without a name gets a grey box. On the
  * preview it can also mark an LED's blob centroid with a small cross.
  */
-internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
+internal class LedBoxPainter(private val stroke: Float, textSize: Float, private val arm: Float = textSize * 0.5f) {
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke }
     private val tag = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -19,10 +19,10 @@ internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
         typeface = Typeface.DEFAULT_BOLD
     }
     private val padding = textSize * 0.3f
-    private val mark = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke; strokeCap = Paint.Cap.BUTT }
+    // The cross at a blob centroid, half as thick as the box, with arms of length arm.
+    private val mark = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = maxOf(1.5f, stroke / 2f) }
     // A dark edge under the cross, so it also shows on the white of an overexposed LED.
-    private val markEdge = Paint(mark).apply { strokeWidth = stroke * 2f; color = Color.BLACK }
-    private val arm = textSize * 0.5f
+    private val markEdge = Paint(mark).apply { strokeWidth = mark.strokeWidth * 2f; color = Color.BLACK }
 
     /** The box edges are in the canvas's own pixels. */
     fun draw(canvas: Canvas, left: Float, top: Float, right: Float, bottom: Float, found: LedDetection) {
@@ -45,7 +45,7 @@ internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
     fun drawCentre(canvas: Canvas, x: Float, y: Float, found: LedDetection) {
         mark.color = colour(found.led)
         for (paint in arrayOf(markEdge, mark)) {
-            val reach = arm + (paint.strokeWidth - stroke) / 2f
+            val reach = arm + (paint.strokeWidth - mark.strokeWidth) / 2f
             canvas.drawLine(x - reach, y, x + reach, y, paint)
             canvas.drawLine(x, y - reach, x, y + reach, paint)
         }
@@ -60,6 +60,8 @@ internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
         fun colour(led: Int): Int = if (led in 1..COLOURS.size) COLOURS[led - 1] else UNNAMED_COLOUR
 
         /** For drawing on a picture itself: lines and letters sized to stay readable at the picture's width. */
-        fun forPicture(width: Int) = LedBoxPainter(stroke = maxOf(2f, width / 420f), textSize = maxOf(14f, width / 38f))
+        fun forPicture(width: Int) = LedBoxPainter(stroke = maxOf(2f, width / 420f), textSize = maxOf(14f, width / 38f),
+            // An LED is some fifteen pixels across in a 1280 pixel frame: the cross stays about that size.
+            arm = maxOf(5f, width / 160f))
     }
 }

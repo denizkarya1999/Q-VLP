@@ -70,7 +70,29 @@ class SessionCsvFinalTest {
         } finally { processed.deleteRecursively() }
     }
 
-    @Test fun blobCentroidsAreReadFromTheProcessedMetadataOfTheFramesTheModelsRanOn() {
+    @Test fun anInferenceModeCaptureCountsOnlyTheFramesTheModelsRanOn() {
+        val processed = Files.createTempDirectory("processed_position_frames_3_").toFile()
+        try {
+            val folder = File(processed, SessionLayout.PROCESSED_METADATA).apply { mkdirs() }
+            listOf(100.0, 102.0, 104.0).forEachIndexed { index, u ->
+                File(folder, SessionLayout.metadataName(index)).writeText(JSONObject().put("LED_2_u_px", u).put("LED_2_v_px", 50.0)
+                    .put("LED_2_detected", 1).put("details", JSONObject().put("detection_model", "qvlp_physical_led_detection_model.pt")).toString())
+            }
+            // The models could not run on the fourth frame. LED detection processed it, and calls the same light LED 1.
+            File(folder, SessionLayout.metadataName(3)).writeText(JSONObject().put("LED_1_u_px", 103.0).put("LED_1_v_px", 51.0)
+                .put("LED_1_detected", 1).put("details", JSONObject().put("blobs_found", 1)).toString())
+            File(processed, SessionLayout.PROCESSED_MAPPING).writeText(SessionLayout.mapping(listOf(0, 1, 2, 3)))
+            val frames = SessionCsv.readModels(processed)
+            assertEquals(3, frames.size)
+            assertEquals("3,,,0,102.000,50.000,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
+            // Read as a Data Collection capture, all four frames would count.
+            assertEquals(4, SessionCsv.readProcessed(processed).size)
+            assertTrue(SessionCsv.fromModels(JSONObject().put("details", JSONObject().put("detection_model", JSONObject.NULL))))
+            assertFalse(SessionCsv.fromModels(JSONObject().put("frame_id", 0)))
+        } finally { processed.deleteRecursively() }
+    }
+
+    @Test fun aCaptureOfVersionOneFourReadsItsBlobCentroidsThroughTheInferenceMapping() {
         val session = Files.createTempDirectory("session_").toFile()
         try {
             val capture = File(SessionLayout.originals(session), "position_3_20261119_100000")

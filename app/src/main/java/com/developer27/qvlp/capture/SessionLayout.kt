@@ -19,11 +19,10 @@ import java.time.format.DateTimeFormatter
  *           processed_frames/frame_00000.png …
  *           processed_frame_metadata/frame_00000_metadata.json …
  *           processed_frame_and_metadata_mapping.csv
- *       Inference_Frames/                               only for captures made in Inference Mode
- *         inference_position_frames_<id>_<timestamp>/   the same capture after the two LED models
- *           inference_frames/frame_00000.png …
- *           inference_frame_metadata/frame_00000_metadata.json …
- *           inference_frame_and_metadata_mapping.csv
+ *
+ * A capture of 50 frames is 202 files: 101 in each of its two folders. Inference Mode captures of versions 1.1.0
+ * to 1.4.0 also have a third folder, Inference_Frames, with the frames as the preview showed them and the models'
+ * results. It is no longer written, and it is still read where it exists.
  */
 internal object SessionLayout {
     const val FINAL = "final.csv"
@@ -35,6 +34,7 @@ internal object SessionLayout {
     const val PROCESSED_FRAMES = "processed_frames"
     const val PROCESSED_METADATA = "processed_frame_metadata"
     const val PROCESSED_MAPPING = "processed_frame_and_metadata_mapping.csv"
+    // The folder Inference Mode captures had up to version 1.4.0. Only read.
     const val INFERENCE = "Inference_Frames"
     const val INFERENCE_FRAMES = "inference_frames"
     const val INFERENCE_METADATA = "inference_frame_metadata"
@@ -60,7 +60,7 @@ internal object SessionLayout {
     fun processedFolder(capture: File): File =
         File(File(session(capture), PROCESSED), PROCESSED_PREFIX + capture.name.removePrefix(CAPTURE_PREFIX))
 
-    /** Where an Inference Mode capture keeps the frames with the model's boxes. Other captures have no such folder. */
+    /** Where an Inference Mode capture of version 1.4.0 or earlier keeps the frames with the models' boxes. Other captures have no such folder. */
     fun inferenceFolder(capture: File): File =
         File(File(session(capture), INFERENCE), INFERENCE_PREFIX + capture.name.removePrefix(CAPTURE_PREFIX))
 

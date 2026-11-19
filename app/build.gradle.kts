@@ -11,8 +11,8 @@ android {
         applicationId = "com.developer27.qvlp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.4.0"
+        versionCode = 19
+        versionName = "1.5.0"
 
         // The two LED models run with PyTorch, whose library is large: ship it for 64-bit ARM phones only.
         ndk {

@@ -62,8 +62,7 @@ internal object LedRecognition {
     fun execute(work: () -> Unit) = worker.execute(work)
 
     /**
-     * For a capture's post-inference files: finds and names the LEDs in each frame and draws them, on the
-     * models' thread. The frames of the capture must be given in the order they were taken, because an LED is
+     * For a capture's post-inference files: finds and names the LEDs in each frame, on the models' thread. The frames of the capture must be given in the order they were taken, because an LED is
      * named from its last five frames. The caller waits for the answer, so this must not be used from inside
      * [execute]. With [centroids] (Enable CV Algorithms) the capture also gets the blob centroid of every LED.
      */
@@ -74,7 +73,11 @@ internal object LedRecognition {
             override val models = selected
             override val blobCentroids = centroids
             override fun run(rgb: ByteArray, width: Int, height: Int): InferredFrame =
-                worker.submit(Callable { annotate(app, rgb, width, height, tracks, selected) }).get()
+                worker.submit(Callable {
+                    val started = SystemClock.elapsedRealtime()
+                    val found = detectRgb(app, rgb, width, height, tracks, selected)
+                    InferredFrame(found, SystemClock.elapsedRealtime() - started)
+                }).get()
         }
     }
 
@@ -136,31 +139,6 @@ internal object LedRecognition {
     private fun named(found: List<LedDetection>, tracks: LedTracks, models: InferenceModels,
                       crop: (LedDetection) -> ByteArray): List<LedDetection> =
         if (models.recognition) tracks.update(found, crop, ::recognise) else found
-
-    /** The frame as a PNG with the LEDs the models found drawn on it, exactly as Inference Mode shows them. */
-    private fun annotate(context: Context, frame: ByteArray, width: Int, height: Int, tracks: LedTracks,
-                         models: InferenceModels): InferredFrame {
-        val started = SystemClock.elapsedRealtime()
-        val found = detectRgb(context, frame, width, height, tracks, models)
-        val milliseconds = SystemClock.elapsedRealtime() - started
-        val picture = bitmap(frame, width, height)
-        try {
-            val painter = LedBoxPainter.forPicture(width)
-            val canvas = Canvas(picture)
-            found.forEach { painter.draw(canvas, it.left, it.top, it.right, it.bottom, it) }
-            picture.getPixels(pixels, 0, width, 0, 0, width, height)
-        } finally {
-            picture.recycle()
-        }
-        val drawn = ByteArray(width * height * 3)
-        var to = 0
-        for (pixel in 0 until width * height) {
-            val colour = pixels[pixel]
-            drawn[to] = (colour shr 16).toByte(); drawn[to + 1] = (colour shr 8).toByte(); drawn[to + 2] = colour.toByte()
-            to += 3
-        }
-        return InferredFrame(FramePng.encode(drawn, width, height), found, milliseconds)
-    }
 
     private fun bitmap(frame: ByteArray, width: Int, height: Int): Bitmap {
         if (pixels.size < width * height) pixels = IntArray(width * height)

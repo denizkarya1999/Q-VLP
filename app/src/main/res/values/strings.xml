@@ -23,9 +23,9 @@
     <string name="inference_mode_summary">Find the LEDs on the camera preview with the Physical LED Detection Model and name them with the OOK-Based LED Recognition Model.</string>
     <string name="inference_settings">Inference</string>
     <string name="generate_post_inference_files">Generate Post-Inference Files</string>
-    <string name="generate_post_inference_files_summary">In Inference Mode, capture positions and save final.csv, the frames with the inference bounding boxes and the processed frames.</string>
+    <string name="generate_post_inference_files_summary">In Inference Mode, capture positions and save final.csv, the original frames and the processed frames, which show the LEDs the models found.</string>
     <string name="enable_cv_algorithms">Enable CV Algorithms</string>
-    <string name="enable_cv_algorithms_summary">In Inference Mode, find the blob centroid of each LED inside its box: on the preview, and in the processed frames and final.csv of a captured position.</string>
+    <string name="enable_cv_algorithms_summary">In Inference Mode, find the blob centroid of each LED inside its box: on the preview, in Local File Inference, and in the processed frames and final.csv of a captured position.</string>
     <string name="options">Options</string>
     <string name="local_file_inference">Local File Inference</string>
     <string name="local_file_inference_summary">Open an image stored on this phone and run the LED models on it.</string>
@@ -39,6 +39,8 @@
     <string name="local_inference_running">Finding LEDs…</string>
     <string name="local_inference_none">No LEDs found.</string>
     <string name="local_inference_details">%1$s · %2$d × %3$d · %4$d ms</string>
+    <string name="local_inference_centroid">blob centroid u %1$s, v %2$s</string>
+    <string name="local_inference_no_blob">no blob</string>
     <string name="local_inference_failed">This image could not be used: %1$s</string>
     <string name="local_inference_picture">The chosen image with the LEDs that were found</string>
     <string name="info_inference">Inference</string>
