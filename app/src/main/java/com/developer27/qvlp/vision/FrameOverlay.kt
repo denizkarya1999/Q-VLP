@@ -8,7 +8,8 @@ import kotlin.math.roundToInt
 /**
  * Draws what LED detection found onto a frame: a box around every blob, a cross at its centre and its LED name.
  * This is the "processed" picture of a frame. A dashed box marks a blob that was found but not accepted.
- * A capture made in Inference Mode gets the same picture from what the two LED models found.
+ * A capture made in Inference Mode gets the same picture from what the two LED models found, or, with
+ * Enable CV Algorithms, from the blob found inside each LED's box.
  */
 internal object FrameOverlay {
     /** One colour per LED, as in the project's figures: red, blue, green, purple. */
@@ -16,6 +17,7 @@ internal object FrameOverlay {
     private const val UNKNOWN = 0xFFD400
     private const val LINE = 2
     private const val TEXT_SCALE = 3
+    private const val CROSS_ARM = 9
 
     /** Returns false when there was nothing to draw, so the picture is unchanged. */
     fun draw(rgb: ByteArray, width: Int, height: Int, frame: FrameLeds): Boolean {
@@ -58,6 +60,33 @@ internal object FrameOverlay {
         return true
     }
 
+    /**
+     * The processed picture of a frame from an Inference Mode capture made with Enable CV Algorithms: a box
+     * round the blob found inside each LED's box, a cross at the blob's centre and the LED's name. [centres]
+     * holds the blob of each LED of [found], in the same order. An LED whose box holds no blob keeps the
+     * model's box, dashed, with no cross. Returns false when there was nothing to draw.
+     */
+    fun drawCentres(rgb: ByteArray, width: Int, height: Int, found: List<LedDetection>, centres: List<LedCentre?>): Boolean {
+        if (found.isEmpty()) return false
+        found.forEachIndexed { index, led ->
+            val colour = if (led.named) LED_COLOURS[(led.led - 1).mod(LED_COLOURS.size)] else UNKNOWN
+            val centre = centres.getOrNull(index)
+            val left = centre?.left ?: floor(led.left).toInt()
+            val top = centre?.top ?: floor(led.top).toInt()
+            val right = if (centre != null) left + centre.width - 1 else maxOf(left, ceil(led.right).toInt() - 1)
+            val bottom = if (centre != null) top + centre.height - 1 else maxOf(top, ceil(led.bottom).toInt() - 1)
+            box(rgb, width, height, left - LINE, top - LINE, right + LINE, bottom + LINE, colour, dashed = centre == null)
+            if (centre != null) cross(rgb, width, height, centre.u.roundToInt(), centre.v.roundToInt(), colour)
+            val name = if (led.named) "LED ${led.led}" + (if (centre == null) " ?" else "") else "LED ?"
+            // The cross reaches past a small blob, so the name keeps clear of both.
+            val highest = minOf(top - LINE, centre?.let { it.v.roundToInt() - CROSS_ARM } ?: top)
+            val lowest = maxOf(bottom + LINE, centre?.let { it.v.roundToInt() + CROSS_ARM } ?: bottom)
+            val above = highest - 7 * TEXT_SCALE - 4
+            text(rgb, width, height, left - LINE, if (above >= 0) above else lowest + 5, name, colour)
+        }
+        return true
+    }
+
     private fun set(rgb: ByteArray, width: Int, height: Int, x: Int, y: Int, colour: Int) {
         if (x < 0 || y < 0 || x >= width || y >= height) return
         val index = (y * width + x) * 3
@@ -77,7 +106,7 @@ internal object FrameOverlay {
     }
 
     private fun cross(rgb: ByteArray, width: Int, height: Int, x: Int, y: Int, colour: Int) {
-        for (offset in -9..9) for (thickness in -1..0) {
+        for (offset in -CROSS_ARM..CROSS_ARM) for (thickness in -1..0) {
             set(rgb, width, height, x + offset, y + thickness, colour); set(rgb, width, height, x + thickness, y + offset, colour)
         }
     }

@@ -65,6 +65,28 @@ internal data class LedReading(val detected: Boolean, val blob: LedBlob?)
 internal data class FrameLeds(val leds: List<LedReading>, val blobs: List<LedBlob>, val background: Double, val closingRows: Int)
 
 /**
+ * The grey level of the dark ceiling: the median of every [step]th pixel of every [step]th row. LED blobs cover
+ * too few pixels to move it. [luma] holds at least width × height bytes, row by row.
+ */
+internal fun backgroundLevel(luma: ByteArray, width: Int, height: Int, step: Int): Double {
+    val histogram = IntArray(256)
+    var count = 0
+    var row = 0
+    while (row < height) {
+        var index = row * width
+        val end = index + width
+        while (index < end) { histogram[luma[index].toInt() and 0xFF]++; count++; index += step }
+        row += step
+    }
+    fun valueAt(rank: Int): Int {
+        var seen = 0
+        for (level in 0..255) { seen += histogram[level]; if (seen > rank) return level }
+        return 255
+    }
+    return (valueAt((count - 1) / 2) + valueAt(count / 2)) / 2.0
+}
+
+/**
  * Finds LED blobs in one 8-bit luminance frame and names each by its rolling-shutter stripe frequency.
  * Follows `extract` in the project's simulator. Not thread-safe: it reuses its buffers, so use one per thread.
  */
@@ -209,24 +231,8 @@ internal class LedDetector(private val settings: LedDetectionSettings = LedDetec
         }
     }
 
-    /** Median of a sparse sample: LED blobs cover too few pixels to move it. */
-    private fun background(luma: ByteArray, width: Int, height: Int): Double {
-        val histogram = IntArray(256)
-        var count = 0
-        var row = 0
-        while (row < height) {
-            var index = row * width
-            val end = index + width
-            while (index < end) { histogram[luma[index].toInt() and 0xFF]++; count++; index += settings.backgroundSampleStep }
-            row += settings.backgroundSampleStep
-        }
-        fun valueAt(rank: Int): Int {
-            var seen = 0
-            for (level in 0..255) { seen += histogram[level]; if (seen > rank) return level }
-            return 255
-        }
-        return (valueAt((count - 1) / 2) + valueAt(count / 2)) / 2.0
-    }
+    private fun background(luma: ByteArray, width: Int, height: Int): Double =
+        backgroundLevel(luma, width, height, settings.backgroundSampleStep)
 
     /** Separable Gaussian with reflected borders. The result in [smooth] is the grey level × [SCALE]. */
     private fun smooth(luma: ByteArray, width: Int, height: Int) {

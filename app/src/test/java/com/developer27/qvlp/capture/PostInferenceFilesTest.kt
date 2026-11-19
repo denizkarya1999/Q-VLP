@@ -2,6 +2,8 @@ package com.developer27.qvlp.capture
 
 import com.developer27.qvlp.inference.InferenceModels
 import com.developer27.qvlp.inference.LedDetection
+import com.developer27.qvlp.vision.FrameCentres
+import com.developer27.qvlp.vision.LedCentre
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -51,6 +53,72 @@ class PostInferenceFilesTest {
         assertEquals(0.6, unnamed.getJSONObject(0).getDouble("detection_confidence"), 1e-6)
         assertEquals(300.0, unnamed.getJSONObject(0).getDouble("box_left_px"), 0.0)
         assertFalse(unnamed.getJSONObject(0).has("confidence"))
+    }
+
+    // The blob found in each box of leds, in the same order. LED 4's box holds no blob.
+    private val blobs = listOf(
+        LedCentre(742.25, 611.5, 171, 213, 735, 604, 15, 16, saturated = false, touchesBoxEdge = false, frames = 5), null,
+        LedCentre(318.0, 331.75, 40, 255, 315, 328, 7, 8, saturated = true, touchesBoxEdge = true, frames = 5))
+
+    @Test fun withBlobCentroidsAnLedIsAtTheCentreOfItsBlobAndNowhereWithoutOne() {
+        val points = PostInferenceFiles.points(leds, blobs)
+        assertEquals(SessionCsv.LedPoint(true, 742.25, 611.5), points[0])
+        assertEquals(SessionCsv.LedPoint(false, null, null), points[1])
+        assertEquals(SessionCsv.LedPoint(false, null, null), points[2])
+        // LED 4 was named, but its box holds no blob: no position rather than the centre of the box.
+        assertEquals(SessionCsv.LedPoint(false, null, null), points[3])
+        // Blobs that were never looked for are no blobs.
+        assertTrue(PostInferenceFiles.points(leds, emptyList()).none { it.detected })
+    }
+
+    @Test fun theCentroidMetadataHoldsTheBlobCentroidInTheSameFieldsAndSaysWhatWasFound() {
+        val frame = InferredFrame(ByteArray(0), leds, 240L)
+        val data = JSONObject(PostInferenceFiles.centroidMetadata(7, frame, FrameCentres(blobs, 2.0, 5)).toString())
+        assertEquals(7, data.getInt("frame_id"))
+        assertEquals("frame_00007.png", data.getString("frame_file"))
+        // final.csv reads these fields the same way it reads any processed frame.
+        assertEquals(PostInferenceFiles.points(leds, blobs), SessionCsv.points(data))
+        assertEquals(742.25, data.getDouble("LED_1_u_px"), 1e-9)
+        assertEquals(611.5, data.getDouble("LED_1_v_px"), 1e-9)
+        assertEquals(0, data.getInt("LED_4_detected"))
+        assertTrue(data.isNull("LED_4_u_px"))
+        val details = data.getJSONObject("details")
+        assertEquals("blob_centroid", details.getString("centre"))
+        assertEquals(5, details.getInt("blob_frames"))
+        assertEquals(5, details.getInt("blob_frames_used"))
+        assertEquals(0.5, details.getDouble("blob_min_share_of_peak"), 1e-9)
+        assertEquals(25, details.getInt("threshold_above_background"))
+        assertEquals(2.0, details.getDouble("background_level"), 1e-9)
+        // Everything the inference metadata says is still there.
+        assertEquals("qvlp_ook_led_recognition_model.pt", details.getString("recognition_model"))
+        assertEquals(3, details.getInt("leds_found"))
+        assertEquals(240L, details.getLong("inference_ms"))
+        val first = details.getJSONArray("leds").getJSONObject(0)
+        assertEquals(0.98, first.getDouble("confidence"), 1e-6)
+        assertEquals(721.0, first.getDouble("box_left_px"), 0.0)
+        assertTrue(first.getBoolean("blob_found"))
+        assertEquals(742.25, first.getDouble("blob_u_px"), 1e-9)
+        assertEquals(611.5, first.getDouble("blob_v_px"), 1e-9)
+        assertEquals(171, first.getInt("blob_area_px"))
+        assertEquals(213, first.getInt("peak_level"))
+        assertEquals(listOf(735, 604, 15, 16), listOf("blob_left_px", "blob_top_px", "blob_width_px", "blob_height_px").map(first::getInt))
+        assertFalse(first.getBoolean("saturated"))
+        assertFalse(first.getBoolean("touches_box_edge"))
+        // LED 2 was not found by the models, so nothing is said about a blob. LED 4 was, and has none.
+        assertFalse(details.getJSONArray("leds").getJSONObject(1).has("blob_found"))
+        val fourth = details.getJSONArray("leds").getJSONObject(3)
+        assertTrue(fourth.getBoolean("detected"))
+        assertFalse(fourth.getBoolean("blob_found"))
+        assertFalse(fourth.has("blob_u_px"))
+        assertEquals(1084.0, fourth.getDouble("box_left_px"), 0.0)
+        // The light without a name has its blob too, and stays out of final.csv.
+        val unnamed = details.getJSONArray("unnamed_leds").getJSONObject(0)
+        assertEquals(318.0, unnamed.getDouble("blob_u_px"), 1e-9)
+        assertTrue(unnamed.getBoolean("saturated"))
+        assertTrue(unnamed.getBoolean("touches_box_edge"))
+        // The inference frame's own metadata is not changed by any of this.
+        assertEquals("box_centre", PostInferenceFiles.CENTRE_BOX)
+        assertFalse(JSONObject(PostInferenceFiles.metadata(7, frame).toString()).getJSONObject("details").has("centre"))
     }
 
     @Test fun aModelThatWasNotTickedIsNotNamedInTheMetadata() {

@@ -28,6 +28,19 @@ class CaptureProcessingTest {
         return frame
     }
 
+    /**
+     * A raw frame as the test rig gives it: a small round LED at column 320, row 240, fully lit in 10 of every
+     * 20 rows and dark in the others. [shift] says which rows are the lit ones in this frame.
+     */
+    private fun keyedFrame(shift: Int): ByteArray {
+        val frame = ByteArray(FramePng.i420Size(width, height)) { 128.toByte() }
+        for (row in 0 until height) for (column in 0 until width) {
+            val inside = (column - 320) * (column - 320) + (row - 240) * (row - 240) <= 7 * 7
+            frame[row * width + column] = (if (inside && (row + shift).mod(20) < 10) 200 else 2).toByte()
+        }
+        return frame
+    }
+
     @Test fun aCaptureIsWrittenIntoOriginalFramesAndProcessedFrames() {
         val session = Files.createTempDirectory("session_").toFile()
         try {
@@ -146,6 +159,81 @@ class CaptureProcessingTest {
             assertEquals(0.97, leds.getJSONObject("details").getJSONArray("leds").getJSONObject(1).getDouble("confidence"), 1e-6)
             val fingerprint = SessionCsv.fingerprint(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)))
             assertEquals("4,,,0,319.500,239.500,1,,,0,,,0", SessionCsv.finalRow("4", fingerprint))
+        } finally { session.deleteRecursively() }
+    }
+
+    @Test(timeout = 60_000) fun withCvAlgorithmsTheProcessedFramesHoldTheBlobCentroidOfEachLed() {
+        val session = Files.createTempDirectory("session_").toFile()
+        try {
+            val capture = File(SessionLayout.originals(session), SessionLayout.captureName(4, LocalDateTime.of(2026, 11, 19, 10, 0, 0)))
+            assertTrue(File(capture, SessionLayout.FRAMES).mkdirs())
+            // Listed out of order: the blob finder needs the frames in the order they were taken, as the models do.
+            val frames = listOf(5, 2, 0, 4, 1, 3).map { JSONObject().put("frame_id", it).put("width", width).put("height", height) }
+            frames.forEach { CaptureProcessing.rawFile(capture, it.getInt("frame_id")).writeBytes(keyedFrame(shift = 4 * it.getInt("frame_id"))) }
+            // Stands in for the two LED models. They find LED 2 in a box that sits low round the LED, and LED 3 where
+            // nothing is lit.
+            val found = listOf(LedDetection(2, 0.97f, 300f, 225f, 340f, 275f), LedDetection(3, 0.8f, 40f, 40f, 80f, 80f))
+            val model = object : FrameInference {
+                override val blobCentroids = true
+                override fun run(rgb: ByteArray, width: Int, height: Int) = InferredFrame(byteArrayOf(1, 2, 3), found, 12L)
+            }
+
+            val result = CaptureProcessing.process(capture, frames, rowTime, LedDetectionSettings(),
+                { JSONObject().put("frame_id", it.getInt("frame_id")) }, model) { _, _ -> }
+
+            assertEquals((0..5).toSet(), result.saved)
+            assertEquals((0..5).toSet(), result.inferred.keys)
+            assertEquals((0..5).toSet(), result.centres.keys)
+            val processed = "Processed_Frames/processed_position_frames_4_20261119_100000"
+            val inference = "Inference_Frames/inference_position_frames_4_20261119_100000"
+            fun processedData(frame: Int) = JSONObject(File(session, "$processed/processed_frame_metadata/${SessionLayout.metadataName(frame)}").readText())
+            fun inferenceData(frame: Int) = JSONObject(File(session, "$inference/inference_frame_metadata/${SessionLayout.metadataName(frame)}").readText())
+
+            // The inference frame's metadata is what the models gave: the centre of each box, also for the dark one.
+            val boxes = inferenceData(5)
+            assertEquals(319.5, boxes.getDouble("LED_2_u_px"), 1e-9)
+            assertEquals(249.5, boxes.getDouble("LED_2_v_px"), 1e-9)
+            assertEquals(1, boxes.getInt("LED_3_detected"))
+            assertFalse(boxes.getJSONObject("details").has("centre"))
+
+            // The processed frame's metadata holds the centre of the LED itself, ten rows above the centre of its box.
+            // From the fifth frame on the last five frames show every row of the LED.
+            for (frame in 4..5) {
+                val centroids = processedData(frame)
+                assertEquals(1, centroids.getInt("LED_2_detected"))
+                assertEquals(320.0, centroids.getDouble("LED_2_u_px"), 1e-9)
+                assertEquals(240.0, centroids.getDouble("LED_2_v_px"), 1e-9)
+                val details = centroids.getJSONObject("details")
+                assertEquals("blob_centroid", details.getString("centre"))
+                assertEquals(5, details.getInt("blob_frames_used"))
+                assertEquals(149, details.getJSONArray("leds").getJSONObject(1).getInt("blob_area_px"))
+                assertEquals(300.0, details.getJSONArray("leds").getJSONObject(1).getDouble("box_left_px"), 0.0)
+                // LED 3 was named, but its box holds no blob: no position.
+                assertEquals(0, centroids.getInt("LED_3_detected"))
+                assertTrue(centroids.isNull("LED_3_u_px"))
+                assertFalse(details.getJSONArray("leds").getJSONObject(2).getBoolean("blob_found"))
+            }
+            // The first frame has only itself to go by: the rows lit in it, which are the lower half of the LED.
+            val first = processedData(0)
+            assertEquals(1, first.getJSONObject("details").getInt("blob_frames_used"))
+            assertTrue(first.getDouble("LED_2_v_px") > 242.5)
+            assertEquals(result.centres.getValue(0).leds[0]!!.v, first.getDouble("LED_2_v_px"), 1e-3)
+            assertNull(result.centres.getValue(0).leds[1])
+
+            // The processed picture shows the blob and its centre; the inference picture is the models' own.
+            val drawn = ByteArray(width * height * 3).also { FramePng.toRgb(keyedFrame(shift = 20), width, height, it) }
+            assertTrue(com.developer27.qvlp.vision.FrameOverlay.drawCentres(drawn, width, height, found, result.centres.getValue(5).leds))
+            assertArrayEquals(FramePng.encode(drawn, width, height), File(session, "$processed/processed_frames/frame_00005.png").readBytes())
+            assertArrayEquals(byteArrayOf(1, 2, 3), File(session, "$inference/inference_frames/frame_00005.png").readBytes())
+
+            // final.csv takes the blob centroids: the median of the six frames, and LED 3 is not at this position.
+            val centroids = SessionCsv.fingerprint(SessionCsv.readCentroids(SessionLayout.processedFolder(capture), SessionLayout.inferenceFolder(capture)))
+            assertEquals(6, centroids[1].frames)
+            assertEquals(320.0, centroids[1].u!!, 1e-9)
+            assertEquals(240.0, centroids[1].v!!, 2.0)
+            assertTrue(SessionCsv.finalRow("4", centroids).endsWith(",1,,,0,,,0"))
+            assertEquals("4,,,0,319.500,249.500,1,59.500,59.500,1,,,0",
+                SessionCsv.finalRow("4", SessionCsv.fingerprint(SessionCsv.readInference(SessionLayout.inferenceFolder(capture)))))
         } finally { session.deleteRecursively() }
     }
 

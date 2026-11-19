@@ -69,4 +69,29 @@ class SessionCsvFinalTest {
             assertEquals("3,,,0,102.000,50.000,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
         } finally { processed.deleteRecursively() }
     }
+
+    @Test fun blobCentroidsAreReadFromTheProcessedMetadataOfTheFramesTheModelsRanOn() {
+        val session = Files.createTempDirectory("session_").toFile()
+        try {
+            val capture = File(SessionLayout.originals(session), "position_3_20261119_100000")
+            val processed = SessionLayout.processedFolder(capture)
+            val inference = SessionLayout.inferenceFolder(capture)
+            val centroids = File(processed, SessionLayout.PROCESSED_METADATA).apply { mkdirs() }
+            val boxes = File(inference, SessionLayout.INFERENCE_METADATA).apply { mkdirs() }
+            listOf(100.2, 100.4, 100.6, 250.0).forEachIndexed { index, u ->
+                // The centre of the model's box beside the inference frame, the blob centroid beside the processed one.
+                File(boxes, SessionLayout.metadataName(index)).writeText(JSONObject().put("LED_2_u_px", 103.5)
+                    .put("LED_2_v_px", 52.5).put("LED_2_detected", 1).toString())
+                File(centroids, SessionLayout.metadataName(index)).writeText(JSONObject().put("LED_2_u_px", u)
+                    .put("LED_2_v_px", 50.0).put("LED_2_detected", 1).toString())
+            }
+            // The models could not run on the fourth frame: LED detection wrote its processed metadata, and it does not count.
+            File(processed, SessionLayout.PROCESSED_MAPPING).writeText(SessionLayout.mapping(listOf(0, 1, 2, 3)))
+            File(inference, SessionLayout.INFERENCE_MAPPING).writeText(SessionLayout.mapping(listOf(0, 1, 2)))
+            val frames = SessionCsv.readCentroids(processed, inference)
+            assertEquals(3, frames.size)
+            assertEquals("3,,,0,100.400,50.000,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
+            assertEquals("3,,,0,103.500,52.500,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(SessionCsv.readInference(inference))))
+        } finally { session.deleteRecursively() }
+    }
 }

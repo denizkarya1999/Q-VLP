@@ -328,18 +328,28 @@ internal class BurstWriter private constructor(
         return detected
     }
 
-    /** The LED numbers the two models found and named at this position, by the same 70% rule as final.csv. */
+    /**
+     * The LED numbers the two models found and named at this position, by the same 70% rule as final.csv.
+     * With Enable CV Algorithms an LED also needs a blob in its box to count in a frame.
+     */
     private fun recognise(frames: List<JSONObject>, result: CaptureProcessing.Result): List<Int> {
         val failed = result.saved.size - result.inferred.size
+        val centroids = inference?.blobCentroids == true
         if (failed > 0) warnings.add("The LED models could not run on $failed of ${result.saved.size} frames.")
         val fingerprint = SessionCsv.fingerprint(frames.mapNotNull { frame ->
-            result.inferred[frame.getInt("frame_id")]?.let(PostInferenceFiles::points)
+            val id = frame.getInt("frame_id")
+            // With Enable CV Algorithms an LED's position is its blob centroid, as in the processed frame metadata.
+            result.inferred[id]?.let { found ->
+                if (centroids) PostInferenceFiles.points(found, result.centres[id]?.leds ?: emptyList()) else PostInferenceFiles.points(found)
+            }
         })
         val detected = fingerprint.indices.filter { fingerprint[it].detected }.map { it + 1 }
         ledRecognition = PostInferenceFiles.modelFiles(JSONObject(), inference?.models ?: com.developer27.qvlp.inference.InferenceModels.BOTH)
             .put("min_confidence", com.developer27.qvlp.inference.LedBoxes.MIN_CONFIDENCE.toDouble())
             .put("min_recognition_probability", com.developer27.qvlp.inference.LedTracks.MIN_PROBABILITY.toDouble())
             .put("frames_processed", result.inferred.size).put("min_valid_share", SessionCsv.MIN_VALID_SHARE)
+            // Where u_px and v_px come from, here and in final.csv: the centre of the model's box or the blob centroid.
+            .put("centre", if (centroids) PostInferenceFiles.CENTRE_BLOB else PostInferenceFiles.CENTRE_BOX)
             .put("leds", JSONArray(fingerprint.mapIndexed { index, led ->
                 JSONObject().put("led", index + 1).put("frames_valid", led.valid).put("detected", led.detected)
                     .put("u_px", if (led.detected) led.u else JSONObject.NULL)

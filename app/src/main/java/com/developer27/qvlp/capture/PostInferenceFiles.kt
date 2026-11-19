@@ -5,6 +5,10 @@ import com.developer27.qvlp.inference.LedBoxes
 import com.developer27.qvlp.inference.LedDetection
 import com.developer27.qvlp.inference.LedRecognition
 import com.developer27.qvlp.inference.LedTracks
+import com.developer27.qvlp.vision.FrameCentres
+import com.developer27.qvlp.vision.LedCentre
+import com.developer27.qvlp.vision.LedCentroids
+import com.developer27.qvlp.vision.LedDetectionSettings
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -17,6 +21,12 @@ import org.json.JSONObject
 internal fun interface FrameInference {
     /** The models that run, as ticked in Settings. The files of the capture name only these. */
     val models: InferenceModels get() = InferenceModels.BOTH
+
+    /**
+     * Whether the blob centroid of each LED is looked for inside its box (Settings → Inference → Enable CV
+     * Algorithms). The processed frames and final.csv of the capture then hold blob centroids, not box centres.
+     */
+    val blobCentroids: Boolean get() = false
 
     /** [rgb] holds [width] × [height] pixels as red, green, blue bytes. It must be left as it is. */
     fun run(rgb: ByteArray, width: Int, height: Int): InferredFrame
@@ -36,6 +46,61 @@ internal object PostInferenceFiles {
         val found = detections.firstOrNull { it.led == led }
         SessionCsv.LedPoint(found != null, found?.let { (it.left + it.right) / 2.0 - 0.5 }, found?.let { (it.top + it.bottom) / 2.0 - 0.5 })
     }
+
+    /**
+     * One entry per LED for a capture made with Enable CV Algorithms: an LED's position is the centroid of the
+     * blob found inside its box. [centres] holds the blob of each of [detections], in the same order. A named
+     * LED whose box holds no blob has no position: a wrong centre is worse than a missing one.
+     */
+    fun points(detections: List<LedDetection>, centres: List<LedCentre?>): List<SessionCsv.LedPoint> = (1..SessionCsv.LEDS).map { led ->
+        val centre = detections.indexOfFirst { it.led == led }.takeIf { it >= 0 }?.let(centres::getOrNull)
+        SessionCsv.LedPoint(centre != null, centre?.u, centre?.v)
+    }
+
+    /**
+     * The processed frame metadata of a capture made with Enable CV Algorithms. It reads like the metadata
+     * beside the inference frame, with two differences: LED_k_u_px and LED_k_v_px are the blob centroid, and
+     * every LED in details also says what blob was found in its box. LED_k_detected is 1 only when the LED
+     * was named and its box holds a blob.
+     */
+    fun centroidMetadata(frameId: Int, frame: InferredFrame, centres: FrameCentres, models: InferenceModels = InferenceModels.BOTH,
+                         settings: LedDetectionSettings = LedDetectionSettings()): JSONObject {
+        val data = JSONObject().put("frame_id", frameId).put("frame_file", SessionLayout.frameName(frameId))
+        points(frame.detections, centres.leds).forEachIndexed { index, point ->
+            data.put("LED_${index + 1}_u_px", point.u?.let(::rounded) ?: JSONObject.NULL)
+            data.put("LED_${index + 1}_v_px", point.v?.let(::rounded) ?: JSONObject.NULL)
+            data.put("LED_${index + 1}_detected", if (point.detected) 1 else 0)
+        }
+        fun blob(target: JSONObject, index: Int): JSONObject {
+            val centre = centres.leds.getOrNull(index) ?: return target.put("blob_found", false)
+            return target.put("blob_found", true)
+                .put("blob_u_px", rounded(centre.u)).put("blob_v_px", rounded(centre.v))
+                .put("blob_area_px", centre.areaPx).put("peak_level", centre.peakLevel)
+                .put("blob_left_px", centre.left).put("blob_top_px", centre.top)
+                .put("blob_width_px", centre.width).put("blob_height_px", centre.height)
+                .put("saturated", centre.saturated).put("touches_box_edge", centre.touchesBoxEdge)
+        }
+        return data.put("details", modelFiles(JSONObject(), models)
+            .put("min_confidence", LedBoxes.MIN_CONFIDENCE.toDouble())
+            .put("min_recognition_probability", LedTracks.MIN_PROBABILITY.toDouble())
+            .put("inference_ms", frame.milliseconds).put("leds_found", frame.detections.size)
+            .put("centre", CENTRE_BLOB)
+            .put("blob_frames", LedCentroids.FRAMES).put("blob_frames_used", centres.frames)
+            .put("blob_min_share_of_peak", LedCentroids.MIN_PEAK_SHARE)
+            .put("threshold_above_background", settings.thresholdAboveBackground)
+            .put("background_level", centres.background)
+            .put("leds", JSONArray((1..SessionCsv.LEDS).map { led ->
+                val index = frame.detections.indexOfFirst { it.led == led }
+                JSONObject().put("led", led).put("detected", index >= 0).apply {
+                    if (index >= 0) blob(box(put("confidence", rounded(frame.detections[index].confidence.toDouble())), frame.detections[index]), index)
+                }
+            }))
+            .put("unnamed_leds", JSONArray(frame.detections.withIndex().filter { !it.value.named }.map { blob(box(JSONObject(), it.value), it.index) })))
+    }
+
+    /** How a capture's record says where its LED positions come from: the centre of the model's box, or the blob centroid. */
+    const val CENTRE_BOX = "box_centre"
+    const val CENTRE_BLOB = "blob_centroid"
 
     /**
      * The metadata file beside one inference frame. The first fields are the same as in a processed frame's

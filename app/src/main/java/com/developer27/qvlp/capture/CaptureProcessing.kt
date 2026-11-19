@@ -1,9 +1,11 @@
 package com.developer27.qvlp.capture
 
 import com.developer27.qvlp.inference.LedDetection
+import com.developer27.qvlp.vision.FrameCentres
 import com.developer27.qvlp.vision.FrameLeds
 import com.developer27.qvlp.vision.FrameOverlay
 import com.developer27.qvlp.vision.FramePng
+import com.developer27.qvlp.vision.LedCentroids
 import com.developer27.qvlp.vision.LedDetectionSettings
 import com.developer27.qvlp.vision.LedDetector
 import org.json.JSONArray
@@ -29,11 +31,13 @@ internal object CaptureProcessing {
      * [leds] holds the frames LED detection ran on: every frame of a Data Collection capture, and of an
      * Inference Mode capture only a frame the models could not run on. [saved] holds the frame IDs whose files
      * were all written; [inferred] the LEDs the two models found and named in each frame they ran on
-     * (Inference Mode captures only).
+     * (Inference Mode captures only). [centres] holds the blob found inside the box of each of those LEDs, in
+     * the same order, for a capture made with Enable CV Algorithms; it is empty for any other capture.
      */
-    data class Result(val leds: Map<Int, FrameLeds>, val saved: Set<Int>, val inferred: Map<Int, List<LedDetection>> = emptyMap())
+    data class Result(val leds: Map<Int, FrameLeds>, val saved: Set<Int>, val inferred: Map<Int, List<LedDetection>> = emptyMap(),
+                      val centres: Map<Int, FrameCentres> = emptyMap())
 
-    private class Frame(val id: Int, val leds: FrameLeds?, val inferred: List<LedDetection>?)
+    private class Frame(val id: Int, val leds: FrameLeds?, val inferred: List<LedDetection>?, val centres: FrameCentres?)
 
     /** The camera's own report: its rolling-shutter skew spread over the rows of the frame. */
     fun rowTime(frames: Collection<JSONObject>): RowTime {
@@ -64,6 +68,10 @@ internal object CaptureProcessing {
      * that show the same LEDs. The models are given the frames one at a time in the order they were taken,
      * because an LED is named from its last five frames. A frame they cannot run on is processed by LED
      * detection, as in a Data Collection capture.
+     *
+     * When [inference] also asks for blob centroids (Enable CV Algorithms), the blob of each LED is looked for
+     * inside its box. The processed frames then show the blobs and their centres, and the processed frame
+     * metadata holds the blob centroids; the inference frames and their metadata stay as the models gave them.
      */
     fun process(capture: File, frames: List<JSONObject>, rowTime: RowTime, settings: LedDetectionSettings,
                 cameraMetadata: (JSONObject) -> JSONObject, inference: FrameInference? = null,
@@ -84,6 +92,7 @@ internal object CaptureProcessing {
             // Started in the order the frames were taken, so the frame whose turn it is at the models is always under way.
             val ordered = frames.sortedBy { it.getInt("frame_id") }
             val order = if (inference == null) null else InOrder(ordered.size)
+            val centroids = if (inference?.blobCentroids == true) LedCentroids(settings) else null
             val leds = ordered.mapIndexed { index, frame ->
                 pool.submit(Callable {
                   try {
@@ -98,21 +107,37 @@ internal object CaptureProcessing {
                     FramePng.toRgb(pixels, width, height, rgb)
                     val picture = FramePng.encode(rgb, width, height)
                     // The models see the frame before anything is drawn on it. A frame they cannot run on is still saved.
-                    val inferred = inference?.let { model -> order!!.turn(index) { runCatching { model.run(rgb, width, height) }.getOrNull() } }
-                    // The processed frame of an Inference Mode capture holds what the two models found. LED detection
-                    // runs where they did not; it reads the luminance plane, which comes first in the raw frame.
+                    // A blob is read from the last five frames, so every frame goes to the blob finder too, in the same
+                    // order. Both read the luminance plane, which comes first in the raw frame.
+                    var blobs: FrameCentres? = null
+                    val inferred = inference?.let { model ->
+                        order!!.turn(index) {
+                            centroids?.add(pixels, width, height)
+                            runCatching { model.run(rgb, width, height) }.getOrNull()?.also { blobs = centroids?.centres(it.detections) }
+                        }
+                    }
+                    val centres = blobs
+                    // The processed frame of an Inference Mode capture holds what the two models found, or the blob
+                    // inside each of their boxes. LED detection runs where the models did not.
                     val found = if (inferred == null) space.detector.detect(pixels, width, height, rowTime.seconds) else null
-                    val drawn = if (inferred != null) FrameOverlay.drawInferred(rgb, width, height, inferred.detections)
-                        else FrameOverlay.draw(rgb, width, height, found!!)
+                    val drawn = when {
+                        inferred == null -> FrameOverlay.draw(rgb, width, height, found!!)
+                        centres != null -> FrameOverlay.drawCentres(rgb, width, height, inferred.detections, centres.leds)
+                        else -> FrameOverlay.drawInferred(rgb, width, height, inferred.detections)
+                    }
                     // A frame with nothing found looks the same processed, so its picture is reused as it is.
                     val annotated = if (drawn) FramePng.encode(rgb, width, height) else picture
-                    // What the models found is the processed metadata too: it starts with the same fields.
+                    // What the models found is the processed metadata too: it starts with the same fields. With blob
+                    // centroids the processed metadata holds those in the same fields.
                     val inferredData = inferred?.let { PostInferenceFiles.metadata(id, it, inference!!.models).toString(2).toByteArray() }
+                    val centredData = centres?.let {
+                        PostInferenceFiles.centroidMetadata(id, inferred!!, it, inference!!.models, settings).toString(2).toByteArray()
+                    }
                     write(File(folders[0], SessionLayout.frameName(id)), picture)
                     write(File(folders[1], SessionLayout.metadataName(id)), cameraMetadata(frame).toString(2).toByteArray())
                     write(File(folders[2], SessionLayout.frameName(id)), annotated)
                     write(File(folders[3], SessionLayout.metadataName(id)),
-                        inferredData ?: processedMetadata(id, found!!, rowTime).toString(2).toByteArray())
+                        centredData ?: inferredData ?: processedMetadata(id, found!!, rowTime).toString(2).toByteArray())
                     if (inferred != null) {
                         write(File(inferenceFolders[0], SessionLayout.frameName(id)), inferred.picture)
                         write(File(inferenceFolders[1], SessionLayout.metadataName(id)), inferredData!!)
@@ -120,7 +145,7 @@ internal object CaptureProcessing {
                     saved.add(id)
                     raw.delete()
                     progress(done.incrementAndGet(), frames.size)
-                    Frame(id, found, inferred?.detections)
+                    Frame(id, found, inferred?.detections, centres)
                   } finally {
                     // A frame that failed before its turn must not keep the later ones waiting.
                     order?.pass(index)
@@ -133,7 +158,8 @@ internal object CaptureProcessing {
             val inferred = leds.filter { it.inferred != null && it.id in saved }.associate { it.id to it.inferred!! }
             if (inference != null) write(File(inferenceFolder, SessionLayout.INFERENCE_MAPPING),
                 SessionLayout.mapping(inferred.keys.sorted()).toByteArray())
-            return Result(leds.filter { it.leds != null }.associate { it.id to it.leds!! }, saved, inferred)
+            val centres = leds.filter { it.centres != null && it.id in inferred }.associate { it.id to it.centres!! }
+            return Result(leds.filter { it.leds != null }.associate { it.id to it.leds!! }, saved, inferred, centres)
         } finally {
             pool.shutdown()
         }

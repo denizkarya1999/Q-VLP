@@ -53,27 +53,42 @@ internal object SessionCsv {
      * Empty when the capture has not been processed.
      */
     fun readProcessed(processed: File): List<List<LedPoint>> =
-        read(processed, SessionLayout.PROCESSED_METADATA, SessionLayout.PROCESSED_MAPPING)
+        read(File(processed, SessionLayout.PROCESSED_METADATA), File(processed, SessionLayout.PROCESSED_MAPPING))
 
     /** The same for the post-inference files of an Inference Mode capture: the LEDs the two models found and named. */
     fun readInference(inference: File): List<List<LedPoint>> =
-        read(inference, SessionLayout.INFERENCE_METADATA, SessionLayout.INFERENCE_MAPPING)
-
-    private fun read(results: File, metadataFolder: String, mappingFile: String): List<List<LedPoint>> {
-        val folder = File(results, metadataFolder)
-        return SessionLayout.readMapping(File(results, mappingFile)).mapNotNull { (_, metadata) ->
-            runCatching { points(JSONObject(File(folder, metadata).readText())) }.getOrNull()
-        }
-    }
+        read(File(inference, SessionLayout.INFERENCE_METADATA), File(inference, SessionLayout.INFERENCE_MAPPING))
 
     /**
-     * Where a capture's row of final.csv comes from: the two LED models' results when the capture was
-     * made in Inference Mode, otherwise LED detection's.
+     * The same for an Inference Mode capture made with Enable CV Algorithms: the blob centroid of each named
+     * LED. They are in the processed frame metadata, and only the frames the models ran on count, which are
+     * the ones the inference mapping lists. A frame's metadata file has the same name in both folders.
      */
-    private fun source(capture: File): Pair<File, Boolean> {
+    fun readCentroids(processed: File, inference: File): List<List<LedPoint>> =
+        read(File(processed, SessionLayout.PROCESSED_METADATA), File(inference, SessionLayout.INFERENCE_MAPPING))
+
+    private fun read(folder: File, mapping: File): List<List<LedPoint>> =
+        SessionLayout.readMapping(mapping).mapNotNull { (_, metadata) ->
+            runCatching { points(JSONObject(File(folder, metadata).readText())) }.getOrNull()
+        }
+
+    /** [mapping] is the file whose presence and contents say the frames behind [read] are complete. */
+    private class Source(val name: String, val mapping: File, val read: () -> List<List<LedPoint>>)
+
+    /**
+     * Where a capture's row of final.csv comes from. A Data Collection capture: LED detection. An Inference
+     * Mode capture: the two LED models' results, and with [centroids] (Enable CV Algorithms was ticked) the
+     * blob centroid found inside each of their boxes.
+     */
+    private fun source(capture: File, centroids: Boolean): Source {
+        val processed = SessionLayout.processedFolder(capture)
         val inference = SessionLayout.inferenceFolder(capture)
-        return if (File(inference, SessionLayout.INFERENCE_MAPPING).isFile) inference to true
-            else SessionLayout.processedFolder(capture) to false
+        val inferenceMapping = File(inference, SessionLayout.INFERENCE_MAPPING)
+        return when {
+            !inferenceMapping.isFile -> Source("led_detection", File(processed, SessionLayout.PROCESSED_MAPPING)) { readProcessed(processed) }
+            centroids -> Source("led_blob_centroid", inferenceMapping) { readCentroids(processed, inference) }
+            else -> Source("led_recognition_model", inferenceMapping) { readInference(inference) }
+        }
     }
 
     private fun median(values: List<Double>): Double? {
@@ -82,7 +97,8 @@ internal object SessionCsv {
         return (sorted[(sorted.size - 1) / 2] + sorted[sorted.size / 2]) / 2.0
     }
 
-    private data class Attempt(val folder: File, val position: Int, val finished: Instant)
+    /** [centroids]: the capture's record says its LED positions are blob centroids. */
+    private data class Attempt(val folder: File, val position: Int, val finished: Instant, val centroids: Boolean)
     // A capture never changes once processed, so its fingerprint is read from its files only once per run.
     private val fingerprints = HashMap<String, Pair<String, List<LedFingerprint>>>()
 
@@ -107,7 +123,8 @@ internal object SessionCsv {
             if (data?.optString("state") != "complete") {
                 excluded.put(JSONObject().put("attempt", folder.name).put("reason", data?.optString("state") ?: "unreadable_metadata"))
                 null
-            } else Attempt(folder, data.getJSONObject("position").getInt("position_id"), Instant.parse(data.getString("finished_at")))
+            } else Attempt(folder, data.getJSONObject("position").getInt("position_id"), Instant.parse(data.getString("finished_at")),
+                data.optJSONObject("led_recognition")?.optString("centre") == PostInferenceFiles.CENTRE_BLOB)
         }
         // A position captured again is replaced: only its latest completed capture counts.
         val selected = completed.groupBy { it.position }.mapValues { (_, attempts) ->
@@ -121,13 +138,13 @@ internal object SessionCsv {
         val lines = ArrayList<String>()
         lines.add(finalHeader)
         attempts.forEach { attempt ->
-            val (results, inferred) = source(attempt.folder)
-            val version = stamp(File(results, if (inferred) SessionLayout.INFERENCE_MAPPING else SessionLayout.PROCESSED_MAPPING))
-            val leds = fingerprints[results.path]?.takeIf { it.first == version }?.second
-                ?: fingerprint(if (inferred) readInference(results) else readProcessed(results)).also { fingerprints[results.path] = version to it }
+            val source = source(attempt.folder, attempt.centroids)
+            val version = "${source.name}:${stamp(source.mapping)}"
+            val leds = fingerprints[source.mapping.path]?.takeIf { it.first == version }?.second
+                ?: fingerprint(source.read()).also { fingerprints[source.mapping.path] = version to it }
             lines.add(finalRow(attempt.position.toString(), leds))
             selection.put(JSONObject().put("position_id", attempt.position).put("attempt", attempt.folder.name)
-                .put("source", if (inferred) "led_recognition_model" else "led_detection")
+                .put("source", source.name)
                 .put("frames", leds.firstOrNull()?.frames ?: 0).put("finished_at", attempt.finished.toString()))
         }
         val atomic = AtomicFile(output)

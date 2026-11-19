@@ -65,13 +65,14 @@ internal object LedRecognition {
      * For a capture's post-inference files: finds and names the LEDs in each frame and draws them, on the
      * models' thread. The frames of the capture must be given in the order they were taken, because an LED is
      * named from its last five frames. The caller waits for the answer, so this must not be used from inside
-     * [execute].
+     * [execute]. With [centroids] (Enable CV Algorithms) the capture also gets the blob centroid of every LED.
      */
-    fun frames(context: Context, selected: InferenceModels = InferenceModels.BOTH): FrameInference {
+    fun frames(context: Context, selected: InferenceModels = InferenceModels.BOTH, centroids: Boolean = false): FrameInference {
         val app = context.applicationContext
         val tracks = LedTracks()
         return object : FrameInference {
             override val models = selected
+            override val blobCentroids = centroids
             override fun run(rgb: ByteArray, width: Int, height: Int): InferredFrame =
                 worker.submit(Callable { annotate(app, rgb, width, height, tracks, selected) }).get()
         }

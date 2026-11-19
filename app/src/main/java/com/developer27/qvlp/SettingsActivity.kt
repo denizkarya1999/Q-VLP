@@ -77,6 +77,10 @@ class SettingsActivity : AppCompatActivity() {
         /** Ticked unless the operator unticks it. */
         fun postInferenceFiles(preferences: android.content.SharedPreferences): Boolean =
             preferences.getBoolean(POST_INFERENCE_FILES_PREFERENCE, true)
+
+        /** Unticked unless the operator ticks it. Ticked, a captured position also gets the blob centroid of each LED. */
+        fun cvAlgorithms(preferences: android.content.SharedPreferences): Boolean =
+            preferences.getBoolean(CV_ALGORITHMS_PREFERENCE, false)
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {

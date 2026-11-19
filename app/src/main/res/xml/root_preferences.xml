@@ -28,7 +28,7 @@
             android:summary="@string/generate_post_inference_files_summary"
             android:defaultValue="true"
             android:layout="@layout/preference_checkbox_layout" />
-        <!-- A placeholder: it can be ticked in Inference Mode, and nothing reads it yet. -->
+        <!-- Ticked: an Inference Mode capture also gets the blob centroid of each LED (see LedCentroids). The preview is unchanged. -->
         <CheckBoxPreference
             android:key="enable_cv_algorithms"
             android:title="@string/enable_cv_algorithms"

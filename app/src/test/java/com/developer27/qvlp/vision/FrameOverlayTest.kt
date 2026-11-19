@@ -60,6 +60,40 @@ class FrameOverlayTest {
             listOf(LedDetection(1, 1f, -4f, -4f, 6f, 6f), LedDetection(3, 1f, 300f, 220f, 330f, 250f))))
     }
 
+    @Test fun marksTheBlobFoundInsideEachModelBoxAndItsCentre() {
+        val rgb = ByteArray(width * height * 3)
+        assertFalse(FrameOverlay.drawCentres(rgb, width, height, emptyList(), emptyList()))
+        assertTrue(rgb.all { it.toInt() == 0 })
+        val second = LedDetection(2, 0.97f, 100f, 80f, 140f, 120f)
+        val third = LedDetection(3, 0.9f, 230f, 160f, 270f, 200f)
+        val unnamed = LedDetection(LedDetection.UNNAMED, 0.9f, 20f, 180f, 60f, 220f)
+        // LED 2's blob covers columns 112 to 123 and rows 95 to 108, off the middle of its box. LED 3's box holds none.
+        val blob = LedCentre(117.4, 101.6, 140, 210, 112, 95, 12, 14, saturated = false, touchesBoxEdge = false, frames = 5)
+        val speck = LedCentre(40.0, 200.0, 9, 90, 39, 199, 3, 3, saturated = false, touchesBoxEdge = false, frames = 5)
+        assertTrue(FrameOverlay.drawCentres(rgb, width, height, listOf(second, third, unnamed), listOf(blob, null, speck)))
+        // The cross is at the blob's centre, rounded, not at the centre of the model's box (119.5, 99.5).
+        assertEquals(0x1F77B4, pixel(rgb, 117, 102))
+        assertEquals(0x1F77B4, pixel(rgb, 117, 110))   // the cross reaches past the small blob
+        assertEquals(0, pixel(rgb, 120, 100))
+        // A solid box just outside the blob's own pixels; the model's larger box is not drawn.
+        assertTrue((110..125).all { pixel(rgb, it, 93) == 0x1F77B4 && pixel(rgb, it, 110) == 0x1F77B4 })
+        assertTrue((93..110).all { pixel(rgb, 110, it) == 0x1F77B4 && pixel(rgb, 125, it) == 0x1F77B4 })
+        assertTrue((98..141).all { pixel(rgb, it, 121) == 0 } && (95..121).all { pixel(rgb, 98, it) == 0 })
+        // LED 3 was named and has no blob: the model's box, dashed, and no cross.
+        assertEquals(0x2CA02C, pixel(rgb, 228, 158))
+        assertTrue((228..271).any { pixel(rgb, it, 158) == 0 })
+        assertEquals(0, pixel(rgb, 250, 180))
+        // A light without a name gets its blob in the colour of an unknown LED.
+        assertEquals(0xFFD400, pixel(rgb, 40, 200))
+        assertEquals(0, pixel(rgb, 5, 5))
+        // Drawing never leaves the frame, with or without a blob.
+        val corner = LedCentre(1.0, 1.0, 9, 200, 0, 0, 3, 3, saturated = false, touchesBoxEdge = true, frames = 1)
+        val far = LedCentre(318.5, 238.5, 4, 200, 318, 238, 2, 2, saturated = false, touchesBoxEdge = true, frames = 1)
+        assertTrue(FrameOverlay.drawCentres(ByteArray(width * height * 3), width, height,
+            listOf(LedDetection(1, 1f, -4f, -4f, 6f, 6f), LedDetection(3, 1f, 300f, 220f, 330f, 250f), LedDetection(4, 1f, -9f, 230f, 4f, 260f)),
+            listOf(corner, far, null)))
+    }
+
     @Test fun drawingNeverLeavesTheFrame() {
         val corner = blob(2.0, 2.0, 0, 0).copy(width = 6, height = 6)
         val far = blob(318.0, 238.0, 300, 220).copy(width = 20, height = 20)

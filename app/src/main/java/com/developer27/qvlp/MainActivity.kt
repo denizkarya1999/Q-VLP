@@ -342,7 +342,7 @@ class MainActivity : AppCompatActivity() {
                     else result.detections.joinToString("\n") { it.label })
             }
         }
-        if (preferences.getBoolean(SettingsActivity.CV_ALGORITHMS_PREFERENCE, false)) lines.add(getString(R.string.cv_algorithms_on))
+        if (SettingsActivity.cvAlgorithms(preferences)) lines.add(getString(R.string.cv_algorithms_on))
         return lines.joinToString("\n")
     }
 
@@ -452,7 +452,9 @@ class MainActivity : AppCompatActivity() {
                 viewBinding.ledOverlay.clear()
                 cameraHelper.startBurst(position, length,
                     // In Inference Mode the model also runs on every captured frame, for the post-inference files.
-                    inference = if (inferenceMode && postInferenceFiles) LedRecognition.frames(applicationContext, inferenceModels) else null,
+                    // With Enable CV Algorithms the blob centroid of each LED is found in those frames too.
+                    inference = if (inferenceMode && postInferenceFiles)
+                        LedRecognition.frames(applicationContext, inferenceModels, SettingsActivity.cvAlgorithms(preferences)) else null,
                     progress = { count -> runOnUiThread {
                         if (!isDestroyed && captureBusy) {
                             viewBinding.burstStatus.text = getString(R.string.capture_progress, count, length.frames)
