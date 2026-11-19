@@ -9,7 +9,8 @@ import com.developer27.qvlp.vision.LedCentre
 
 /**
  * Lies over the camera preview in Inference Mode and draws the LEDs the models found in the latest frame. With
- * Enable CV Algorithms a small cross marks the blob centroid of each.
+ * Enable CV Algorithms a small cross marks the blob centroid of each, and its coordinates in the camera frame
+ * are written under the box.
  */
 class LedOverlayView @JvmOverloads constructor(context: Context, attributes: AttributeSet? = null) : View(context, attributes) {
     private val painter = LedBoxPainter(
@@ -49,8 +50,9 @@ class LedOverlayView @JvmOverloads constructor(context: Context, attributes: Att
         val mapping = PreviewMapping(frameWidth, frameHeight, geometry, width, height)
         detections.forEachIndexed { index, found ->
             val box = mapping.box(found)
-            painter.draw(canvas, box[0], box[1], box[2], box[3], found)
-            centres.getOrNull(index)?.let { centre ->
+            val centre = centres.getOrNull(index)
+            painter.draw(canvas, box[0], box[1], box[2], box[3], found, centre?.label)
+            if (centre != null) {
                 val (x, y) = mapping.centre(centre.u, centre.v)
                 painter.drawCentre(canvas, x, y, found)
             }

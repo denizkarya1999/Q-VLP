@@ -89,7 +89,7 @@ class CaptureProcessingTest {
             assertEquals(mapping, File(session, "$processed/processed_frame_and_metadata_mapping.csv").readText())
             val fingerprint = SessionCsv.fingerprint(SessionCsv.readProcessed(SessionLayout.processedFolder(capture)))
             assertTrue(SessionCsv.finalRow("4", fingerprint).startsWith("4,3"))
-            assertTrue(SessionCsv.finalRow("4", fingerprint).endsWith(",1,,,0,,,0,,,0"))
+            assertTrue(SessionCsv.finalRow("4", fingerprint).contains(",1,,,0,,,0,,,0,"))
             // No frame of it was processed by the LED models.
             assertTrue(SessionCsv.readModels(SessionLayout.processedFolder(capture)).isEmpty())
         } finally { session.deleteRecursively() }
@@ -152,7 +152,7 @@ class CaptureProcessingTest {
             assertEquals(0.97, leds.getJSONObject("details").getJSONArray("leds").getJSONObject(1).getDouble("confidence"), 1e-6)
             val fingerprint = SessionCsv.fingerprint(SessionCsv.readModels(SessionLayout.processedFolder(capture)))
             assertEquals(3, fingerprint[1].frames)
-            assertEquals("4,,,0,319.500,239.500,1,,,0,,,0", SessionCsv.finalRow("4", fingerprint))
+            assertEquals("4,,,0,319.500,239.500,1,,,0,,,0,,,,,,,,,,", SessionCsv.finalRow("4", fingerprint, blobs = false))
         } finally { session.deleteRecursively() }
     }
 
@@ -219,7 +219,7 @@ class CaptureProcessingTest {
             assertEquals(6, centroids[1].frames)
             assertEquals(320.0, centroids[1].u!!, 1e-9)
             assertEquals(240.0, centroids[1].v!!, 2.0)
-            assertTrue(SessionCsv.finalRow("4", centroids).endsWith(",1,,,0,,,0"))
+            assertTrue(SessionCsv.finalRow("4", centroids).contains(",1,,,0,,,0,,,"))
         } finally { session.deleteRecursively() }
     }
 

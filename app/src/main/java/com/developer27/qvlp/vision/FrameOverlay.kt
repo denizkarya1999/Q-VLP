@@ -6,17 +6,23 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
- * Draws what LED detection found onto a frame: a box around every blob, a cross at its centre and its LED name.
- * This is the "processed" picture of a frame. A dashed box marks a blob that was found but not accepted.
- * A capture made in Inference Mode gets the same picture from what the two LED models found, or, with
- * Enable CV Algorithms, from the blob found inside each LED's box.
+ * Draws what LED detection found onto a frame: a box around every blob, a cross at its centre, its LED name
+ * above the box and the centre's coordinates under it, for example "{868.41,286.95}". This is the "processed"
+ * picture of a frame. A dashed box marks a blob that was found but not accepted.
+ * A capture made in Inference Mode gets the same picture from what the two LED models found, with the
+ * confidence beside the name, for example "LED 1 | 98.0%". With Enable CV Algorithms the box, the cross and
+ * the coordinates are those of the blob found inside each LED's box; without it no blob is looked for and no
+ * coordinates are written.
  */
 internal object FrameOverlay {
     /** One colour per LED, as in the project's figures: red, blue, green, purple. */
     private val LED_COLOURS = intArrayOf(0xD62728, 0x1F77B4, 0x2CA02C, 0x9467BD)
     private const val UNKNOWN = 0xFFD400
     private const val LINE = 2
-    private const val TEXT_SCALE = 3
+    // Two lines of some fifteen characters each belong to every LED: at this size neighbouring LEDs' lines stay apart.
+    private const val TEXT_SCALE = 2
+    private const val TEXT_HEIGHT = 7 * TEXT_SCALE
+    private const val TEXT_GAP = 4
     private const val CROSS_ARM = 9
 
     /** Returns false when there was nothing to draw, so the picture is unchanged. */
@@ -30,17 +36,19 @@ internal object FrameOverlay {
                 blob.top + blob.height + LINE - 1, colour, dashed = !accepted)
             cross(rgb, width, height, blob.u.roundToInt(), blob.v.roundToInt(), colour)
             val label = if (led >= 0) "LED ${led + 1}" + (if (accepted) "" else " ?") else "?"
-            val textHeight = 7 * TEXT_SCALE
-            val above = blob.top - LINE - textHeight - 4
-            text(rgb, width, height, blob.left - LINE, if (above >= 0) above else blob.top + blob.height + LINE + 4, label, colour)
+            // The cross reaches past a small blob, so the name and the coordinates keep clear of both.
+            val highest = minOf(blob.top - LINE, blob.v.roundToInt() - CROSS_ARM)
+            val lowest = maxOf(blob.top + blob.height + LINE - 1, blob.v.roundToInt() + CROSS_ARM)
+            labels(rgb, width, height, blob.left - LINE, highest, lowest, label, centreLabel(blob.u, blob.v), colour)
         }
         return true
     }
 
     /**
      * The processed picture of a frame from an Inference Mode capture: a box round every LED the detection
-     * model found, a cross at its centre and the name the recognition model gave it. An LED that was found but
-     * not named is yellow and marked "LED ?". Returns false when there was nothing to draw.
+     * model found, a cross at its centre, and the name the recognition model gave it with its confidence. An LED
+     * that was found but not named is yellow and marked "LED ?". No blob was looked for, so no coordinates are
+     * written. Returns false when there was nothing to draw.
      */
     fun drawInferred(rgb: ByteArray, width: Int, height: Int, found: List<LedDetection>): Boolean {
         if (found.isEmpty()) return false
@@ -54,17 +62,17 @@ internal object FrameOverlay {
             box(rgb, width, height, left - LINE, top - LINE, right + LINE, bottom + LINE, colour, dashed = false)
             // The centre as the metadata gives it: measured from the centre of the top-left pixel.
             cross(rgb, width, height, ((led.left + led.right) / 2f - 0.5f).roundToInt(), ((led.top + led.bottom) / 2f - 0.5f).roundToInt(), colour)
-            val above = top - LINE - 7 * TEXT_SCALE - 4
-            text(rgb, width, height, left - LINE, if (above >= 0) above else bottom + LINE + 5, if (led.named) "LED ${led.led}" else "LED ?", colour)
+            labels(rgb, width, height, left - LINE, top - LINE, bottom + LINE, name(led, found = true), null, colour)
         }
         return true
     }
 
     /**
      * The processed picture of a frame from an Inference Mode capture made with Enable CV Algorithms: a box
-     * round the blob found inside each LED's box, a cross at the blob's centre and the LED's name. [centres]
-     * holds the blob of each LED of [found], in the same order. An LED whose box holds no blob keeps the
-     * model's box, dashed, with no cross. Returns false when there was nothing to draw.
+     * round the blob found inside each LED's box, a cross at the blob's centre, the LED's name and confidence
+     * above the box and the centre's coordinates under it. [centres] holds the blob of each LED of [found], in
+     * the same order. An LED whose box holds no blob keeps the model's box, dashed, with no cross and no
+     * coordinates. Returns false when there was nothing to draw.
      */
     fun drawCentres(rgb: ByteArray, width: Int, height: Int, found: List<LedDetection>, centres: List<LedCentre?>): Boolean {
         if (found.isEmpty()) return false
@@ -77,15 +85,39 @@ internal object FrameOverlay {
             val bottom = if (centre != null) top + centre.height - 1 else maxOf(top, ceil(led.bottom).toInt() - 1)
             box(rgb, width, height, left - LINE, top - LINE, right + LINE, bottom + LINE, colour, dashed = centre == null)
             if (centre != null) cross(rgb, width, height, centre.u.roundToInt(), centre.v.roundToInt(), colour)
-            val name = if (led.named) "LED ${led.led}" + (if (centre == null) " ?" else "") else "LED ?"
-            // The cross reaches past a small blob, so the name keeps clear of both.
+            // The cross reaches past a small blob, so the name and the coordinates keep clear of both.
             val highest = minOf(top - LINE, centre?.let { it.v.roundToInt() - CROSS_ARM } ?: top)
             val lowest = maxOf(bottom + LINE, centre?.let { it.v.roundToInt() + CROSS_ARM } ?: bottom)
-            val above = highest - 7 * TEXT_SCALE - 4
-            text(rgb, width, height, left - LINE, if (above >= 0) above else lowest + 5, name, colour)
+            labels(rgb, width, height, left - LINE, highest, lowest, name(led, found = centre != null), centre?.label, colour)
         }
         return true
     }
+
+    /** "LED 1 | 98.0%"; "LED 1 ? | 98.0%" for an LED whose box holds no blob; "LED ? | 62.4%" for one without a name. */
+    private fun name(led: LedDetection, found: Boolean): String =
+        (if (led.named) "LED ${led.led}" + (if (found) "" else " ?") else "LED ?") + " | " + led.percent
+
+    /**
+     * The name above the box and the coordinates under it. [highest] and [lowest] are the first and last rows
+     * the box and the cross cover. A box at the top of the frame has both under it, the name first; a box at
+     * the bottom has both above it, the coordinates next to the box.
+     */
+    private fun labels(rgb: ByteArray, width: Int, height: Int, left: Int, highest: Int, lowest: Int, name: String, coordinates: String?, colour: Int) {
+        var nameTop = highest - TEXT_HEIGHT - TEXT_GAP
+        var coordinatesTop = lowest + TEXT_GAP + 1
+        if (nameTop < 0) {
+            nameTop = lowest + TEXT_GAP + 1
+            coordinatesTop = nameTop + TEXT_HEIGHT + TEXT_GAP
+        } else if (coordinates != null && coordinatesTop + TEXT_HEIGHT > height && nameTop - TEXT_HEIGHT - TEXT_GAP >= 0) {
+            coordinatesTop = nameTop
+            nameTop -= TEXT_HEIGHT + TEXT_GAP
+        }
+        text(rgb, width, height, left, nameTop, name, colour)
+        if (coordinates != null) text(rgb, width, height, left, coordinatesTop, coordinates, colour)
+    }
+
+    /** Whether every character of [label] can be written on a frame. */
+    fun writable(label: String): Boolean = label.all { it == ' ' || it in GLYPHS }
 
     private fun set(rgb: ByteArray, width: Int, height: Int, x: Int, y: Int, colour: Int) {
         if (x < 0 || y < 0 || x >= width || y >= height) return
@@ -124,15 +156,27 @@ internal object FrameOverlay {
         }
     }
 
-    /** A 5 × 7 dot font for the handful of characters a label needs. */
+    /** A 5 × 7 dot font for the characters a name, a confidence and a pair of coordinates need. A space has no dots. */
     private val GLYPHS: Map<Char, List<String>> = mapOf(
         'L' to listOf("#....", "#....", "#....", "#....", "#....", "#....", "#####"),
         'E' to listOf("#####", "#....", "#....", "####.", "#....", "#....", "#####"),
         'D' to listOf("####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."),
+        '0' to listOf(".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."),
         '1' to listOf("..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."),
         '2' to listOf(".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"),
         '3' to listOf("####.", "....#", "....#", ".###.", "....#", "....#", "####."),
         '4' to listOf("...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."),
+        '5' to listOf("#####", "#....", "####.", "....#", "....#", "#...#", ".###."),
+        '6' to listOf("..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."),
+        '7' to listOf("#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."),
+        '8' to listOf(".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."),
+        '9' to listOf(".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."),
+        '.' to listOf(".....", ".....", ".....", ".....", ".....", ".##..", ".##.."),
+        ',' to listOf(".....", ".....", ".....", ".....", ".##..", "..#..", ".#..."),
+        '{' to listOf("...##", "..#..", "..#..", ".#...", "..#..", "..#..", "...##"),
+        '}' to listOf("##...", "..#..", "..#..", "...#.", "..#..", "..#..", "##..."),
+        '|' to listOf("..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."),
+        '%' to listOf("##..#", "##.#.", "...#.", "..#..", ".#...", ".#.##", "#..##"),
         '?' to listOf(".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#..")
     )
 }

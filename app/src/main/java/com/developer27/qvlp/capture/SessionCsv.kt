@@ -13,10 +13,16 @@ internal object SessionCsv {
     /** A position's LED counts as detected when it was valid in at least this share of the frames. */
     const val MIN_VALID_SHARE = 0.7
     // Raised whenever the session files change shape, so existing sessions are rebuilt once.
-    private const val EXPORT_VERSION = 3
+    private const val EXPORT_VERSION = 4
 
-    /** final.csv: the fingerprint database, one row per position. */
-    val finalColumns = listOf("position_id") + (1..LEDS).flatMap { led -> listOf("u_px", "v_px", "detected").map { "LED_${led}_$it" } }
+    /**
+     * final.csv: the fingerprint database, one row per position. After the position and the three columns of
+     * each LED come the blob centroid of each LED, as x (column) and y (row) in pixels, and the size of the
+     * frames the position was captured in.
+     */
+    val finalColumns = listOf("position_id") + (1..LEDS).flatMap { led -> listOf("u_px", "v_px", "detected").map { "LED_${led}_$it" } } +
+        (1..LEDS).flatMap { led -> listOf("blob_centroid_x_px", "blob_centroid_y_px").map { "LED_${led}_$it" } } +
+        listOf("frame_width_px", "frame_height_px")
     val finalHeader = finalColumns.joinToString(",")
 
     /** One LED in one processed frame. */
@@ -33,14 +39,30 @@ internal object SessionCsv {
         LedFingerprint(frames.isNotEmpty(), valid.size, frames.size, median(valid.map { it.u!! }), median(valid.map { it.v!! }))
     }
 
-    /** Coordinates are written only for a detected LED: a wrong centre is worse than a missing one. */
-    fun finalRow(positionId: String, leds: List<LedFingerprint>): String = (listOf(positionId) + leds.flatMap { led ->
-        when {
-            !led.processed -> listOf("", "", "")
-            led.detected -> listOf(CaptureProcessing.number(led.u), CaptureProcessing.number(led.v), "1")
-            else -> listOf("", "", "0")
-        }
-    }).joinToString(",")
+    /**
+     * Coordinates are written only for a detected LED: a wrong centre is worse than a missing one. [blobs] says
+     * that the centres are blob centroids, which is so unless the capture was made in Inference Mode with
+     * Enable CV Algorithms unticked: its centres are those of the models' boxes, and its blob centroid cells
+     * stay empty. [width] and [height] are the size of the capture's frames in pixels, empty when unknown.
+     */
+    fun finalRow(positionId: String, leds: List<LedFingerprint>, blobs: Boolean = true, width: Int? = null, height: Int? = null): String =
+        (listOf(positionId) + leds.flatMap { led ->
+            when {
+                !led.processed -> listOf("", "", "")
+                led.detected -> listOf(CaptureProcessing.number(led.u), CaptureProcessing.number(led.v), "1")
+                else -> listOf("", "", "0")
+            }
+        } + leds.flatMap { led ->
+            if (blobs && led.detected) listOf(CaptureProcessing.number(led.u), CaptureProcessing.number(led.v)) else listOf("", "")
+        } + listOf(width?.toString().orEmpty(), height?.toString().orEmpty())).joinToString(",")
+
+    /**
+     * The size of a capture's frames, from its record: what the first frame measured, or else what the camera
+     * was asked for. Null when the record gives neither.
+     */
+    fun resolution(burst: JSONObject): Pair<Int, Int>? =
+        listOfNotNull(burst.optJSONArray("frames")?.optJSONObject(0), burst.optJSONObject("requested"))
+            .map { it.optInt("width", 0) to it.optInt("height", 0) }.firstOrNull { it.first > 0 && it.second > 0 }
 
     /** The LEDs of one processed frame's metadata file. */
     fun points(metadata: JSONObject): List<LedPoint> = (1..LEDS).map { led ->
@@ -87,7 +109,11 @@ internal object SessionCsv {
         }
 
     /** [mapping] is the file whose presence and contents say the frames behind [read] are complete. */
-    private class Source(val name: String, val mapping: File, val read: () -> List<List<LedPoint>>)
+    private class Source(val name: String, val mapping: File, val read: () -> List<List<LedPoint>>) {
+        /** Whether the centres it reads are blob centroids; the centres of the models' boxes are not. */
+        val blobs: Boolean get() = name != BOX_CENTRES
+    }
+    private const val BOX_CENTRES = "led_recognition_model"
 
     /**
      * Where a capture's row of final.csv comes from. A Data Collection capture: LED detection. A capture made in
@@ -99,7 +125,7 @@ internal object SessionCsv {
         val processedMapping = File(processed, SessionLayout.PROCESSED_MAPPING)
         val inference = SessionLayout.inferenceFolder(capture)
         val inferenceMapping = File(inference, SessionLayout.INFERENCE_MAPPING)
-        val models = if (centroids) "led_blob_centroid" else "led_recognition_model"
+        val models = if (centroids) "led_blob_centroid" else BOX_CENTRES
         return when {
             // A capture of version 1.4.0 or earlier, with its Inference_Frames folder.
             inferenceMapping.isFile -> Source(models, inferenceMapping) { if (centroids) readCentroids(processed, inference) else readInference(inference) }
@@ -118,7 +144,8 @@ internal object SessionCsv {
      * [inferred]: the capture's record says the two LED models ran on it, so it was made in Inference Mode.
      * [centroids]: it says the LED positions are blob centroids.
      */
-    private data class Attempt(val folder: File, val position: Int, val finished: Instant, val inferred: Boolean, val centroids: Boolean)
+    private data class Attempt(val folder: File, val position: Int, val finished: Instant, val inferred: Boolean, val centroids: Boolean,
+                               val resolution: Pair<Int, Int>?)
     // A capture never changes once processed, so its fingerprint is read from its files only once per run.
     private val fingerprints = HashMap<String, Pair<String, List<LedFingerprint>>>()
 
@@ -144,7 +171,8 @@ internal object SessionCsv {
                 excluded.put(JSONObject().put("attempt", folder.name).put("reason", data?.optString("state") ?: "unreadable_metadata"))
                 null
             } else Attempt(folder, data.getJSONObject("position").getInt("position_id"), Instant.parse(data.getString("finished_at")),
-                data.has("led_recognition"), data.optJSONObject("led_recognition")?.optString("centre") == PostInferenceFiles.CENTRE_BLOB)
+                data.has("led_recognition"), data.optJSONObject("led_recognition")?.optString("centre") == PostInferenceFiles.CENTRE_BLOB,
+                resolution(data))
         }
         // A position captured again is replaced: only its latest completed capture counts.
         val selected = completed.groupBy { it.position }.mapValues { (_, attempts) ->
@@ -162,9 +190,10 @@ internal object SessionCsv {
             val version = "${source.name}:${stamp(source.mapping)}"
             val leds = fingerprints[source.mapping.path]?.takeIf { it.first == version }?.second
                 ?: fingerprint(source.read()).also { fingerprints[source.mapping.path] = version to it }
-            lines.add(finalRow(attempt.position.toString(), leds))
+            lines.add(finalRow(attempt.position.toString(), leds, source.blobs, attempt.resolution?.first, attempt.resolution?.second))
             selection.put(JSONObject().put("position_id", attempt.position).put("attempt", attempt.folder.name)
                 .put("source", source.name)
+                .put("frame_width_px", attempt.resolution?.first ?: JSONObject.NULL).put("frame_height_px", attempt.resolution?.second ?: JSONObject.NULL)
                 .put("frames", leds.firstOrNull()?.frames ?: 0).put("finished_at", attempt.finished.toString()))
         }
         val atomic = AtomicFile(output)

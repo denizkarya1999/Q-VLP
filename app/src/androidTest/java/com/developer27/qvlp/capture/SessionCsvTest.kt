@@ -49,7 +49,7 @@ class SessionCsvTest {
             val final = File(session, SessionLayout.FINAL).readLines()
             assertEquals(SessionCsv.finalHeader, final.first())
             // One row per position, by ID. Position 1 comes from its latest completed capture.
-            assertEquals(listOf("1,201.000,50.000,1,,,0,,,0,,,0", "2,300.500,50.000,1,,,0,,,0,,,0"), final.drop(1))
+            assertEquals(listOf("1,201.000,50.000,1,,,0,,,0,,,0,201.000,50.000,,,,,,,,", "2,300.500,50.000,1,,,0,,,0,,,0,300.500,50.000,,,,,,,,"), final.drop(1))
             assertArrayEquals(original, File(first, SessionLayout.MAPPING).readBytes())
             val index = SessionFiles.readJson(File(session, "session.json")).getJSONObject("export")
             assertEquals("latest_completed_capture_per_position", index.getString("repeat_policy"))
@@ -74,7 +74,7 @@ class SessionCsvTest {
             val capture = attempt(session, "raw", 1, 1)
             SessionLayout.processedFolder(capture).deleteRecursively()
             SessionCsv.update(session)
-            assertEquals(listOf(SessionCsv.finalHeader, "1,,,,,,,,,,,,"), File(session, SessionLayout.FINAL).readLines())
+            assertEquals(listOf(SessionCsv.finalHeader, "1,,,,,,,,,,,,,,,,,,,,,,"), File(session, SessionLayout.FINAL).readLines())
         } finally { session.deleteRecursively() }
     }
 
@@ -109,7 +109,7 @@ class SessionCsvTest {
             archive = SessionFiles.archive(context, session.name)
             ZipFile(archive).use { zip ->
                 val csv = zip.getInputStream(zip.getEntry("${session.name}/${SessionLayout.FINAL}")).bufferedReader().readLines()
-                assertEquals(listOf(SessionCsv.finalHeader, "1,200.500,50.000,1,,,0,,,0,,,0"), csv)
+                assertEquals(listOf(SessionCsv.finalHeader, "1,200.500,50.000,1,,,0,,,0,,,0,200.500,50.000,,,,,,,,"), csv)
                 for (capture in listOf(old, latest)) {
                     val original = "${session.name}/${SessionLayout.ORIGINALS}/${capture.name}"
                     assertNotNull(zip.getEntry("$original/${SessionLayout.FRAMES}/${SessionLayout.frameName(0)}"))

@@ -90,8 +90,8 @@ class LedTracksTest {
         // The light the model is surest of keeps LED 2; the other one stays without a name.
         assertEquals(listOf(1, 2, LedDetection.UNNAMED), named.map { it.led })
         assertEquals(500f, (named[1].left + named[1].right) / 2f, 0f)
-        assertEquals("LED 2 | 95%", named[1].label)
-        assertEquals("LED Detected | 60%", named[2].label)
+        assertEquals("LED 2 | 95.0%", named[1].label)
+        assertEquals("LED Detected | 60.0%", named[2].label)
         assertEquals(0.6f, named[2].detected, 0f)
     }
 
@@ -100,6 +100,6 @@ class LedTracksTest {
             listOf(floatArrayOf(0.4f, 0.3f, 0.2f, 0.1f), floatArrayOf(0.1f, 0.1f, 0.3f, 0.5f), null))
         assertEquals(listOf(4, LedDetection.UNNAMED, LedDetection.UNNAMED), named.map { it.led })
         // Without a name the number shown is the detection model's, and the surest detection comes first.
-        assertEquals(listOf("LED 4 | 50%", "LED Detected | 93%", "LED Detected | 80%"), named.map { it.label })
+        assertEquals(listOf("LED 4 | 50.0%", "LED Detected | 93.0%", "LED Detected | 80.0%"), named.map { it.label })
     }
 }

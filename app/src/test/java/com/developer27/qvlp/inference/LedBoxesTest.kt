@@ -22,7 +22,7 @@ class LedBoxesTest {
         assertEquals(found.map { it.confidence }, found.map { it.detected })
         // The detection model finds LEDs; it does not name them.
         assertTrue(found.none { it.named })
-        assertEquals("LED Detected | 99%", found[0].label)
+        assertEquals("LED Detected | 99.0%", found[0].label)
         // The winning candidate's own box: centre (101, 100), 40 wide and high.
         assertEquals(81f, found[1].left, 1e-4f); assertEquals(80f, found[1].top, 1e-4f)
         assertEquals(121f, found[1].right, 1e-4f); assertEquals(120f, found[1].bottom, 1e-4f)
@@ -63,8 +63,8 @@ class LedBoxesTest {
     }
 
     @Test fun anLedIsLabelledWithItsNameOnceItHasOne() {
-        assertEquals("LED 3 | 98%", LedDetection(3, 0.98f, 0f, 0f, 10f, 10f, detected = 0.7f).label)
-        assertEquals("LED Detected | 70%", LedDetection(LedDetection.UNNAMED, 0.7f, 0f, 0f, 10f, 10f).label)
+        assertEquals("LED 3 | 98.0%", LedDetection(3, 0.98f, 0f, 0f, 10f, 10f, detected = 0.7f).label)
+        assertEquals("LED Detected | 70.0%", LedDetection(LedDetection.UNNAMED, 0.7f, 0f, 0f, 10f, 10f).label)
         assertEquals("LED 3", LedDetection(3, 0.98f, 0f, 0f, 10f, 10f).name)
         assertEquals("LED Detected", LedDetection(LedDetection.UNNAMED, 0.7f, 0f, 0f, 10f, 10f).name)
     }

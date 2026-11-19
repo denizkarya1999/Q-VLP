@@ -12,14 +12,40 @@ class SessionCsvFinalTest {
     private val missed = LedPoint(false, null, null)
     private fun frame(vararg leds: LedPoint) = List(SessionCsv.LEDS) { leds.getOrElse(it) { missed } }
 
-    @Test fun finalCsvHasThePositionAndThreeColumnsPerLed() {
+    @Test fun finalCsvHasThePositionThreeColumnsPerLedTheBlobCentroidsAndTheFrameSize() {
         assertEquals("position_id,LED_1_u_px,LED_1_v_px,LED_1_detected,LED_2_u_px,LED_2_v_px,LED_2_detected," +
-            "LED_3_u_px,LED_3_v_px,LED_3_detected,LED_4_u_px,LED_4_v_px,LED_4_detected", SessionCsv.finalHeader)
+            "LED_3_u_px,LED_3_v_px,LED_3_detected,LED_4_u_px,LED_4_v_px,LED_4_detected," +
+            "LED_1_blob_centroid_x_px,LED_1_blob_centroid_y_px,LED_2_blob_centroid_x_px,LED_2_blob_centroid_y_px," +
+            "LED_3_blob_centroid_x_px,LED_3_blob_centroid_y_px,LED_4_blob_centroid_x_px,LED_4_blob_centroid_y_px," +
+            "frame_width_px,frame_height_px", SessionCsv.finalHeader)
+        assertEquals(23, SessionCsv.finalColumns.size)
+    }
+
+    @Test fun writesTheBlobCentroidOfEachDetectedLedAndTheFrameSize() {
+        val frames = listOf(frame(missed, seen(451.2, 264.9)), frame(missed, seen(451.9, 264.1)), frame(missed, seen(451.6, 265.3)))
+        val leds = SessionCsv.fingerprint(frames)
+        assertEquals("17,,,0,451.600,264.900,1,,,0,,,0,,,451.600,264.900,,,,,1280,960", SessionCsv.finalRow("17", leds, true, 1280, 960))
+        // Centres of the models' boxes are not blob centroids: those cells stay empty.
+        assertEquals("17,,,0,451.600,264.900,1,,,0,,,0,,,,,,,,,1280,960", SessionCsv.finalRow("17", leds, false, 1280, 960))
+        // Every row has as many cells as the header, also for a capture that was never processed.
+        for (row in listOf(SessionCsv.finalRow("17", leds, true, 1280, 960), SessionCsv.finalRow("4", SessionCsv.fingerprint(emptyList())))) {
+            assertEquals(SessionCsv.finalColumns.size, row.split(",").size)
+        }
+    }
+
+    @Test fun readsTheFrameSizeFromTheCapturesRecord() {
+        val asked = JSONObject().put("width", 1280).put("height", 960)
+        assertEquals(1280 to 960, SessionCsv.resolution(JSONObject().put("requested", asked)))
+        // What the first frame measured comes before what was asked for.
+        val frames = org.json.JSONArray().put(JSONObject().put("width", 640).put("height", 480))
+        assertEquals(640 to 480, SessionCsv.resolution(JSONObject().put("requested", asked).put("frames", frames)))
+        assertEquals(1280 to 960, SessionCsv.resolution(JSONObject().put("requested", asked).put("frames", org.json.JSONArray())))
+        assertNull(SessionCsv.resolution(JSONObject().put("state", "complete")))
     }
 
     @Test fun writesTheMedianCentreOfTheValidFramesForEachDetectedLed() {
         val frames = listOf(frame(seen(451.2, 264.9)), frame(seen(451.9, 264.1)), frame(seen(451.6, 265.3)))
-        assertEquals("17,451.600,264.900,1,,,0,,,0,,,0", SessionCsv.finalRow("17", SessionCsv.fingerprint(frames)))
+        assertEquals("17,451.600,264.900,1,,,0,,,0,,,0,451.600,264.900,,,,,,,,", SessionCsv.finalRow("17", SessionCsv.fingerprint(frames)))
     }
 
     @Test fun anLedNeedsSeventyPercentOfTheFramesToCount() {
@@ -37,7 +63,7 @@ class SessionCsvFinalTest {
     }
 
     @Test fun aCaptureThatWasNeverProcessedKeepsEmptyLedCellsRatherThanZero() {
-        assertEquals("4,,,,,,,,,,,,", SessionCsv.finalRow("4", SessionCsv.fingerprint(emptyList())))
+        assertEquals("4,,,,,,,,,,,,,,,,,,,,,,", SessionCsv.finalRow("4", SessionCsv.fingerprint(emptyList())))
     }
 
     @Test fun readsEachLedFromAProcessedFramesMetadata() {
@@ -66,7 +92,7 @@ class SessionCsvFinalTest {
             File(processed, SessionLayout.PROCESSED_MAPPING).writeText(SessionLayout.mapping(listOf(0, 1, 2)))
             val frames = SessionCsv.readProcessed(processed)
             assertEquals(3, frames.size)
-            assertEquals("3,,,0,102.000,50.000,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
+            assertEquals("3,,,0,102.000,50.000,1,,,0,,,0,,,102.000,50.000,,,,,,", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
         } finally { processed.deleteRecursively() }
     }
 
@@ -84,7 +110,7 @@ class SessionCsvFinalTest {
             File(processed, SessionLayout.PROCESSED_MAPPING).writeText(SessionLayout.mapping(listOf(0, 1, 2, 3)))
             val frames = SessionCsv.readModels(processed)
             assertEquals(3, frames.size)
-            assertEquals("3,,,0,102.000,50.000,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
+            assertEquals("3,,,0,102.000,50.000,1,,,0,,,0,,,102.000,50.000,,,,,,", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
             // Read as a Data Collection capture, all four frames would count.
             assertEquals(4, SessionCsv.readProcessed(processed).size)
             assertTrue(SessionCsv.fromModels(JSONObject().put("details", JSONObject().put("detection_model", JSONObject.NULL))))
@@ -112,8 +138,8 @@ class SessionCsvFinalTest {
             File(inference, SessionLayout.INFERENCE_MAPPING).writeText(SessionLayout.mapping(listOf(0, 1, 2)))
             val frames = SessionCsv.readCentroids(processed, inference)
             assertEquals(3, frames.size)
-            assertEquals("3,,,0,100.400,50.000,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
-            assertEquals("3,,,0,103.500,52.500,1,,,0,,,0", SessionCsv.finalRow("3", SessionCsv.fingerprint(SessionCsv.readInference(inference))))
+            assertEquals("3,,,0,100.400,50.000,1,,,0,,,0,,,100.400,50.000,,,,,,", SessionCsv.finalRow("3", SessionCsv.fingerprint(frames)))
+            assertEquals("3,,,0,103.500,52.500,1,,,0,,,0,,,,,,,,,,", SessionCsv.finalRow("3", SessionCsv.fingerprint(SessionCsv.readInference(inference)), blobs = false))
         } finally { session.deleteRecursively() }
     }
 }

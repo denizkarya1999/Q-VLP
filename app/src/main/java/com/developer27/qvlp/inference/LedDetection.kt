@@ -1,8 +1,8 @@
 package com.developer27.qvlp.inference
 
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 
 /**
  * One LED in a picture. The Physical LED Detection Model found it and is [detected] sure that it is an LED;
@@ -21,8 +21,11 @@ internal data class LedDetection(
     /** "LED 1" to "LED 4", or "LED Detected" for an LED without a name. */
     val name: String get() = if (named) "LED $led" else "LED Detected"
 
-    /** What is written beside the box, for example "LED 1 | 98%", or "LED Detected | 93%" for an LED without a name. */
-    val label: String get() = "$name | ${(confidence * 100f).roundToInt().coerceIn(0, 100)}%"
+    /** The confidence as a percentage with one decimal, for example "98.0%". */
+    val percent: String get() = String.format(Locale.US, "%.1f%%", (confidence * 100f).coerceIn(0f, 100f))
+
+    /** What is written above the box, for example "LED 1 | 98.0%", or "LED Detected | 93.0%" for an LED without a name. */
+    val label: String get() = "$name | $percent"
 
     /** The shared part of two boxes as a fraction of the area they cover together: 0 apart, 1 identical. */
     fun overlap(other: LedDetection): Float {

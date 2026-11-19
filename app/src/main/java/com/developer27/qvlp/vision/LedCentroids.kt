@@ -1,6 +1,7 @@
 package com.developer27.qvlp.vision
 
 import com.developer27.qvlp.inference.LedDetection
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -14,7 +15,16 @@ internal data class LedCentre(
     val u: Double, val v: Double, val areaPx: Int, val peakLevel: Int,
     val left: Int, val top: Int, val width: Int, val height: Int,
     val saturated: Boolean, val touchesBoxEdge: Boolean, val frames: Int
-)
+) {
+    /** The centroid as it is written under the LED's box, for example "{868.41,286.95}". */
+    val label: String get() = centreLabel(u, v)
+}
+
+/**
+ * A centre as it is written under an LED's box on the preview, in Local File Inference and in a processed
+ * frame: column then row in pixels, two decimals, for example "{868.41,286.95}".
+ */
+internal fun centreLabel(u: Double, v: Double): String = String.format(Locale.US, "{%.2f,%.2f}", u, v)
 
 /** The blobs of one frame, one for each box in the order the boxes were given; null where a box holds no blob. */
 internal class FrameCentres(val leds: List<LedCentre?>, val background: Double, val frames: Int)

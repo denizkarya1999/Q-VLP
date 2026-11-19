@@ -95,7 +95,7 @@ class LocalFileInferenceActivity : AppCompatActivity() {
     }
 
     /**
-     * One line per LED, "LED 1 | 98%", with a square in the colour of its box. With blob centroids each line
+     * One line per LED, "LED 1 | 98.0%", with a square in the colour of its box. With blob centroids each line
      * goes on with the centroid, in pixels of the picture, or says that the box holds no blob.
      */
     private fun list(detections: List<LedDetection>, centres: List<LedCentre?>): CharSequence = SpannableStringBuilder().apply {
@@ -145,15 +145,15 @@ class LocalFileInferenceActivity : AppCompatActivity() {
     }
 
     /**
-     * A copy of the picture with the boxes drawn on it, and a cross at each blob centroid in [centres]. Line
-     * and letter sizes follow the picture's size.
+     * A copy of the picture with the boxes drawn on it, and for each blob centroid in [centres] a cross at it
+     * and its coordinates under the box. Line and letter sizes follow the picture's size.
      */
     private fun draw(picture: Bitmap, detections: List<LedDetection>, centres: List<LedCentre?>): Bitmap {
         val copy = picture.copy(Bitmap.Config.ARGB_8888, true)
         val painter = LedBoxPainter.forPicture(copy.width)
         val canvas = Canvas(copy)
         detections.forEachIndexed { index, found ->
-            painter.draw(canvas, found.left, found.top, found.right, found.bottom, found)
+            painter.draw(canvas, found.left, found.top, found.right, found.bottom, found, centres.getOrNull(index)?.label)
             // A centroid is counted from the middle of the top-left pixel, half a pixel in from the picture's corner.
             centres.getOrNull(index)?.let { painter.drawCentre(canvas, it.u.toFloat() + 0.5f, it.v.toFloat() + 0.5f, found) }
         }
