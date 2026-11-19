@@ -209,7 +209,8 @@ class MainActivity : AppCompatActivity() {
         viewBinding.ledOverlay.clear()
         var live: LiveInference? = null
         // With the detection model unticked there is nothing to look for, so no frames are taken for it.
-        if (inferenceMode && inferenceModels.detection) live = LiveInference(this, inferenceModels) { result ->
+        // With Enable CV Algorithms it also finds the blob centroid of each LED: CV Processing.
+        if (inferenceMode && inferenceModels.detection) live = LiveInference(this, inferenceModels, SettingsActivity.cvAlgorithms(preferences)) { result ->
             runOnUiThread { if (liveInference === live) showInference(result) }
         }
         liveInference = live
@@ -231,7 +232,7 @@ class MainActivity : AppCompatActivity() {
         val geometry = cameraHelper.previewGeometry()
         // While frames are being captured the preview boxes would belong to an older frame.
         if (result.error != null || geometry == null || captureBusy) viewBinding.ledOverlay.clear()
-        else viewBinding.ledOverlay.show(result.detections, result.frameWidth, result.frameHeight, geometry)
+        else viewBinding.ledOverlay.show(result.detections, result.frameWidth, result.frameHeight, geometry, result.centres)
         if (result.error != null && first)
             Toast.makeText(this, getString(R.string.inference_failed, result.error), Toast.LENGTH_LONG).show()
     }
@@ -318,6 +319,7 @@ class MainActivity : AppCompatActivity() {
         })
         val sections = listOfNotNull(
             if (inferenceMode) getString(R.string.info_inference) to inferenceDetails() else null,
+            if (inferenceMode && SettingsActivity.cvAlgorithms(preferences)) getString(R.string.info_cv_processing) to cvProcessingDetails() else null,
             getString(R.string.info_camera) to listOf(camera, cameraDetails).filter { it.isNotBlank() }.joinToString("\n"),
             getString(R.string.info_saving) to storageState.message,
             getString(R.string.info_last_capture) to (resultDetails ?: getString(R.string.info_no_capture))
@@ -342,7 +344,25 @@ class MainActivity : AppCompatActivity() {
                     else result.detections.joinToString("\n") { it.label })
             }
         }
-        if (SettingsActivity.cvAlgorithms(preferences)) lines.add(getString(R.string.cv_algorithms_on))
+        return lines.joinToString("\n")
+    }
+
+    /** CV Processing: the blob centroid of each LED in the latest frame, as final.csv would give it. */
+    private fun cvProcessingDetails(): String {
+        val result = inferenceResult
+        val lines = mutableListOf(getString(R.string.cv_blob_centroids))
+        when {
+            !inferenceModels.detection -> lines.add(getString(R.string.cv_no_model))
+            result == null -> lines.add(getString(R.string.inference_starting))
+            result.error != null -> lines.add(getString(R.string.inference_failed, result.error))
+            result.detections.isEmpty() -> lines.add(getString(R.string.inference_no_leds))
+            else -> result.detections.forEachIndexed { index, led ->
+                val centre = result.centres.getOrNull(index)
+                lines.add(if (centre == null) getString(R.string.cv_no_blob, led.name)
+                    else getString(R.string.cv_centroid, led.name, CaptureProcessing.number(centre.u), CaptureProcessing.number(centre.v)))
+            }
+        }
+        if (postInferenceFiles) lines.add(getString(R.string.cv_capture_note))
         return lines.joinToString("\n")
     }
 

@@ -30,6 +30,18 @@ class PreviewMappingTest {
         assertPoint(480f, 640f, front().point(640f, 480f))
     }
 
+    @Test fun aBlobCentroidIsCountedFromTheMiddleOfTheTopLeftPixel() {
+        // u = 0, v = 0 is the middle of the frame's top-left pixel, half a pixel in from the frame's corner.
+        assertPoint(959.5f, 0.5f, rear().centre(0.0, 0.0))
+        assertPoint(959.5f, 1279.5f, front().centre(0.0, 0.0))
+        // A box over columns 100 to 139 and rows 80 to 119 has its centre at u = 119.5, v = 99.5: the middle of the box drawn.
+        val box = LedDetection(2, 0.9f, 100f, 80f, 140f, 120f)
+        for (mapping in listOf(rear(), front(), PreviewMapping(1280, 960, PreviewGeometry(90, false), 1080, 2400))) {
+            val drawn = mapping.box(box)
+            assertPoint((drawn[0] + drawn[2]) / 2f, (drawn[1] + drawn[3]) / 2f, mapping.centre(119.5, 99.5))
+        }
+    }
+
     @Test fun followsThePreviewWhenItIsEnlargedToFillTheScreen() {
         // A 1080 x 2400 screen: the 960 x 1280 picture is enlarged 1.875 times and its sides are cropped.
         val mapping = PreviewMapping(1280, 960, PreviewGeometry(90, false), 1080, 2400)

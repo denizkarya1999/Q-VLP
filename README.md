@@ -6,8 +6,8 @@ The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplat
 
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
-- Version: 1.3.2
-- Release date: November 18, 2026
+- Version: 1.4.0
+- Release date: November 19, 2026
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
 **Topics:** `android` · `kotlin` · `camera2` · `pytorch` · `yolo` · `resnet` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
@@ -67,6 +67,7 @@ No LEDs were in front of the camera when screenshots 12, 13 and 15 were taken, s
 The **i** button under the camera-switch button opens everything the screen no longer shows:
 
 - **Inference** (Inference Mode only) — the models that run, how long the latest frame took and the LEDs found in it.
+- **CV Processing** (Inference Mode with **Enable CV Algorithms** ticked) — the blob centroid of each LED in the latest frame, for example `LED 1: u 745.312, v 766.187`.
 - **Camera** — whether the camera is ready, and the requested and reported settings.
 - **Saving** — the auto-save progress of the session folder.
 - **Last capture** — frames saved, measured fps, which LEDs were detected, any warnings, and the session folder.
@@ -95,7 +96,7 @@ The preview always fills the screen at the camera image's true proportions, on b
 
 ## Inference Mode
 
-Inference Mode is the mode of a new installation; it is chosen under **Settings → Modes**. The camera screen is the same as in Data Collection Mode, and two models run on the preview, one after the other. The **Physical LED Detection Model** finds the LEDs in the frame. The **OOK-Based LED Recognition Model** then names each of them from the on-off keying (OOK) signal it sends. Every named LED gets a box in that LED's colour (LED 1 red, LED 2 blue, LED 3 green, LED 4 purple) with a tag such as `LED 1 | 98%`: the LED's name and how sure the recognition model is of it. An LED that was found but not named gets a grey box tagged `LED Detected | 93%`, with the detection model's confidence. Nothing else is written on the screen; the **i** button has the details.
+Inference Mode is the mode of a new installation; it is chosen under **Settings → Modes**. The camera screen is the same as in Data Collection Mode, and two models run on the preview, one after the other. The **Physical LED Detection Model** finds the LEDs in the frame. The **OOK-Based LED Recognition Model** then names each of them from the on-off keying (OOK) signal it sends. Every named LED gets a box in that LED's colour (LED 1 red, LED 2 blue, LED 3 green, LED 4 purple) with a tag such as `LED 1 | 98%`: the LED's name and how sure the recognition model is of it. An LED that was found but not named gets a grey box tagged `LED Detected | 93%`, with the detection model's confidence. With **Enable CV Algorithms** ticked a small cross in the same colour marks the blob centroid of each LED (see [Enable CV Algorithms](#enable-cv-algorithms)). Nothing else is written on the screen; the **i** button has the details.
 
 - **One box per LED.** The detection model answers with thousands of candidate boxes. The app keeps at most four, one for each LED of the rig, and never two on the same light: the most confident candidates win, and a candidate that overlaps a box already kept is dropped. A candidate the model is less than 25% sure of is not an LED. No two boxes get the same name either: when the recognition model gives two lights the same name, the one it is surest of keeps it and the other stays `LED Detected`. So does an LED whose name the recognition model is less than 50% sure of.
 - **Five frames per LED.** The recognition model was trained on sequences of five frames of one LED, each frame cut out along the LED's box. The app follows each LED from frame to frame (an LED is the same LED when its box overlaps the one in the frame before), keeps its last five crops, resizes each to 128 × 128 pixels and puts them side by side, the earliest on the left. An LED is named from its first frame, as five copies of that frame, and named again from every five new frames; in between it keeps the name it has. An LED that moves away, or is not found in more than five frames, starts again.
@@ -130,7 +131,7 @@ Untick the checkbox and Inference Mode saves nothing: the capture controls disap
 
 ### Enable CV Algorithms
 
-**Settings → Inference → Enable CV Algorithms** is unticked on a new installation. Ticked, a position captured in Inference Mode also gets the **blob centroid** of every LED: the centre of the lit pixels inside the box the detection model drew, in place of the centre of that box. It works on captured frames, so it needs **Generate Post-Inference Files**; the live preview and Local File Inference are unchanged.
+**Settings → Inference → Enable CV Algorithms** is unticked on a new installation. Ticked, Inference Mode also finds the **blob centroid** of every LED: the centre of the lit pixels inside the box the detection model drew. This is the app's CV Processing. It runs on the live preview and on the frames of a captured position; Local File Inference is unchanged.
 
 How the blob is found (`LedCentroids`):
 
@@ -138,7 +139,11 @@ How the blob is found (`LedCentroids`):
 2. Inside the pixels the model's box covers, the blob is the largest group of touching pixels that are at least half as bright as the brightest pixel in the box. Its centre is the mean column and row of those pixels, with sub-pixel precision, counted from the centre of the top-left pixel like every other coordinate.
 3. A box whose brightest pixel is no more than 25 grey levels above the background holds no blob, and that LED has no position in that frame.
 
-What changes in the files of such a capture:
+On the preview a small cross in the LED's colour marks the centroid inside each box, and the **i** button lists the centroids under **CV Processing**, in pixels of the camera frame. An LED whose box holds no blob gets no cross and is listed as `no blob`. Nothing is saved from the preview.
+
+The models are given one camera frame in many, a second or more apart, and a blob has to be read from five frames taken one after the other. So with the setting ticked the preview's frames are counted in fives (`LiveCentroids`): the first four go to the blob finder alone, and the fifth goes to the blob finder and to the models. The centroid then belongs to the frame the boxes belong to and the four camera frames just before it. Each run of the models starts four frames later for it, 0.13 s at 30 fps. After a pause of more than half a second, as when a position is captured, the count starts again.
+
+What changes in the files of a capture made with the setting ticked:
 
 - **Processed frames** show a box round the blob, a cross at its centre and the LED's name. An LED whose box holds no blob keeps the model's box, dashed, with the label `LED k ?`.
 - **Processed frame metadata** holds the blob centroid in `LED_k_u_px` and `LED_k_v_px`, and `LED_k_detected` is 1 only when the LED was named and its box holds a blob. `details` keeps everything the inference frame metadata says and adds `centre` (`blob_centroid`), the settings used, `blob_frames_used` and, for every LED the models found, `blob_found`, `blob_u_px`, `blob_v_px`, `blob_area_px`, `peak_level`, the blob's own box, `saturated` and `touches_box_edge`.
@@ -151,8 +156,8 @@ Limits:
 
 - Where the centre lies depends on how bright a pixel must be to count. With a fifth of the brightest pixel in place of half, the median centre of a position moves by 0.3 px (LED 4) to 1.7 px (LED 3). LED 3 is dim and unevenly lit, and half the brightest pixel keeps only its brightest part: a median of 30 px, against 118 px with a fifth. Half was kept because it was the steadiest for all four LEDs and its blob never reached the edge of the box. So the centroid is a steady point on the LED, not a measured centre of its outline.
 - The first four frames of a capture have fewer than five frames behind them (`blob_frames_used` says how many). Their centroid is less steady: up to 7 px off in the very first frame of the positions measured. The median over a position is not moved by them.
-- The camera has to stand still during the capture. A blob read from five frames of a moving LED is smeared; this was not measured.
-- It has not been tried on the phone.
+- The camera has to stand still over the five frames, which is a sixth of a second at 30 fps. A blob read from five frames of a moving LED is smeared; this was not measured.
+- It has not been tried on the phone, on the preview or in a capture. The preview's counting in fives and the place of the cross were checked by unit tests only, and how much the extra frames slow the preview was not measured.
 - Distance estimation and the other algorithms planned for this setting do not exist yet.
 
 ## Camera and saved data

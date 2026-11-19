@@ -32,6 +32,12 @@ internal class PreviewMapping(
         return (viewWidth / 2f + (across - imageWidth / 2f) * zoom) to (viewHeight / 2f + (down - imageHeight / 2f) * zoom)
     }
 
+    /**
+     * View position of a centre given as a session coordinate: [u] is the column and [v] the row, counted from
+     * the centre of the frame's top-left pixel, which is half a pixel in from its corner.
+     */
+    fun centre(u: Double, v: Double): Pair<Float, Float> = point(u.toFloat() + 0.5f, v.toFloat() + 0.5f)
+
     /** The view rectangle (left, top, right, bottom) that covers a frame box. */
     fun box(found: LedDetection): FloatArray {
         val (x1, y1) = point(found.left, found.top)

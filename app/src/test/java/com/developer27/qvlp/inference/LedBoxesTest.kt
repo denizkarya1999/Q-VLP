@@ -65,5 +65,7 @@ class LedBoxesTest {
     @Test fun anLedIsLabelledWithItsNameOnceItHasOne() {
         assertEquals("LED 3 | 98%", LedDetection(3, 0.98f, 0f, 0f, 10f, 10f, detected = 0.7f).label)
         assertEquals("LED Detected | 70%", LedDetection(LedDetection.UNNAMED, 0.7f, 0f, 0f, 10f, 10f).label)
+        assertEquals("LED 3", LedDetection(3, 0.98f, 0f, 0f, 10f, 10f).name)
+        assertEquals("LED Detected", LedDetection(LedDetection.UNNAMED, 0.7f, 0f, 0f, 10f, 10f).name)
     }
 }

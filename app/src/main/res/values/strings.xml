@@ -5,7 +5,7 @@
     <string name="about_qvlp">About Q-VLP</string>
     <string name="project_description">Q-VLP Research Project</string>
     <string name="project_version_label">Version:</string>
-    <string name="project_release_date"><b>Release Date:</b> November 18, 2026</string>
+    <string name="project_release_date"><b>Release Date:</b> November 19, 2026</string>
     <string name="project_developers_label"><b>Developer(s):</b></string>
     <string name="project_developers">Thuy-Anh Nguyen\nDeniz K. Acikbas</string>
     <string name="project_authors_label"><b>Authors:</b></string>
@@ -25,7 +25,7 @@
     <string name="generate_post_inference_files">Generate Post-Inference Files</string>
     <string name="generate_post_inference_files_summary">In Inference Mode, capture positions and save final.csv, the frames with the inference bounding boxes and the processed frames.</string>
     <string name="enable_cv_algorithms">Enable CV Algorithms</string>
-    <string name="enable_cv_algorithms_summary">When a position is captured in Inference Mode, find the blob centroid of each LED inside its box. The processed frames and final.csv then hold blob centroids instead of box centres.</string>
+    <string name="enable_cv_algorithms_summary">In Inference Mode, find the blob centroid of each LED inside its box: on the preview, and in the processed frames and final.csv of a captured position.</string>
     <string name="options">Options</string>
     <string name="local_file_inference">Local File Inference</string>
     <string name="local_file_inference_summary">Open an image stored on this phone and run the LED models on it.</string>
@@ -47,7 +47,12 @@
     <string name="inference_no_leds">No LEDs found in the latest frame.</string>
     <string name="inference_no_model">The LED Detection Model is unticked in Settings → Options → Inference Models, so no LEDs are looked for.</string>
     <string name="inference_failed">The LED models could not run: %1$s</string>
-    <string name="cv_algorithms_on">Enable CV Algorithms is ticked: a captured position gets the blob centroid of each LED in its processed frames and final.csv. The preview is unchanged.</string>
+    <string name="info_cv_processing">CV Processing</string>
+    <string name="cv_blob_centroids">Blob centroid of each LED in the latest frame, read from that frame and the four before it. u and v are in pixels of the camera frame.</string>
+    <string name="cv_centroid">%1$s: u %2$s, v %3$s</string>
+    <string name="cv_no_blob">%1$s: no blob</string>
+    <string name="cv_no_model">Blobs are looked for inside the boxes of the LED Detection Model, which is unticked.</string>
+    <string name="cv_capture_note">A captured position gets the blob centroids in its processed frames and final.csv.</string>
     <string name="save_setting">Save</string>
     <string name="about">About</string>
     <string name="camera_settings">Camera Settings</string>

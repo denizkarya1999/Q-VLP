@@ -7,7 +7,8 @@ import android.graphics.Typeface
 
 /**
  * Draws one LED the way Inference Mode and Local File Inference both show it: a box in the LED's colour with
- * its name and confidence on a tag, for example "LED 1 | 98%". An LED without a name gets a grey box.
+ * its name and confidence on a tag, for example "LED 1 | 98%". An LED without a name gets a grey box. On the
+ * preview it can also mark an LED's blob centroid with a small cross.
  */
 internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke }
@@ -18,6 +19,10 @@ internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
         typeface = Typeface.DEFAULT_BOLD
     }
     private val padding = textSize * 0.3f
+    private val mark = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke; strokeCap = Paint.Cap.BUTT }
+    // A dark edge under the cross, so it also shows on the white of an overexposed LED.
+    private val markEdge = Paint(mark).apply { strokeWidth = stroke * 2f; color = Color.BLACK }
+    private val arm = textSize * 0.5f
 
     /** The box edges are in the canvas's own pixels. */
     fun draw(canvas: Canvas, left: Float, top: Float, right: Float, bottom: Float, found: LedDetection) {
@@ -34,6 +39,16 @@ internal class LedBoxPainter(private val stroke: Float, textSize: Float) {
         val tagTop = if (above >= 0f) above else minOf(bottom + stroke / 2f, maxOf(0f, canvas.height - tagHeight))
         canvas.drawRect(tagLeft, tagTop, tagLeft + tagWidth, tagTop + tagHeight, tag)
         canvas.drawText(label, tagLeft + padding, tagTop + padding - text.fontMetrics.ascent * 0.92f, text)
+    }
+
+    /** A cross in the LED's colour at ([x], [y]), in the canvas's own pixels: the centroid of its blob. */
+    fun drawCentre(canvas: Canvas, x: Float, y: Float, found: LedDetection) {
+        mark.color = colour(found.led)
+        for (paint in arrayOf(markEdge, mark)) {
+            val reach = arm + (paint.strokeWidth - stroke) / 2f
+            canvas.drawLine(x - reach, y, x + reach, y, paint)
+            canvas.drawLine(x, y - reach, x, y + reach, paint)
+        }
     }
 
     companion object {

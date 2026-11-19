@@ -18,8 +18,11 @@ internal data class LedDetection(
 ) {
     val named: Boolean get() = led != UNNAMED
 
+    /** "LED 1" to "LED 4", or "LED Detected" for an LED without a name. */
+    val name: String get() = if (named) "LED $led" else "LED Detected"
+
     /** What is written beside the box, for example "LED 1 | 98%", or "LED Detected | 93%" for an LED without a name. */
-    val label: String get() = "${if (named) "LED $led" else "LED Detected"} | ${(confidence * 100f).roundToInt().coerceIn(0, 100)}%"
+    val label: String get() = "$name | ${(confidence * 100f).roundToInt().coerceIn(0, 100)}%"
 
     /** The shared part of two boxes as a fraction of the area they cover together: 0 apart, 1 identical. */
     fun overlap(other: LedDetection): Float {
