@@ -16,7 +16,8 @@ internal class CopyControl(private val yieldToCapture: Boolean = false) {
     val signal = CancellationSignal()
     fun cancel() = signal.cancel()
     fun check() {
-        while (yieldToCapture && SessionFiles.activeCapture != null && !signal.isCanceled) Thread.sleep(25)
+        // Only while the camera is delivering frames. Finding the LEDs afterwards does not need the storage to itself.
+        while (yieldToCapture && SessionFiles.framesArriving && !signal.isCanceled) Thread.sleep(25)
         if (signal.isCanceled) throw CancellationException("Saving paused. Original files remain safe.")
     }
 }

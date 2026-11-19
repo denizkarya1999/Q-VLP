@@ -132,6 +132,17 @@
     <string name="end_session">End Session</string>
     <string name="end_session_title">End this session?</string>
     <string name="end_session_message">Captured positions stay saved. The next capture starts a new session.</string>
+    <plurals name="session_positions_complete">
+        <item quantity="one">%d position is complete in this session.</item>
+        <item quantity="other">%d positions are complete in this session.</item>
+    </plurals>
+    <string name="session_positions_incomplete">Not complete: position %1$s. Capture again the ones you need before ending the session.</string>
+    <string name="session_saved">Every file of the session is saved in Pictures/Q-VLP.</string>
+    <string name="session_not_saved">Saving to Pictures/Q-VLP is not finished. Keep the app open until it is: the i button shows the progress. Saving goes on after the session ends.</string>
+    <string name="capture_incomplete_title">Position %1$d is not complete</string>
+    <string name="capture_incomplete_message">%1$d of %2$d frames were saved. Capture this position again so that nothing is missing.</string>
+    <string name="capture_again">Capture Again</string>
+    <string name="capture_later">Later</string>
     <string name="session_ended">Session ended. The next capture starts a new session.</string>
     <string name="next_position_ready">Move the lens over this floor mark, then tap Start Capture.</string>
     <string name="done">Done</string>
@@ -147,7 +158,7 @@
     <string name="factory_reset">Factory Reset</string>
     <string name="factory_reset_summary">Restore all settings to their defaults.</string>
     <string name="factory_reset_title">Restore the default settings?</string>
-    <string name="factory_reset_message">This selects the front camera and restores 1× zoom, a 6000 Hz rolling shutter rate, ISO 100 and 30 fps on both cameras, 50 frames, Inference Mode with both Inference Models ticked, Generate Post-Inference Files ticked and Enable CV Algorithms unticked. The chosen position is cleared.\n\nSaved sessions and the auto-save folder are kept. The next capture starts a new session.</string>
+    <string name="factory_reset_message">This selects the front camera and restores 1× zoom, a 6000 Hz rolling shutter rate, ISO 100 and 30 fps on both cameras, 50 frames, Inference Mode with both Inference Models ticked, Generate Post-Inference Files and Enable CV Algorithms ticked. The chosen position is cleared.\n\nSaved sessions and the auto-save folder are kept. The next capture starts a new session.</string>
     <string name="factory_reset_confirm">Reset</string>
     <string name="factory_reset_done">Settings restored to defaults.</string>
     <string name="camera_permission_help">Tap here to allow camera access.</string>

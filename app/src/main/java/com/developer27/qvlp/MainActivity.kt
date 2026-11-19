@@ -35,6 +35,7 @@ import com.developer27.qvlp.capture.PositionPicker
 import com.developer27.qvlp.capture.PublicSessionStorage
 import com.developer27.qvlp.capture.ResearchSettings
 import com.developer27.qvlp.capture.SessionBrowser
+import com.developer27.qvlp.capture.SessionCheck
 import com.developer27.qvlp.capture.SessionCsv
 import com.developer27.qvlp.capture.SessionFiles
 import com.developer27.qvlp.capture.SessionPublisher
@@ -68,6 +69,9 @@ class MainActivity : AppCompatActivity() {
     private var orientationBeforeCapture = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var lastPosition: Position? = null
     private var resultDetails: String? = null
+    // A capture the operator stopped is theirs to repeat or not; any other incomplete one is reported.
+    private var cancelledByOperator = false
+    private var endSessionAsked = false
     private var storageState = SessionPublisher.State()
     private var stopObservingStorage: (() -> Unit)? = null
     // Inference Mode: the model runs on the preview, and positions are captured only when their files are wanted.
@@ -151,15 +155,7 @@ class MainActivity : AppCompatActivity() {
         viewBinding.replacePositionButton.setOnClickListener {
             positions.replace(capturedPositions, lastPosition?.id, ::selectForCapture)
         }
-        viewBinding.endSessionButton.setOnClickListener {
-            AlertDialog.Builder(this).setTitle(R.string.end_session_title).setMessage(R.string.end_session_message)
-                .setPositiveButton(R.string.end_session) { _, _ ->
-                    SessionFiles.newSession(applicationContext)
-                    sessionChanged(resetPosition = true)
-                    viewBinding.burstStatus.setText(R.string.session_ended)
-                }
-                .setNegativeButton(android.R.string.cancel, null).show()
-        }
+        viewBinding.endSessionButton.setOnClickListener { askToEndSession() }
         viewBinding.nextPositionButton.setOnClickListener {
             ResearchSettings.next(preferences)?.let {
                 ResearchSettings.select(preferences, it)
@@ -290,7 +286,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun triggerCapture() {
         if (fileBusy || triggerBusy || !captureAvailable()) return
-        if (captureBusy) { cancelFrameCapture(); return }
+        if (captureBusy) { cancelledByOperator = true; cancelFrameCapture(); return }
         if (!cameraReady) {
             Toast.makeText(this, R.string.camera_wait_button, Toast.LENGTH_SHORT).show()
             return
@@ -452,6 +448,7 @@ class MainActivity : AppCompatActivity() {
         }
         val length = CaptureLengthPreferences.read(preferences)
         clearResult()
+        cancelledByOperator = false
         captureBusy = true
         orientationBeforeCapture = requestedOrientation
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
@@ -533,6 +530,58 @@ class MainActivity : AppCompatActivity() {
         // Nothing is written on the result screen. Warnings and details are behind the information button.
         viewBinding.burstStatus.text = ""
         updateControls()
+        // The one thing the operator is told at once: a position that does not have all of its frames.
+        if (!summary.complete && !cancelledByOperator && !isFinishing) showIncompleteCapture(summary)
+        cancelledByOperator = false
+    }
+
+    /** A position is missing frames, or its capture was cut short: say so, and offer to capture it again. */
+    private fun showIncompleteCapture(summary: BurstSummary) {
+        val position = Position(summary.positionId)
+        AlertDialog.Builder(this).setTitle(getString(R.string.capture_incomplete_title, summary.positionId))
+            .setMessage(listOf(getString(R.string.capture_incomplete_message, summary.pictures, summary.length.frames),
+                summary.warnings.take(3).joinToString("\n")).filter { it.isNotBlank() }.joinToString("\n\n"))
+            .setPositiveButton(R.string.capture_again) { _, _ ->
+                ResearchSettings.select(preferences, position)
+                beginCountdown(position)
+            }
+            .setNegativeButton(R.string.capture_later, null).show()
+    }
+
+    /**
+     * Before a session ends the operator is told what it holds: how many positions are complete, which are not,
+     * and whether everything has reached Pictures/Q-VLP. Ending is never refused.
+     */
+    private fun askToEndSession() {
+        if (endSessionAsked) return
+        endSessionAsked = true
+        val app = applicationContext
+        SessionFiles.io.execute {
+            val report = runCatching { SessionFiles.check(app) }.getOrNull()
+            runOnUiThread {
+                endSessionAsked = false
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                AlertDialog.Builder(this).setTitle(R.string.end_session_title).setMessage(endSessionMessage(report))
+                    .setPositiveButton(R.string.end_session) { _, _ ->
+                        SessionFiles.newSession(applicationContext)
+                        sessionChanged(resetPosition = true)
+                        viewBinding.burstStatus.setText(R.string.session_ended)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null).show()
+            }
+        }
+    }
+
+    private fun endSessionMessage(report: SessionCheck.Report?): String {
+        val lines = mutableListOf<String>()
+        if (report != null) {
+            lines.add(resources.getQuantityString(R.plurals.session_positions_complete, report.complete.size, report.complete.size))
+            if (report.incomplete.isNotEmpty())
+                lines.add(getString(R.string.session_positions_incomplete, report.incomplete.joinToString(", ")))
+            lines.add(getString(if (report.saved) R.string.session_saved else R.string.session_not_saved))
+        }
+        lines.add(getString(R.string.end_session_message))
+        return lines.joinToString("\n\n")
     }
 
     private fun clearResult() {

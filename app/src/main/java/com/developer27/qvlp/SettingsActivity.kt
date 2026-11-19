@@ -83,7 +83,7 @@ class SettingsActivity : AppCompatActivity() {
          * models run. Like the other Inference settings it belongs to Inference Mode: outside it nothing extra runs.
          */
         fun cvAlgorithms(preferences: android.content.SharedPreferences): Boolean =
-            inferenceMode(preferences) && preferences.getBoolean(CV_ALGORITHMS_PREFERENCE, false)
+            inferenceMode(preferences) && preferences.getBoolean(CV_ALGORITHMS_PREFERENCE, true)
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {

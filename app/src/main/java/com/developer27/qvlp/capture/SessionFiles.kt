@@ -22,6 +22,13 @@ internal data class SavedSession(val id: String, val label: String, val warnings
 internal object SessionFiles {
     val io = Executors.newSingleThreadExecutor()
     @Volatile var activeCapture: File? = null
+    /**
+     * True while the camera is delivering the frames of a capture: the two seconds in which nothing else may
+     * use the storage. Saving earlier positions to Pictures/Q-VLP waits for it. It does not wait for what
+     * follows, finding the LEDs in those frames, which takes a minute or two a position: if it did, the saving
+     * of a session captured without pauses would fall a position further behind with every capture.
+     */
+    @Volatile var framesArriving = false
 
     /** A capture still being written, or the processed folder that belongs to it. Neither may be published yet. */
     fun isActive(folder: File): Boolean = activeCapture.let { active ->
@@ -181,6 +188,23 @@ internal object SessionFiles {
             partial.delete()
             throw e
         }
+    }
+
+    /**
+     * The positions of the session being recorded and whether all its files are in Pictures/Q-VLP, or null
+     * when no session is being recorded. Called on io.
+     */
+    fun check(context: Context): SessionCheck.Report? {
+        val id = activeSessionId(context)?.takeIf(::validId) ?: return null
+        val session = File(root(context), id).takeIf { it.isDirectory } ?: return null
+        val bursts = SessionLayout.captures(session).map { capture ->
+            runCatching { readJson(File(capture, "burst.json")) }.getOrElse {
+                JSONObject().put("state", "unreadable")
+                    .put("position", JSONObject().put("position_id", SessionLayout.positionId(capture.name) ?: -1))
+            }
+        }
+        val saved = runCatching { !PublicSessionStorage.needsSave(context, PublicSessionStorage.snapshot(session)) }.getOrDefault(false)
+        return SessionCheck.report(bursts, saved)
     }
 
     fun readJson(file: File) = JSONObject(AtomicFile(file).openRead().bufferedReader().use { it.readText() })

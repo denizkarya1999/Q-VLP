@@ -17,8 +17,13 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class BurstRequestTag(val controlsTag: Any?, val burstId: String)
+/** [saved] counts the frames the camera delivered, [pictures] those of them whose files were all written. */
 internal data class BurstSummary(val sessionId: String, val positionId: Int, val saved: Int, val length: CaptureLength,
-    val fps: Double?, val warnings: List<String>, val interrupted: Boolean, val ledsDetected: List<Int>? = null)
+    val fps: Double?, val warnings: List<String>, val interrupted: Boolean, val ledsDetected: List<Int>? = null,
+    val pictures: Int = saved) {
+    /** The position has everything that was asked for: the capture ran to its end and no frame is missing. */
+    val complete: Boolean get() = !interrupted && pictures == length.frames
+}
 
 internal data class FrameMetadata(val id: Int, val timestamp: Long?, val exposureNs: Long?, val iso: Int?, val details: JSONObject) {
     companion object {
@@ -87,6 +92,8 @@ internal class BurstWriter private constructor(
     private var ledDetection: JSONObject? = null
     private var ledRecognition: JSONObject? = null
     private var rowTimeUs: Double? = null
+    // The frames whose pictures and metadata were all written.
+    private var picturesSaved = 0
 
     private fun manifest(state: String) = JSONObject().apply {
         put("burst_id", id)
@@ -264,6 +271,8 @@ internal class BurstWriter private constructor(
                 frame.put("fps", if (delta != null && delta > 0) 1_000_000_000.0 / delta else JSONObject.NULL)
                 previous = now
             }
+            // The frames are in. From here on the storage is free for saving earlier positions to Pictures/Q-VLP.
+            SessionFiles.framesArriving = false
             val ledsDetected = runCatching { analyzeLeds() }.getOrElse {
                 warnings.add("Frames could not be turned into pictures or analysed: ${it.message}. LED columns are left empty.")
                 null
@@ -274,6 +283,7 @@ internal class BurstWriter private constructor(
                     .put("saved_frame_span_s", if (ordered.size >= 2) elapsed / 1_000_000_000.0 else JSONObject.NULL)
                     .put("slow_frame_intervals", slowIntervals)
                     .put("missing_frame_ids", JSONArray(missing))
+                    .put("pictures_saved", picturesSaved)
                 SessionFiles.writeJson(File(location.directory, "burst.json"), output)
             } catch (e: Exception) {
                 warnings.add("Could not finish session metadata: ${e.message}. Saved frame files remain available.")
@@ -281,7 +291,7 @@ internal class BurstWriter private constructor(
             if (SessionFiles.activeCapture == location.directory) SessionFiles.activeCapture = null
             SessionPublisher.captureReady(context, SessionLayout.session(location.directory), position.id)
             completed(BurstSummary(location.sessionId, position.id, saved.size, length, fps, warnings.toList(), reason != null,
-                ledsDetected))
+                ledsDetected, picturesSaved))
         }
     }
 
@@ -300,6 +310,7 @@ internal class BurstWriter private constructor(
         val recognised = if (inference == null) null else recognise(frames, result)
         // A frame whose files could not be written has no picture to point at.
         frames.filterNot { it.getInt("frame_id") in result.saved }.forEach { it.put("file", JSONObject.NULL) }
+        picturesSaved = result.saved.size
         val lost = frames.size - result.saved.size
         if (lost > 0) warnings.add("$lost of ${frames.size} frames could not be saved as pictures.")
         if (result.leds.isEmpty()) return recognised
@@ -405,6 +416,7 @@ internal class BurstWriter private constructor(
                         position, cameraInfo, progress, analyzing, completed, inference)
                     SessionFiles.writeJson(File(writer.location.directory, "burst.json"), writer.manifest("preparing"))
                     SessionFiles.activeCapture = writer.location.directory
+                    SessionFiles.framesArriving = true
                     prepared(writer, null)
                 } catch (e: Exception) {
                     prepared(null, e.message ?: "Could not prepare session storage.")
