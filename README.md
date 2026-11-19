@@ -7,7 +7,7 @@ The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplat
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
 - Version: 1.3.2
-- Release date: November 16, 2026
+- Release date: November 18, 2026
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
 **Topics:** `android` · `kotlin` · `camera2` · `pytorch` · `yolo` · `resnet` · `visible-light-positioning` · `indoor-positioning` · `location-estimation` · `quantum-based-localization` · `manual-camera-controls`
