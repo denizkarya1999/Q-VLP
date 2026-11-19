@@ -28,7 +28,12 @@
     <string name="enable_cv_algorithms_summary">Not implemented yet · Blob detection and analysis, distance estimation and other computer vision algorithms. Available in Inference Mode.</string>
     <string name="options">Options</string>
     <string name="local_file_inference">Local File Inference</string>
-    <string name="local_file_inference_summary">Open an image stored on this phone and run the two LED models on it.</string>
+    <string name="local_file_inference_summary">Open an image stored on this phone and run the LED models on it.</string>
+    <string name="inference_models">Inference Models</string>
+    <string name="led_detection_model">LED Detection Model</string>
+    <string name="led_detection_model_summary">YOLOv26n based. Finds the LEDs in every frame and puts a box round each.</string>
+    <string name="ook_led_recognition_model">OOK-Based LED Recognition Model</string>
+    <string name="ook_led_recognition_model_summary">ResNet-50 based, which takes a sequence of 5 frames of each LED the LED Detection Model finds and names it LED 1 to LED 4.</string>
     <string name="choose_image">Choose Image</string>
     <string name="local_inference_hint">Choose an image stored on this phone, for example from Pictures/Q-VLP Local Inference Test Dataset.</string>
     <string name="local_inference_running">Finding LEDs…</string>
@@ -40,6 +45,7 @@
     <string name="inference_starting">Starting the models…</string>
     <string name="inference_latest">Latest frame: %1$d ms</string>
     <string name="inference_no_leds">No LEDs found in the latest frame.</string>
+    <string name="inference_no_model">The LED Detection Model is unticked in Settings → Options → Inference Models, so no LEDs are looked for.</string>
     <string name="inference_failed">The LED models could not run: %1$s</string>
     <string name="cv_algorithms_on">Enable CV Algorithms is ticked. No CV algorithm exists yet, so nothing extra runs.</string>
     <string name="save_setting">Save</string>
@@ -134,7 +140,7 @@
     <string name="factory_reset">Factory Reset</string>
     <string name="factory_reset_summary">Restore all settings to their defaults.</string>
     <string name="factory_reset_title">Restore the default settings?</string>
-    <string name="factory_reset_message">This selects the front camera and restores 1× zoom, a 6000 Hz rolling shutter rate, ISO 100 and 1 fps on both cameras, 30 frames, Data Collection Mode, Generate Post-Inference Files ticked and Enable CV Algorithms unticked. The chosen position is cleared.\n\nSaved sessions and the auto-save folder are kept. The next capture starts a new session.</string>
+    <string name="factory_reset_message">This selects the front camera and restores 1× zoom, a 6000 Hz rolling shutter rate, ISO 100 and 1 fps on both cameras, 30 frames, Inference Mode with both Inference Models ticked, Generate Post-Inference Files ticked and Enable CV Algorithms unticked. The chosen position is cleared.\n\nSaved sessions and the auto-save folder are kept. The next capture starts a new session.</string>
     <string name="factory_reset_confirm">Reset</string>
     <string name="factory_reset_done">Settings restored to defaults.</string>
     <string name="camera_permission_help">Tap here to allow camera access.</string>

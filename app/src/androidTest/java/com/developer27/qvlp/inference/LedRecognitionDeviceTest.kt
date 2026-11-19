@@ -12,7 +12,7 @@ import java.util.concurrent.FutureTask
 
 /**
  * Runs the Physical LED Detection Model and the OOK-Based LED Recognition Model on the phone, on a frame of
- * the test split of the second session's datasets, whose LEDs are known. It touches no session: run it alone with
+ * the test split of the third session's datasets, whose LEDs are known. It touches no session: run it alone with
  * `adb shell am instrument -w -e class com.developer27.qvlp.inference.LedRecognitionDeviceTest …`.
  */
 @RunWith(AndroidJUnit4::class)
@@ -20,16 +20,17 @@ class LedRecognitionDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     /**
-     * pos10_frame_00000.png of "Physical LED Light Detection Dataset 2": the labelled box of each LED, as left,
-     * top, right, bottom. The LEDs are numbered by their place on the rig, as in "OOK-Based LED Recognition
-     * Dataset 2": LED 1 bottom-left, LED 2 bottom-right, LED 3 top-left, LED 4 top-right.
+     * pos28_frame_00000.png of the third session's "Physical LED Light Detection Dataset" (18 November 2026):
+     * the labelled box of each LED, as left, top, right, bottom. The LEDs are numbered by the code they send, as
+     * in that session's "OOK-Based LED Recognition Dataset": LED 1 (1010) bottom-left, LED 2 (1100) top-left,
+     * LED 3 (1000) bottom-right, LED 4 (1110) top-right.
      */
     private val labelled = mapOf(
-        1 to floatArrayOf(773f, 797f, 807f, 837f), 2 to floatArrayOf(1167f, 794f, 1206f, 831f),
-        3 to floatArrayOf(784f, 117f, 818f, 149f), 4 to floatArrayOf(1149f, 131f, 1184f, 166f)
+        1 to floatArrayOf(726f, 743f, 764f, 790f), 2 to floatArrayOf(742f, 118f, 782f, 158f),
+        3 to floatArrayOf(1116f, 741f, 1149f, 776f), 4 to floatArrayOf(1116f, 117f, 1163f, 166f)
     )
 
-    private fun frame(): Bitmap = instrumentation.context.assets.open("dataset2_pos10_frame_00000.png").use {
+    private fun frame(): Bitmap = instrumentation.context.assets.open("session3_pos28_frame_00000.png").use {
         BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 })!!
     }
 
@@ -49,7 +50,8 @@ class LedRecognitionDeviceTest {
             val box = labelled.getValue(found.led)
             val label = LedDetection(found.led, 1f, box[0], box[1], box[2], box[3])
             assertTrue("LED ${found.led} is not where it is labelled: $found", found.overlap(label) > 0.8f)
-            // On a computer the detection model is 86% to 91% sure of each of these LEDs and the recognition model 100%.
+            // On a computer the boxes overlap their labels by 92% to 96%, the detection model is 86% to 91% sure of
+            // each of these LEDs and the recognition model 100%.
             assertTrue("LED ${found.led} was detected with ${found.detected}", found.detected > 0.8f)
             assertTrue("LED ${found.led} was named with ${found.confidence}", found.confidence > 0.95f)
         }
@@ -88,6 +90,23 @@ class LedRecognitionDeviceTest {
         }
         assertArrayEquals(untouched, rgb)
         Log.i("QvlpLedModelTest", "the frames of a capture: ${frames.map { it.milliseconds }} ms; ${describe(frames.last().detections)}")
+    }
+
+    @Test fun onlyTheTickedModelsRun() {
+        val picture = frame()
+        // Settings → Options → Inference Models with the recognition model unticked: the LEDs are found, none is named.
+        val detectionOnly = InferenceModels(detection = true, recognition = false)
+        val found = onModelThread { LedRecognition.detectPicture(instrumentation.targetContext, picture, models = detectionOnly) }.detections
+        assertEquals(describe(found), 4, found.size)
+        assertTrue(describe(found), found.none { it.named })
+        assertEquals(found.map { it.detected }.sortedDescending(), found.map { it.detected })
+        for (box in labelled.values) {
+            val label = LedDetection(LedDetection.UNNAMED, 1f, box[0], box[1], box[2], box[3])
+            assertTrue("No box on the LED labelled at ${box.toList()}: ${describe(found)}", found.any { it.overlap(label) > 0.8f })
+        }
+        // With the detection model unticked nothing is looked for.
+        val nothing = InferenceModels(detection = false, recognition = false)
+        assertTrue(onModelThread { LedRecognition.detectPicture(instrumentation.targetContext, picture, models = nothing) }.detections.isEmpty())
     }
 
     @Test fun aPictureOfAnotherSizeGetsItsBoxesInItsOwnPixels() {

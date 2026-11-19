@@ -12,9 +12,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * The camera can deliver 30 frames a second and the models need longer than that for one, so a frame is taken
  * only when the models are free. Every other frame is skipped: the boxes always belong to a recent frame, and
- * the five frames an LED is named from are the last five that were taken.
+ * the five frames an LED is named from are the last five that were taken. [models] says which of the two
+ * models run.
  */
-internal class LiveInference(context: Context, private val deliver: (Result) -> Unit) {
+internal class LiveInference(context: Context, private val models: InferenceModels, private val deliver: (Result) -> Unit) {
     /** [error] is set, and nothing else, when the models could not run. */
     data class Result(val detections: List<LedDetection>, val frameWidth: Int, val frameHeight: Int,
                       val milliseconds: Long, val error: String?)
@@ -45,7 +46,7 @@ internal class LiveInference(context: Context, private val deliver: (Result) -> 
         }
         LedRecognition.execute {
             try {
-                val found = LedRecognition.detectFrame(app, frame, width, height, tracks)
+                val found = LedRecognition.detectFrame(app, frame, width, height, tracks, models)
                 if (active) deliver(Result(found.detections, width, height, found.milliseconds, null))
                 busy.set(false)
             } catch (error: Throwable) {

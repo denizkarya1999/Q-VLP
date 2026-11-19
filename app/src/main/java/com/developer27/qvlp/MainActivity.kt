@@ -39,6 +39,7 @@ import com.developer27.qvlp.capture.SessionCsv
 import com.developer27.qvlp.capture.SessionFiles
 import com.developer27.qvlp.capture.SessionPublisher
 import com.developer27.qvlp.databinding.ActivityMainBinding
+import com.developer27.qvlp.inference.InferenceModels
 import com.developer27.qvlp.inference.LedRecognition
 import com.developer27.qvlp.inference.LiveInference
 import org.json.JSONObject
@@ -72,6 +73,7 @@ class MainActivity : AppCompatActivity() {
     // Inference Mode: the model runs on the preview, and positions are captured only when their files are wanted.
     private var inferenceMode = false
     private var postInferenceFiles = false
+    private var inferenceModels = InferenceModels.BOTH
     private var liveInference: LiveInference? = null
     private var inferenceResult: LiveInference.Result? = null
 
@@ -193,9 +195,11 @@ class MainActivity : AppCompatActivity() {
     private fun applyMode() {
         inferenceMode = SettingsActivity.inferenceMode(preferences)
         postInferenceFiles = SettingsActivity.postInferenceFiles(preferences)
-        // Captures of the two modes hold different files, so they never share a session.
-        val mode = if (inferenceMode) SettingsActivity.INFERENCE_MODE else SettingsActivity.MODE_KEYS.first()
-        if (preferences.getString(SESSION_MODE, SettingsActivity.MODE_KEYS.first()) != mode) {
+        inferenceModels = SettingsActivity.inferenceModels(preferences)
+        // Captures of the two modes hold different files, so they never share a session. A session whose mode
+        // was never stored is from before Inference Mode became the default: it is a Data Collection one.
+        val mode = if (inferenceMode) Modes.INFERENCE else Modes.DATA_COLLECTION
+        if (preferences.getString(SESSION_MODE, Modes.DATA_COLLECTION) != mode) {
             preferences.edit().putString(SESSION_MODE, mode).apply()
             SessionFiles.newSession(applicationContext)
             sessionChanged(resetPosition = false)
@@ -204,7 +208,8 @@ class MainActivity : AppCompatActivity() {
         inferenceResult = null
         viewBinding.ledOverlay.clear()
         var live: LiveInference? = null
-        if (inferenceMode) live = LiveInference(this) { result ->
+        // With the detection model unticked there is nothing to look for, so no frames are taken for it.
+        if (inferenceMode && inferenceModels.detection) live = LiveInference(this, inferenceModels) { result ->
             runOnUiThread { if (liveInference === live) showInference(result) }
         }
         liveInference = live
@@ -324,8 +329,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun inferenceDetails(): String {
         val result = inferenceResult
-        val lines = mutableListOf(LedRecognition.DETECTION_MODEL_NAME, LedRecognition.RECOGNITION_MODEL_NAME)
+        val lines = mutableListOf<String>()
+        if (inferenceModels.detection) lines.add(LedRecognition.DETECTION_MODEL_NAME)
+        if (inferenceModels.recognition) lines.add(LedRecognition.RECOGNITION_MODEL_NAME)
         when {
+            !inferenceModels.detection -> lines.add(getString(R.string.inference_no_model))
             result == null -> lines.add(getString(R.string.inference_starting))
             result.error != null -> lines.add(getString(R.string.inference_failed, result.error))
             else -> {
@@ -444,7 +452,7 @@ class MainActivity : AppCompatActivity() {
                 viewBinding.ledOverlay.clear()
                 cameraHelper.startBurst(position, length,
                     // In Inference Mode the model also runs on every captured frame, for the post-inference files.
-                    inference = if (inferenceMode && postInferenceFiles) LedRecognition.frames(applicationContext) else null,
+                    inference = if (inferenceMode && postInferenceFiles) LedRecognition.frames(applicationContext, inferenceModels) else null,
                     progress = { count -> runOnUiThread {
                         if (!isDestroyed && captureBusy) {
                             viewBinding.burstStatus.text = getString(R.string.capture_progress, count, length.frames)

@@ -336,9 +336,7 @@ internal class BurstWriter private constructor(
             result.inferred[frame.getInt("frame_id")]?.let(PostInferenceFiles::points)
         })
         val detected = fingerprint.indices.filter { fingerprint[it].detected }.map { it + 1 }
-        ledRecognition = JSONObject()
-            .put("detection_model", com.developer27.qvlp.inference.LedRecognition.DETECTION_MODEL_FILE)
-            .put("recognition_model", com.developer27.qvlp.inference.LedRecognition.RECOGNITION_MODEL_FILE)
+        ledRecognition = PostInferenceFiles.modelFiles(JSONObject(), inference?.models ?: com.developer27.qvlp.inference.InferenceModels.BOTH)
             .put("min_confidence", com.developer27.qvlp.inference.LedBoxes.MIN_CONFIDENCE.toDouble())
             .put("min_recognition_probability", com.developer27.qvlp.inference.LedTracks.MIN_PROBABILITY.toDouble())
             .put("frames_processed", result.inferred.size).put("min_valid_share", SessionCsv.MIN_VALID_SHARE)

@@ -25,7 +25,9 @@ import java.util.concurrent.Executors
  * no name. Then the OOK-Based LED Recognition Model, a ResNet-50 network, names each of them LED 1 to LED 4
  * from the on-off keying signal it sends, looking at the last five frames of that LED cut out along its box
  * (see [LedTracks] and [LedCrop]). Inference Mode, its post-inference files and Local File Inference all use
- * this one copy of the models.
+ * this one copy of the models. Each of them says which models are to run (see [InferenceModels]): without the
+ * recognition model the LEDs are found and stay without a name, and without the detection model nothing is
+ * looked for. A model that never runs is never loaded.
  *
  * The model files are the TorchScript exports of the two training notebooks and are loaded as they are. They
  * run on one thread of their own: [execute] and [frames] may be called from anywhere, everything else only
@@ -65,61 +67,80 @@ internal object LedRecognition {
      * named from its last five frames. The caller waits for the answer, so this must not be used from inside
      * [execute].
      */
-    fun frames(context: Context): FrameInference {
+    fun frames(context: Context, selected: InferenceModels = InferenceModels.BOTH): FrameInference {
         val app = context.applicationContext
         val tracks = LedTracks()
-        return FrameInference { frame, width, height ->
-            worker.submit(Callable { annotate(app, frame, width, height, tracks) }).get()
+        return object : FrameInference {
+            override val models = selected
+            override fun run(rgb: ByteArray, width: Int, height: Int): InferredFrame =
+                worker.submit(Callable { annotate(app, rgb, width, height, tracks, selected) }).get()
         }
     }
 
     /** A camera frame as tightly packed I420 (see YuvFrame). [tracks] follows the frames this one belongs to. */
-    fun detectFrame(context: Context, i420: ByteArray, width: Int, height: Int, tracks: LedTracks): Outcome {
+    fun detectFrame(context: Context, i420: ByteArray, width: Int, height: Int, tracks: LedTracks,
+                    models: InferenceModels = InferenceModels.BOTH): Outcome {
         val started = SystemClock.elapsedRealtime()
+        if (!models.detection) return Outcome(emptyList(), 0L)
         if (rgb.size < width * height * 3) rgb = ByteArray(width * height * 3)
         // The same colour conversion that wrote the training frames.
         FramePng.toRgb(i420, width, height, rgb)
-        return Outcome(detectRgb(context, rgb, width, height, tracks), SystemClock.elapsedRealtime() - started)
+        return Outcome(detectRgb(context, rgb, width, height, tracks, models), SystemClock.elapsedRealtime() - started)
     }
 
     /**
      * A picture of any size, for example one opened from a file. On its own it is one frame, and each LED is
      * named from five copies of it; with [tracks] it is the next frame of a series.
      */
-    fun detectPicture(context: Context, picture: Bitmap, tracks: LedTracks = LedTracks()): Outcome {
+    fun detectPicture(context: Context, picture: Bitmap, tracks: LedTracks = LedTracks(),
+                      models: InferenceModels = InferenceModels.BOTH): Outcome {
         val started = SystemClock.elapsedRealtime()
-        load(context)
-        return Outcome(detect(picture, tracks), SystemClock.elapsedRealtime() - started)
+        if (!models.detection) return Outcome(emptyList(), 0L)
+        load(context, models)
+        return Outcome(detect(picture, tracks, models), SystemClock.elapsedRealtime() - started)
     }
 
-    /** Loads the models if they are not loaded yet. The first call takes a few seconds. */
-    fun load(context: Context) {
-        if (detector != null && recogniser != null) return
+    /** Loads the models that are to run and are not loaded yet. The first call takes a few seconds. */
+    fun load(context: Context, models: InferenceModels = InferenceModels.BOTH) {
+        val detectorMissing = models.detection && detector == null
+        val recogniserMissing = models.recognition && recogniser == null
+        if (!detectorMissing && !recogniserMissing) return
         PyTorchAndroid.setNumThreads(THREADS)
         val assets = context.applicationContext.assets
-        if (detector == null) detector = PyTorchAndroid.loadModuleFromAsset(assets, DETECTION_MODEL_FILE)
-        if (recogniser == null) recogniser = PyTorchAndroid.loadModuleFromAsset(assets, RECOGNITION_MODEL_FILE)
+        if (detectorMissing) detector = PyTorchAndroid.loadModuleFromAsset(assets, DETECTION_MODEL_FILE)
+        if (recogniserMissing) recogniser = PyTorchAndroid.loadModuleFromAsset(assets, RECOGNITION_MODEL_FILE)
     }
 
     /** [frame] holds [width] × [height] pixels as red, green, blue bytes. */
-    private fun detectRgb(context: Context, frame: ByteArray, width: Int, height: Int, tracks: LedTracks): List<LedDetection> {
-        load(context)
+    private fun detectRgb(context: Context, frame: ByteArray, width: Int, height: Int, tracks: LedTracks,
+                          models: InferenceModels): List<LedDetection> {
+        if (!models.detection) return emptyList()
+        load(context, models)
         if (width == LedInput.WIDTH && height == LedInput.HEIGHT) {
             LedInput.fromRgb(frame, input)
-            return tracks.update(findLeds(), { box -> LedCrop.fromRgb(frame, width, LedCrop.region(box, width, height)) }, ::recognise)
+            return named(findLeds(), tracks, models) { box -> LedCrop.fromRgb(frame, width, LedCrop.region(box, width, height)) }
         }
         val picture = bitmap(frame, width, height)
         try {
-            return detect(picture, tracks)
+            return detect(picture, tracks, models)
         } finally {
             picture.recycle()
         }
     }
 
+    /**
+     * The LEDs the detection model [found], with their names when the recognition model is to run. Without it
+     * they stay as they were found: no name, the most confidently detected first.
+     */
+    private fun named(found: List<LedDetection>, tracks: LedTracks, models: InferenceModels,
+                      crop: (LedDetection) -> ByteArray): List<LedDetection> =
+        if (models.recognition) tracks.update(found, crop, ::recognise) else found
+
     /** The frame as a PNG with the LEDs the models found drawn on it, exactly as Inference Mode shows them. */
-    private fun annotate(context: Context, frame: ByteArray, width: Int, height: Int, tracks: LedTracks): InferredFrame {
+    private fun annotate(context: Context, frame: ByteArray, width: Int, height: Int, tracks: LedTracks,
+                         models: InferenceModels): InferredFrame {
         val started = SystemClock.elapsedRealtime()
-        val found = detectRgb(context, frame, width, height, tracks)
+        val found = detectRgb(context, frame, width, height, tracks, models)
         val milliseconds = SystemClock.elapsedRealtime() - started
         val picture = bitmap(frame, width, height)
         try {
@@ -152,7 +173,7 @@ internal object LedRecognition {
         return picture
     }
 
-    private fun detect(picture: Bitmap, tracks: LedTracks): List<LedDetection> {
+    private fun detect(picture: Bitmap, tracks: LedTracks, models: InferenceModels): List<LedDetection> {
         val fit = Letterbox.fit(picture.width, picture.height)
         if (pixels.size < LedInput.PLANE) pixels = IntArray(LedInput.PLANE)
         if (fit.unchanged) {
@@ -168,14 +189,14 @@ internal object LedRecognition {
         }
         LedInput.fromPixels(pixels, input)
         // The LEDs are cut out of the picture itself, not out of the copy fitted to the detection model.
-        return tracks.update(findLeds().map(fit::toSource), { box ->
+        return named(findLeds().map(fit::toSource), tracks, models) { box ->
             val region = LedCrop.region(box, picture.width, picture.height)
             val regionWidth = region[2] - region[0]
             val regionHeight = region[3] - region[1]
             val cut = IntArray(regionWidth * regionHeight)
             picture.getPixels(cut, 0, regionWidth, region[0], region[1], regionWidth, regionHeight)
             LedCrop.fromPixels(cut, regionWidth, regionHeight)
-        }, ::recognise)
+        }
     }
 
     /** Runs the detection model on [input] and returns the boxes of the LEDs in input pixels, without names. */

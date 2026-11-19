@@ -11,7 +11,9 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.preference.PreferenceManager
 import com.developer27.qvlp.databinding.ActivityLocalFileInferenceBinding
+import com.developer27.qvlp.inference.InferenceModels
 import com.developer27.qvlp.inference.LedBoxPainter
 import com.developer27.qvlp.inference.LedDetection
 import com.developer27.qvlp.inference.LedRecognition
@@ -20,7 +22,7 @@ import com.developer27.qvlp.inference.LedRecognition
  * Settings → Options → Local File Inference: opens an image stored on the phone and runs the Physical LED
  * Detection Model and the OOK-Based LED Recognition Model on it. The LEDs are shown exactly as in Inference
  * Mode: one box per LED with its name and confidence. The image is one frame, so each LED is named from five
- * copies of it.
+ * copies of it. In Inference Mode only the models ticked under Options → Inference Models run.
  */
 class LocalFileInferenceActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLocalFileInferenceBinding
@@ -31,7 +33,7 @@ class LocalFileInferenceActivity : AppCompatActivity() {
     }
 
     private class Shown(val picture: Bitmap, val detections: List<LedDetection>, val name: String,
-                        val width: Int, val height: Int, val milliseconds: Long)
+                        val width: Int, val height: Int, val milliseconds: Long, val models: InferenceModels)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,11 +57,12 @@ class LocalFileInferenceActivity : AppCompatActivity() {
         binding.results.setText(R.string.local_inference_running)
         binding.details.text = ""
         val app = applicationContext
+        val models = SettingsActivity.inferenceModels(PreferenceManager.getDefaultSharedPreferences(this))
         LedRecognition.execute {
             val shown = runCatching {
                 val picture = decode(uri)
-                val found = LedRecognition.detectPicture(app, picture)
-                Shown(draw(picture, found.detections), found.detections, name(uri), picture.width, picture.height, found.milliseconds)
+                val found = LedRecognition.detectPicture(app, picture, models = models)
+                Shown(draw(picture, found.detections), found.detections, name(uri), picture.width, picture.height, found.milliseconds, models)
             }
             runOnUiThread { if (!isDestroyed && current == request) show(shown) }
         }
@@ -73,7 +76,11 @@ class LocalFileInferenceActivity : AppCompatActivity() {
             return
         }
         binding.picture.setImageBitmap(result.picture)
-        binding.results.text = if (result.detections.isEmpty()) getString(R.string.local_inference_none) else list(result.detections)
+        binding.results.text = when {
+            !result.models.detection -> getString(R.string.inference_no_model)
+            result.detections.isEmpty() -> getString(R.string.local_inference_none)
+            else -> list(result.detections)
+        }
         binding.details.text = getString(R.string.local_inference_details, result.name, result.width, result.height, result.milliseconds)
     }
 

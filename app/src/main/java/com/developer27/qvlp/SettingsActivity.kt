@@ -19,6 +19,7 @@ import com.developer27.qvlp.camera.CameraProfile
 import com.developer27.qvlp.camera.CameraSettingsStore
 import com.developer27.qvlp.camera.CaptureSettings
 import com.developer27.qvlp.capture.CaptureLengthPreferences
+import com.developer27.qvlp.inference.InferenceModels
 
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,14 +52,27 @@ class SettingsActivity : AppCompatActivity() {
         const val EXTRA_CAMERA_ID = "camera_id"
         const val EXTRA_PREFERENCE_KEY = "preference_key"
         const val MODE_PREFERENCE = "app_mode"
-        const val INFERENCE_MODE = "inference_mode"
+        const val INFERENCE_MODE = Modes.INFERENCE
         const val CV_ALGORITHMS_PREFERENCE = "enable_cv_algorithms"
         const val POST_INFERENCE_FILES_PREFERENCE = "generate_post_inference_files"
-        /** Data Collection is the default mode. */
-        val MODE_KEYS = listOf("data_collection_mode", INFERENCE_MODE)
+        /** Options → Inference Models: its heading and its two checkboxes. */
+        const val INFERENCE_MODELS_SECTION = "inference_models"
+        const val DETECTION_MODEL_PREFERENCE = "led_detection_model"
+        const val RECOGNITION_MODEL_PREFERENCE = "ook_led_recognition_model"
+        /** In the order they are listed. Inference Mode is the default mode (see [Modes]). */
+        val MODE_KEYS = listOf(Modes.DATA_COLLECTION, Modes.INFERENCE)
 
         fun inferenceMode(preferences: android.content.SharedPreferences): Boolean =
-            preferences.getString(MODE_PREFERENCE, null) == INFERENCE_MODE
+            Modes.chosen(preferences.getString(MODE_PREFERENCE, null)) == Modes.INFERENCE
+
+        /**
+         * The models that run. Both are ticked unless the operator unticks one. The checkboxes belong to
+         * Inference Mode and can only be seen there, so outside it both models run.
+         */
+        internal fun inferenceModels(preferences: android.content.SharedPreferences): InferenceModels =
+            if (!inferenceMode(preferences)) InferenceModels.BOTH
+            else InferenceModels.of(preferences.getBoolean(DETECTION_MODEL_PREFERENCE, true),
+                preferences.getBoolean(RECOGNITION_MODEL_PREFERENCE, true))
 
         /** Ticked unless the operator unticks it. */
         fun postInferenceFiles(preferences: android.content.SharedPreferences): Boolean =
@@ -154,10 +168,14 @@ class SettingsActivity : AppCompatActivity() {
             val modes = MODE_KEYS.map { requireNotNull(findPreference<CheckBoxPreference>(it)) }
             val inferenceSettings = listOf(POST_INFERENCE_FILES_PREFERENCE, CV_ALGORITHMS_PREFERENCE)
                 .map { requireNotNull(findPreference<CheckBoxPreference>(it)) }
+            val inferenceModels = listOf(INFERENCE_MODELS_SECTION, DETECTION_MODEL_PREFERENCE, RECOGNITION_MODEL_PREFERENCE)
+                .map { requireNotNull(findPreference<Preference>(it)) }
             fun show(selected: String) {
                 modes.forEach { it.isChecked = it.key == selected }
                 // The Inference settings can be reached in Inference Mode only. Their values are kept either way.
                 inferenceSettings.forEach { it.isEnabled = selected == INFERENCE_MODE }
+                // Options → Inference Models is there in Inference Mode only.
+                inferenceModels.forEach { it.isVisible = selected == INFERENCE_MODE }
             }
             modes.forEach { mode ->
                 mode.setOnPreferenceChangeListener { _, checked ->
@@ -169,8 +187,7 @@ class SettingsActivity : AppCompatActivity() {
                     false
                 }
             }
-            // A mode that cannot be chosen yet is never restored as the selection.
-            show(modes.firstOrNull { it.isEnabled && it.key == prefs.getString(MODE_PREFERENCE, null) }?.key ?: MODE_KEYS.first())
+            show(Modes.chosen(prefs.getString(MODE_PREFERENCE, null)))
         }
 
         private fun save(value: CameraProfile) {

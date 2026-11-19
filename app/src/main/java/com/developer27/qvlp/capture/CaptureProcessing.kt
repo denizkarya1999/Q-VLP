@@ -106,7 +106,7 @@ internal object CaptureProcessing {
                     if (inferred != null) {
                         write(File(inferenceFolders[0], SessionLayout.frameName(id)), inferred.picture)
                         write(File(inferenceFolders[1], SessionLayout.metadataName(id)),
-                            PostInferenceFiles.metadata(id, inferred).toString(2).toByteArray())
+                            PostInferenceFiles.metadata(id, inferred, inference!!.models).toString(2).toByteArray())
                     }
                     saved.add(id)
                     raw.delete()

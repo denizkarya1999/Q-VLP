@@ -1,5 +1,6 @@
 package com.developer27.qvlp.capture
 
+import com.developer27.qvlp.inference.InferenceModels
 import com.developer27.qvlp.inference.LedDetection
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -50,6 +51,19 @@ class PostInferenceFilesTest {
         assertEquals(0.6, unnamed.getJSONObject(0).getDouble("detection_confidence"), 1e-6)
         assertEquals(300.0, unnamed.getJSONObject(0).getDouble("box_left_px"), 0.0)
         assertFalse(unnamed.getJSONObject(0).has("confidence"))
+    }
+
+    @Test fun aModelThatWasNotTickedIsNotNamedInTheMetadata() {
+        // Only the detection model ran: the LEDs were found and none has a name.
+        val found = listOf(LedDetection(LedDetection.UNNAMED, 0.9f, 721f, 594f, 760f, 636f))
+        val detectionOnly = InferenceModels(detection = true, recognition = false)
+        val details = JSONObject(PostInferenceFiles.metadata(3, InferredFrame(ByteArray(0), found, 40L), detectionOnly).toString()).getJSONObject("details")
+        assertEquals("qvlp_physical_led_detection_model.pt", details.getString("detection_model"))
+        assertTrue(details.isNull("recognition_model"))
+        assertEquals(1, details.getJSONArray("unnamed_leds").length())
+        val none = PostInferenceFiles.modelFiles(JSONObject(), InferenceModels(detection = false, recognition = false))
+        assertTrue(none.isNull("detection_model"))
+        assertTrue(none.isNull("recognition_model"))
     }
 
     @Test fun theInferenceFolderIsNamedLikeTheCaptureItBelongsTo() {

@@ -1,5 +1,6 @@
 package com.developer27.qvlp.capture
 
+import com.developer27.qvlp.inference.InferenceModels
 import com.developer27.qvlp.inference.LedBoxes
 import com.developer27.qvlp.inference.LedDetection
 import com.developer27.qvlp.inference.LedRecognition
@@ -14,6 +15,9 @@ import org.json.JSONObject
  * named from its last five frames.
  */
 internal fun interface FrameInference {
+    /** The models that run, as ticked in Settings. The files of the capture name only these. */
+    val models: InferenceModels get() = InferenceModels.BOTH
+
     /** [rgb] holds [width] × [height] pixels as red, green, blue bytes. It must be left as it is. */
     fun run(rgb: ByteArray, width: Int, height: Int): InferredFrame
 }
@@ -37,16 +41,14 @@ internal object PostInferenceFiles {
      * The metadata file beside one inference frame. The first fields are the same as in a processed frame's
      * metadata (LED_k_u_px, LED_k_v_px, LED_k_detected), so final.csv reads both the same way.
      */
-    fun metadata(frameId: Int, frame: InferredFrame): JSONObject {
+    fun metadata(frameId: Int, frame: InferredFrame, models: InferenceModels = InferenceModels.BOTH): JSONObject {
         val data = JSONObject().put("frame_id", frameId).put("frame_file", SessionLayout.frameName(frameId))
         points(frame.detections).forEachIndexed { index, point ->
             data.put("LED_${index + 1}_u_px", point.u?.let(::rounded) ?: JSONObject.NULL)
             data.put("LED_${index + 1}_v_px", point.v?.let(::rounded) ?: JSONObject.NULL)
             data.put("LED_${index + 1}_detected", if (point.detected) 1 else 0)
         }
-        return data.put("details", JSONObject()
-            .put("detection_model", LedRecognition.DETECTION_MODEL_FILE)
-            .put("recognition_model", LedRecognition.RECOGNITION_MODEL_FILE)
+        return data.put("details", modelFiles(JSONObject(), models)
             .put("min_confidence", LedBoxes.MIN_CONFIDENCE.toDouble())
             .put("min_recognition_probability", LedTracks.MIN_PROBABILITY.toDouble())
             .put("inference_ms", frame.milliseconds).put("leds_found", frame.detections.size)
@@ -60,6 +62,11 @@ internal object PostInferenceFiles {
             }))
             .put("unnamed_leds", JSONArray(frame.detections.filter { !it.named }.map { box(JSONObject(), it) })))
     }
+
+    /** The file of each model that ran. A model that was not ticked in Settings is written as null. */
+    fun modelFiles(data: JSONObject, models: InferenceModels): JSONObject = data
+        .put("detection_model", if (models.detection) LedRecognition.DETECTION_MODEL_FILE else JSONObject.NULL)
+        .put("recognition_model", if (models.recognition) LedRecognition.RECOGNITION_MODEL_FILE else JSONObject.NULL)
 
     private fun box(data: JSONObject, found: LedDetection): JSONObject = data
         .put("detection_confidence", rounded(found.detected.toDouble()))

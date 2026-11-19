@@ -54,6 +54,28 @@
             android:positiveButtonText="@string/save_setting"
             android:negativeButtonText="@android:string/cancel"
             android:persistent="false" />
+        <!-- Inference Models: shown in Inference Mode only (see SettingsActivity). Both models are ticked on a
+             new installation. The recognition model names the LEDs the detection model finds, so it can be
+             ticked only while the detection model is. -->
+        <Preference
+            android:key="inference_models"
+            android:title="@string/inference_models"
+            android:selectable="false"
+            android:persistent="false"
+            android:layout="@layout/preference_subsection_layout" />
+        <CheckBoxPreference
+            android:key="led_detection_model"
+            android:title="@string/led_detection_model"
+            android:summary="@string/led_detection_model_summary"
+            android:defaultValue="true"
+            android:layout="@layout/preference_checkbox_layout" />
+        <CheckBoxPreference
+            android:key="ook_led_recognition_model"
+            android:title="@string/ook_led_recognition_model"
+            android:summary="@string/ook_led_recognition_model_summary"
+            android:defaultValue="true"
+            android:dependency="led_detection_model"
+            android:layout="@layout/preference_checkbox_layout" />
     </PreferenceCategory>
     <PreferenceCategory
         android:title="@string/camera_settings"
