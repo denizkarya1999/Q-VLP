@@ -4,7 +4,7 @@
     <string name="project_website_unavailable">No web browser is available to open the project website.</string>
     <string name="about_qvlp">About Q-VLP</string>
     <string name="project_description">Q-VLP Research Project</string>
-    <string name="project_version"><b>Version:</b> 1.1.0</string>
+    <string name="project_version_label">Version:</string>
     <string name="project_release_date"><b>Release Date:</b> November 16, 2026</string>
     <string name="project_developers_label"><b>Developer(s):</b></string>
     <string name="project_developers">Thuy-Anh Nguyen\nDeniz K. Acikbas</string>

@@ -6,7 +6,7 @@ The app is derived from [RoTemplate](https://github.com/denizkarya1999/RoTemplat
 
 - App name: Q-VLP
 - Application ID and namespace: `com.developer27.qvlp`
-- Version: 1.3.1
+- Version: 1.3.2
 - Release date: November 16, 2026
 - Source template: [RoTemplate](https://github.com/denizkarya1999/RoTemplate)
 
